@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}بخش‌های پلن{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h3>بخش‌های پلن</h3>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-plus-circle"></i> افزودن بخش جدید</div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('plan_section_add') }}">
+                    <div class="mb-3">
+                        <label class="form-label">نام بخش</label>
+                        <input type="text" name="name" class="form-control" required placeholder="مثلاً التیمیت">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ترتیب نمایش</label>
+                        <input type="number" name="display_order" class="form-control" value="0">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-plus-lg"></i> افزودن
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-list"></i> بخش‌های فعلی ({{ sections|length }})</div>
+            <div class="card-body">
+                {% if sections %}
+                <div class="table-responsive">
+                    <table class="table table-dark mb-0">
+                        <thead>
+                            <tr><th>نام</th><th>ترتیب</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            {% for s in sections %}
+                            <tr>
+                                <td><strong>{{ s.name }}</strong></td>
+                                <td>{{ s.display_order }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="editSection({{ s.id }}, '{{ s.name }}', {{ s.display_order }})">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <form method="POST" action="{{ url_for('plan_section_delete', section_id=s.id) }}" class="d-inline"
+                                          onsubmit="return confirm('آیا این بخش را حذف می‌کنید؟')">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">بخشی تعریف نشده است.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content" style="background:#131926;border:1px solid #1e293b;">
+            <form method="POST" id="editForm">
+                <div class="modal-header" style="border-bottom:1px solid #1e293b;">
+                    <h5 class="modal-title">ویرایش بخش</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">نام بخش</label>
+                        <input type="text" name="name" id="editName" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ترتیب نمایش</label>
+                        <input type="number" name="display_order" id="editOrder" class="form-control">
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top:1px solid #1e293b;">
+                    <button type="submit" class="btn btn-success">ذخیره</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function editSection(id, name, order) {
+    document.getElementById('editForm').action = '/plan-sections/' + id + '/edit';
+    document.getElementById('editName').value = name;
+    document.getElementById('editOrder').value = order;
+    new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}متن‌های ربات{% endblock %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <h3>متن‌های ربات</h3>
+    <button type="submit" form="textsForm" class="btn btn-success">
+        <i class="bi bi-check-lg"></i> ذخیره همه
+    </button>
+</div>
+
+<form id="textsForm" method="POST">
+<div class="row g-4">
+    {% for key, t in texts.items() %}
+    <div class="col-lg-6">
+        <div class="card card-dark">
+            <div class="card-header">
+                <i class="bi bi-chat-dots"></i> {{ t.label }}
+                {% if t.hint %}<small class="text-muted ms-2">— {{ t.hint }}</small>{% endif %}
+            </div>
+            <div class="card-body">
+                {% if t.variables and t.variables != "بدون متغیر" %}
+                <div class="mb-2 text-center">
+                    <small class="text-muted"><i class="bi bi-info-circle"></i> متغیرها: <code>{{ t.variables }}</code></small>
+                </div>
+                {% endif %}
+                <textarea name="{{ key }}" class="form-control" rows="4" dir="rtl" style="text-align:right;font-family:sans-serif;" placeholder="خالی بگذارید تا مقدار پیش‌فرض استفاده شود">{{ t.value }}</textarea>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+</form>
+{% endblock %}

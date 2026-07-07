@@ -1,0 +1,10 @@
+.env
+bot_database.db
+bot_database.db.bak
+__pycache__/
+*.pyc
+bot.log
+deploy.py
+_deploy.tar.gz
+screenshots/
+*.bak

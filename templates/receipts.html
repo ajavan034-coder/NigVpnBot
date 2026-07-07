@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}رسیدها{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h3>مدیریت رسیدها</h3>
+</div>
+<div class="d-flex gap-2 mb-4">
+    <a href="{{ url_for('receipts', status='pending') }}"
+       class="btn {{ 'btn-warning' if status == 'pending' else 'btn-outline-warning' }} btn-sm">
+        در انتظار
+    </a>
+    <a href="{{ url_for('receipts', status='approved') }}"
+       class="btn {{ 'btn-success' if status == 'approved' else 'btn-outline-success' }} btn-sm">
+        تایید شده
+    </a>
+    <a href="{{ url_for('receipts', status='rejected') }}"
+       class="btn {{ 'btn-danger' if status == 'rejected' else 'btn-outline-danger' }} btn-sm">
+        رد شده
+    </a>
+    <a href="{{ url_for('receipts', status='all') }}"
+       class="btn {{ 'btn-secondary' if status == 'all' else 'btn-outline-secondary' }} btn-sm">
+        همه
+    </a>
+</div>
+<div class="card card-dark">
+    <div class="table-responsive">
+        <table class="table table-dark align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>شناسه</th>
+                    <th>کاربر</th>
+                    <th>مبلغ</th>
+                    <th>تاریخ</th>
+                    <th>وضعیت</th>
+                    <th>عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in receipts %}
+                <tr>
+                    <td>#{{ r.id }}</td>
+                    <td>{{ '@' + r.username if r.username else r.user_id }}</td>
+                    <td>{{ "{:,.0f}".format(r.amount) }} {{ symbol }}</td>
+                    <td>{{ r.created_at[:16] if r.created_at else '-' }}</td>
+                    <td>
+                        {% if r.status == 'pending' %}
+                        <span class="badge badge-pending">در انتظار</span>
+                        {% elif r.status == 'approved' %}
+                        <span class="badge badge-active">تایید شده</span>
+                        {% else %}
+                        <span class="badge badge-expired">رد شده</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if r.status == 'pending' %}
+                        <form method="POST" action="{{ url_for('receipt_approve', receipt_id=r.id) }}" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-success">
+                                <i class="bi bi-check-lg"></i>
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ url_for('receipt_reject', receipt_id=r.id) }}" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    onclick="return confirm('آیا این رسید را رد می‌کنید؟')">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not receipts %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">رسیدی یافت نشد</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

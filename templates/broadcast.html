@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}ارسال همگانی{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h3>ارسال پیام همگانی</h3>
+</div>
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-megaphone"></i> ارسال به همه کاربران</div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">پیام (پشتیبانی از HTML)</label>
+                        <textarea name="message" class="form-control" rows="8"
+                                  placeholder="پیام خود را اینجا وارد کنید...&#10;&#10;پشتیبانی از HTML: &lt;b&gt;بولد&lt;/b&gt;, &lt;i&gt;ایتالیک&lt;/i&gt;, &lt;a href='...'&gt;لینک&lt;/a&gt;"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary"
+                            onclick="return confirm('آیا این پیام را به همه کاربران ارسال می‌کنید؟')">
+                        <i class="bi bi-send"></i> ارسال همگانی
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-info-circle"></i> راهنما</div>
+            <div class="card-body">
+                <p class="text-muted mb-2">پیام از طریق ربات تلگرام به همه کاربران ثبت‌نام شده ارسال خواهد شد.</p>
+                <p class="text-muted mb-0">
+                    <strong>فرمت‌بندی پشتیبانی شده:</strong><br>
+                    <code>&lt;b&gt;بولد&lt;/b&gt;</code><br>
+                    <code>&lt;i&gt;ایتالیک&lt;/i&gt;</code><br>
+                    <code>&lt;a href="url"&gt;لینک&lt;/a&gt;</code>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

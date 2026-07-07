@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}لایوت منو{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+{% endblock %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <h3>لایوت منوی اصلی</h3>
+    <button type="submit" form="layoutForm" class="btn btn-success">
+        <i class="bi bi-check-lg"></i> ذخیره لایوت
+    </button>
+</div>
+
+<div class="card card-dark mb-4">
+    <div class="card-header"><i class="bi bi-info-circle"></i> راهنما</div>
+    <div class="card-body">
+        <p class="mb-1"><b>بکشید</b> دسته &#9776; برای مرتب‌سازی دکمه‌ها. <b>یک ردیف</b> = یک ردیف در ربات.</p>
+        <p class="mb-1">روی <b>"افزودن ردیف جدید"</b> کلیک کنید تا دکمه بعدی در ردیف جدید قرار بگیرد.</p>
+        <p class="mb-0"><b>دکمه‌های سفارشی URL</b> را در سمت راست اضافه کنید.</p>
+    </div>
+</div>
+
+<form id="layoutForm" method="POST">
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-list-ol"></i> دکمه‌های منو (بکشید برای مرتب‌سازی)</div>
+            <div class="card-body">
+                <div id="buttonList">
+                {% for item in buttons %}
+                <div class="card card-dark mb-2 menu-item" data-id="{{ item.id }}" data-type="{{ item.type }}">
+                    <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+                        <span class="drag-handle text-muted" style="cursor:grab;font-size:1.2em;">&#9776;</span>
+                        <input type="hidden" name="layout[]" value="{{ item.id }}">
+                        {% if item.type == 'builtin' %}
+                            <span class="badge bg-primary">{{ item.id }}</span>
+                            <span class="flex-grow-1">{{ item.label }}</span>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" name="enabled_{{ item.id }}" value="1"
+                                    {{ 'checked' if item.enabled }}>
+                            </div>
+                        {% elif item.type == 'row_break' %}
+                            <span class="badge bg-secondary">ردیف جدید</span>
+                            <span class="text-muted flex-grow-1">--- ردیف جدید ---</span>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.menu-item').remove()">x</button>
+                        {% else %}
+                            <span class="badge bg-success">سفارشی</span>
+                            <input type="text" name="custom_text_{{ item.id }}" class="form-control form-control-sm" style="width:120px" value="{{ item.text }}" placeholder="متن دکمه">
+                            <input type="text" name="custom_url_{{ item.id }}" class="form-control form-control-sm flex-grow-1" value="{{ item.url }}" placeholder="URL (https://...)">
+                            <input type="hidden" name="custom_style_{{ item.id }}" value="{{ item.style }}">
+                            <input type="hidden" name="custom_emoji_{{ item.id }}" value="{{ item.emoji_id }}">
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.menu-item').remove()">x</button>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                </div>
+
+                <div class="mt-3">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addRowBreak()">
+                        <i class="bi bi-plus"></i> افزودن ردیف جدید
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-plus-circle"></i> افزودن دکمه سفارشی</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">متن دکمه</label>
+                    <input type="text" id="newBtnText" class="form-control" placeholder="مثلاً سوالات متداول، تلگرام، و...">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">لینک URL</label>
+                    <input type="text" id="newBtnUrl" class="form-control" placeholder="https://t.me/yourchannel">
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">استایل</label>
+                        <select id="newBtnStyle" class="form-select">
+                            <option value="">پیش‌فرض</option>
+                            <option value="primary">آبی</option>
+                            <option value="success">سبز</option>
+                            <option value="danger">قرمز</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">شناسه ایموجی (اختیاری)</label>
+                        <input type="text" id="newBtnEmoji" class="form-control" placeholder="شناسه ایموجی پریمیوم">
+                    </div>
+                </div>
+                <button type="button" class="btn btn-outline-success" onclick="addCustomBtn()">
+                    <i class="bi bi-plus-lg"></i> افزودن به منو
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+</form>
+
+<script>
+let customCounter = 1000;
+
+Sortable.create(document.getElementById('buttonList'), {
+    handle: '.drag-handle',
+    animation: 150,
+});
+
+function addCustomBtn() {
+    const text = document.getElementById('newBtnText').value.trim();
+    const url = document.getElementById('newBtnUrl').value.trim();
+    const style = document.getElementById('newBtnStyle').value;
+    const emoji = document.getElementById('newBtnEmoji').value.trim();
+    if (!text || !url) return alert('متن و URL الزامی هستند');
+
+    const id = 'custom_' + customCounter++;
+    const div = document.createElement('div');
+    div.className = 'card card-dark mb-2 menu-item';
+    div.dataset.id = id;
+    div.dataset.type = 'custom';
+    div.innerHTML = `
+        <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+            <span class="drag-handle text-muted" style="cursor:grab;font-size:1.2em;">&#9776;</span>
+            <input type="hidden" name="layout[]" value="${id}">
+            <span class="badge bg-success">سفارشی</span>
+            <input type="text" name="custom_text_${id}" class="form-control form-control-sm" style="width:120px" value="${text}">
+            <input type="text" name="custom_url_${id}" class="form-control form-control-sm flex-grow-1" value="${url}">
+            <input type="hidden" name="custom_style_${id}" value="${style}">
+            <input type="hidden" name="custom_emoji_${id}" value="${emoji}">
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.menu-item').remove()">x</button>
+        </div>`;
+    document.getElementById('buttonList').appendChild(div);
+    document.getElementById('newBtnText').value = '';
+    document.getElementById('newBtnUrl').value = '';
+    document.getElementById('newBtnEmoji').value = '';
+}
+
+function addRowBreak() {
+    const id = 'row_' + customCounter++;
+    const div = document.createElement('div');
+    div.className = 'card card-dark mb-2 menu-item';
+    div.dataset.id = id;
+    div.dataset.type = 'row_break';
+    div.innerHTML = `
+        <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+            <span class="drag-handle text-muted" style="cursor:grab;font-size:1.2em;">&#9776;</span>
+            <input type="hidden" name="layout[]" value="${id}">
+            <span class="badge bg-secondary">ردیف جدید</span>
+            <span class="text-muted flex-grow-1">--- ردیف جدید ---</span>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.menu-item').remove()">x</button>
+        </div>`;
+    document.getElementById('buttonList').appendChild(div);
+}
+</script>
+{% endblock %}

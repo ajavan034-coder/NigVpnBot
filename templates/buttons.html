@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}تنظیمات دکمه‌ها{% endblock %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <h3>تنظیمات دکمه‌ها</h3>
+    <button type="submit" form="buttonsForm" class="btn btn-success">
+        <i class="bi bi-check-lg"></i> ذخیره همه
+    </button>
+</div>
+
+<div class="card card-dark mb-4">
+    <div class="card-header"><i class="bi bi-info-circle"></i> نحوه تنظیم ایموجی پریمیوم</div>
+    <div class="card-body">
+        <p class="mb-1">۱. به <b>تنظیمات ادمین &rarr; ایموجی‌های پریمیوم &rarr; ارسال ایموجی پریمیوم</b> بروید</p>
+        <p class="mb-1">۲. نام ایموجی را تایپ کنید (مثلاً <code>wallet</code>، <code>copy_number</code>) و ایموجی پریمیوم را ارسال کنید</p>
+        <p class="mb-0">۳. شناسه ایموجی را از پاسخ ربات کپی کنید و در فیلد <b>شناسه ایموجی</b> در زیر وارد کنید</p>
+        {% for name, data in registered.items() %}
+        <code class="me-2">{{ name }}: {{ data }}</code>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="mb-3">
+    <input type="text" id="btnSearch" class="form-control" placeholder="جستجوی دکمه‌ها..." oninput="filterButtons()">
+</div>
+
+<form id="buttonsForm" method="POST">
+<div class="row g-4" id="buttonsList">
+    {% for btn_id, btn in buttons.items() %}
+    <div class="col-lg-6 btn-card" data-search="{{ btn.label|lower }} {{ btn_id|lower }}">
+        <div class="card card-dark">
+            <div class="card-header">
+                <i class="bi bi-hand-index-thumb"></i> {{ btn.label }}
+                <small class="text-muted ms-2">({{ btn_id }})</small>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">شناسه ایموجی</label>
+                    <input type="text" name="btn_emoji_{{ btn_id }}" class="form-control"
+                           value="{{ btn.emoji }}"
+                           placeholder="شناسه ایموجی پریمیوم را اینجا وارد کنید">
+                    <div class="form-text">نام ایموجی پیش‌فرض: <code>{{ btn.current_emoji_name }}</code></div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label">استایل دکمه</label>
+                    <select name="btn_style_{{ btn_id }}" class="form-select">
+                        {% for val, label in styles %}
+                        <option value="{{ val }}" {{ 'selected' if btn.style == val }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+</form>
+
+<script>
+function filterButtons() {
+    const q = document.getElementById('btnSearch').value.toLowerCase();
+    document.querySelectorAll('.btn-card').forEach(card => {
+        const search = card.dataset.search || '';
+        card.style.display = search.includes(q) ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}

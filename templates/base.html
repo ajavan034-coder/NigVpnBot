@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}پنل مدیریت{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background: #0a0e17; color: #e2e8f0; direction: rtl; }
+        .sidebar { background: #131926; min-height: 100vh; width: 260px; position: fixed; top: 0; right: 0; left: auto; z-index: 100; border-left: 1px solid #1e293b; padding-top: 20px; transition: transform .3s; }
+        .sidebar .brand { padding: 0 20px 20px; border-bottom: 1px solid #1e293b; margin-bottom: 10px; }
+        .sidebar .brand h5 { color: #e2e8f0; font-weight: 700; margin: 0; }
+        .sidebar .brand small { color: #64748b; }
+        .sidebar a { display: flex; align-items: center; gap: 10px; padding: 10px 20px; color: #94a3b8; text-decoration: none; font-size: 14px; transition: all .2s; border-right: 3px solid transparent; border-left: none; }
+        .sidebar a:hover { color: #e2e8f0; background: #1e293b; }
+        .sidebar a.active { color: #818cf8; background: rgba(99,102,241,.1); border-right-color: #6366f1; }
+        .sidebar a i { width: 20px; text-align: center; font-size: 16px; }
+        .main-content { margin-right: 260px; margin-left: 0; padding: 30px; }
+        .stat-card { background: #131926; border: 1px solid #1e293b; border-radius: 12px; padding: 24px; }
+        .stat-card .stat-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+        .stat-card .stat-value { font-size: 28px; font-weight: 700; color: #e2e8f0; }
+        .stat-card .stat-label { color: #64748b; font-size: 13px; }
+        .card-dark { background: #131926; border: 1px solid #1e293b; border-radius: 12px; }
+        .card-dark .card-header { background: #131926; border-bottom: 1px solid #1e293b; color: #e2e8f0; font-weight: 600; }
+        .table-dark { --bs-table-bg: transparent; --bs-table-border-color: #1e293b; }
+        .table-dark thead th { color: #64748b; font-weight: 600; font-size: 12px; letter-spacing: .5px; border-bottom-color: #1e293b !important; }
+        .badge-active { background: rgba(34,197,94,.15); color: #22c55e; }
+        .badge-expired { background: rgba(239,68,68,.15); color: #ef4444; }
+        .badge-pending { background: rgba(245,158,11,.15); color: #f59e0b; }
+        .btn-indigo { background: #6366f1; border-color: #6366f1; color: #fff; }
+        .btn-indigo:hover { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+        .form-control, .form-select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; }
+        .form-control:focus, .form-select:focus { background: #1e293b; border-color: #6366f1; color: #e2e8f0; box-shadow: 0 0 0 0.2rem rgba(99,102,241,.25); }
+        .page-header { margin-bottom: 30px; }
+        .page-header h3 { font-weight: 700; color: #e2e8f0; }
+        @media (max-width: 768px) { .sidebar { transform: translateX(100%); } .sidebar.show { transform: translateX(0); } .main-content { margin-right: 0; } }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="sidebar" id="sidebar">
+        <div class="brand">
+            <h5><i class="bi bi-robot"></i> مدیریت ربات</h5>
+            <small>پنل مدیریت</small>
+        </div>
+        <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
+            <i class="bi bi-grid-1x2"></i> داشبورد
+        </a>
+        <a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">
+            <i class="bi bi-gear"></i> تنظیمات
+        </a>
+        <a href="{{ url_for('plans') }}" class="{% if request.endpoint in ['plans','plan_add','plan_edit'] %}active{% endif %}">
+            <i class="bi bi-tags"></i> پلن‌ها
+        </a>
+        <a href="{{ url_for('plan_sections') }}" class="{% if request.endpoint in ['plan_sections','plan_section_add','plan_section_edit'] %}active{% endif %}">
+            <i class="bi bi-collection"></i> بخش‌های پلن
+        </a>
+        <a href="{{ url_for('users') }}" class="{% if request.endpoint in ['users','user_detail'] %}active{% endif %}">
+            <i class="bi bi-people"></i> کاربران
+        </a>
+        <a href="{{ url_for('receipts') }}" class="{% if request.endpoint == 'receipts' %}active{% endif %}">
+            <i class="bi bi-receipt"></i> رسیدها
+        </a>
+        <a href="{{ url_for('configs') }}" class="{% if request.endpoint == 'configs' %}active{% endif %}">
+            <i class="bi bi-key"></i> کانفیگ‌ها
+        </a>
+        <a href="{{ url_for('admins') }}" class="{% if request.endpoint == 'admins' %}active{% endif %}">
+            <i class="bi bi-shield-check"></i> ادمین‌ها
+        </a>
+        <a href="{{ url_for('broadcast') }}" class="{% if request.endpoint == 'broadcast' %}active{% endif %}">
+            <i class="bi bi-megaphone"></i> ارسال همگانی
+        </a>
+        <a href="{{ url_for('bot_texts') }}" class="{% if request.endpoint == 'bot_texts' %}active{% endif %}">
+            <i class="bi bi-chat-text"></i> متن‌های ربات
+        </a>
+        <a href="{{ url_for('buttons') }}" class="{% if request.endpoint == 'buttons' %}active{% endif %}">
+            <i class="bi bi-hand-index-thumb"></i> دکمه‌ها
+        </a>
+        <a href="{{ url_for('menu_layout') }}" class="{% if request.endpoint == 'menu_layout' %}active{% endif %}">
+            <i class="bi bi-menu-button-wide"></i> لایوت منو
+        </a>
+        <div style="position:absolute;bottom:20px;left:20px;right:20px;">
+            <a href="{{ url_for('logout') }}" style="border-right:none;border-left:none;color:#ef4444;">
+                <i class="bi bi-box-arrow-left"></i> خروج
+            </a>
+        </div>
+    </nav>
+
+    <div class="main-content">
+        <button class="btn btn-sm btn-outline-secondary d-md-none mb-3" onclick="document.getElementById('sidebar').classList.toggle('show')">
+            <i class="bi bi-list"></i> منو
+        </button>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for cat, msg in messages %}
+        <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">
+            {{ msg }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

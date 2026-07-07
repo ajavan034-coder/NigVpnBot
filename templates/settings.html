@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+{% block title %}تنظیمات{% endblock %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <h3>تنظیمات ربات</h3>
+    <button type="submit" form="settingsForm" class="btn btn-success">
+        <i class="bi bi-check-lg"></i> ذخیره همه تغییرات
+    </button>
+</div>
+
+<form id="settingsForm" method="POST">
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-chat-dots"></i> عمومی</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">توکن ربات</label>
+                    <input type="password" name="bot_token" class="form-control" value="{{ settings.get('bot_token', '') }}" placeholder="توکن ربات را وارد کنید">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">متن خوش‌آمدگویی</label>
+                    <textarea name="welcome_text" class="form-control" rows="3">{{ settings.get('welcome_text', '') }}</textarea>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">نماد ارز</label>
+                        <input type="text" name="currency_symbol" class="form-control" value="{{ settings.get('currency_symbol', 'تومان') }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">کد ارز</label>
+                        <input type="text" name="currency" class="form-control" value="{{ settings.get('currency', 'IRR') }}">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">حداقل مبلغ شارژ</label>
+                    <input type="number" name="min_topup" class="form-control" value="{{ settings.get('min_topup', '50000') }}">
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-credit-card"></i> پرداخت</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">شماره کارت</label>
+                    <input type="text" name="card_number" class="form-control" value="{{ settings.get('card_number', '') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">نام صاحب کارت</label>
+                    <input type="text" name="card_owner" class="form-control" value="{{ settings.get('card_owner', '') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">عنوان کارت به کارت</label>
+                    <input type="text" name="c2c_title" class="form-control" value="{{ settings.get('c2c_title', '') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">راهنمای کارت به کارت</label>
+                    <textarea name="c2c_instruction" class="form-control" rows="2">{{ settings.get('c2c_instruction', '') }}</textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-cloud-download"></i> تست رایگان</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">حجم تست رایگان (MB)</label>
+                        <input type="number" name="free_test_mb" class="form-control" value="{{ settings.get('free_test_mb', '102400') }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">فعال‌سازی تست رایگان</label>
+                        <select name="free_test_enabled" class="form-select">
+                            <option value="1" {{ 'selected' if settings.get('free_test_enabled') == '1' }}>فعال</option>
+                            <option value="0" {{ 'selected' if settings.get('free_test_enabled') == '0' }}>غیرفعال</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-check-circle"></i> تایید خودکار</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">حداکثر مبلغ تایید خودکار (0 = غیرفعال)</label>
+                    <input type="number" name="auto_approve_max" class="form-control" value="{{ settings.get('auto_approve_max', '0') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">اعلان انقضای سرویس</label>
+                    <select name="expiry_reminder_enabled" class="form-select">
+                        <option value="1" {{ 'selected' if settings.get('expiry_reminder_enabled', '1') == '1' }}>فعال</option>
+                        <option value="0" {{ 'selected' if settings.get('expiry_reminder_enabled', '1') == '0' }}>غیرفعال</option>
+                    </select>
+                    <div class="form-text">ارسال یادآوری به کاربران قبل از انقضای سرویس</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-plus-circle"></i> حجم اضافی</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">قیمت هر گیگابایت حجم اضافی</label>
+                    <input type="number" name="extra_volume_price_per_gb" class="form-control" value="{{ settings.get('extra_volume_price_per_gb', '6000') }}">
+                    <div class="form-text">قیمت به تومان برای هر گیگابایت</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-bell"></i> اعلان‌ها</div>
+            <div class="card-body">
+                <div class="mb-0">
+                    <label class="form-label">شناسه کانال اعلان</label>
+                    <input type="text" name="notification_channel_id" class="form-control" placeholder="@mychannel یا -1001234567890" value="{{ settings.get('notification_channel_id', '') }}">
+                    <div class="form-text">کانال خصوصی برای اعلان کاربران جدید و رسیدها. خالی بگذارید تا غیرفعال شود.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-link-45deg"></i> لینک کانال و پشتیبانی</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">لینک کانال</label>
+                    <input type="text" name="channel_url" class="form-control" placeholder="https://t.me/yourchannel" value="{{ settings.get('channel_url', '') }}">
+                    <div class="form-text">خالی بگذارید تا دکمه کانال مخفی شود</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">متن دکمه کانال</label>
+                    <input type="text" name="btn_channel" class="form-control" value="{{ settings.get('btn_channel', 'Channel') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">لینک پشتیبانی</label>
+                    <input type="text" name="support_url" class="form-control" placeholder="https://t.me/support_user" value="{{ settings.get('support_url', '') }}">
+                    <div class="form-text">خالی بگذارید تا دکمه پشتیبانی مخفی شود</div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label">متن دکمه پشتیبانی</label>
+                    <input type="text" name="btn_support" class="form-control" value="{{ settings.get('btn_support', 'Support') }}">
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-broadcast"></i> عضویت اجباری در کانال</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">فعال‌سازی عضویت اجباری</label>
+                        <select name="force_join_enabled" class="form-select">
+                            <option value="1" {{ 'selected' if settings.get('force_join_enabled') == '1' }}>فعال</option>
+                            <option value="0" {{ 'selected' if settings.get('force_join_enabled') == '0' }}>غیرفعال</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">شناسه یا نام کاربری کانال</label>
+                        <input type="text" name="required_channel_id" class="form-control" placeholder="@mychannel یا -1001234567890" value="{{ settings.get('required_channel_id', '') }}">
+                        <div class="form-text">نام کانال (مثلاً mychannel) یا شناسه عددی</div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">متن عضویت اجباری</label>
+                    <textarea name="force_join_text" class="form-control" rows="2">{{ settings.get('force_join_text', '⚠️ برای استفاده از ربات، ابتدا باید در کانال ما عضو شوید!') }}</textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">متن عدم عضویت</label>
+                    <textarea name="force_join_fail_text" class="form-control" rows="2">{{ settings.get('force_join_fail_text', '❌ شما هنوز در کانال عضو نیستید! لطفاً ابتدا عضو شوید و سپس دوباره بررسی کنید.') }}</textarea>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">متن دکمه عضویت</label>
+                        <input type="text" name="force_join_btn_join" class="form-control" value="{{ settings.get('force_join_btn_join', '🔗 عضویت در کانال') }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">استایل دکمه عضویت</label>
+                        <select name="btn_style_force_join_join" class="form-select">
+                            <option value="" {{ 'selected' if not settings.get('btn_style_force_join_join') }}>پیش‌فرض</option>
+                            <option value="primary" {{ 'selected' if settings.get('btn_style_force_join_join') == 'primary' }}>آبی</option>
+                            <option value="success" {{ 'selected' if settings.get('btn_style_force_join_join') == 'success' }}>سبز</option>
+                            <option value="danger" {{ 'selected' if settings.get('btn_style_force_join_join') == 'danger' }}>قرمز</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">متن دکمه بررسی</label>
+                        <input type="text" name="force_join_btn_check" class="form-control" value="{{ settings.get('force_join_btn_check', '✅ بررسی عضویت') }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">استایل دکمه بررسی</label>
+                        <select name="btn_style_force_join_check" class="form-select">
+                            <option value="" {{ 'selected' if not settings.get('btn_style_force_join_check') }}>پیش‌فرض</option>
+                            <option value="primary" {{ 'selected' if settings.get('btn_style_force_join_check') == 'primary' }}>آبی</option>
+                            <option value="success" {{ 'selected' if settings.get('btn_style_force_join_check') == 'success' }}>سبز</option>
+                            <option value="danger" {{ 'selected' if settings.get('btn_style_force_join_check') == 'danger' }}>قرمز</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-hdd-network"></i> پنل 3x-ui</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">آدرس پنل</label>
+                    <input type="text" name="panel_url" class="form-control" placeholder="https://your-panel.com" value="{{ settings.get('panel_url', '') }}">
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">نام کاربری پنل</label>
+                        <input type="text" name="panel_user" class="form-control" value="{{ settings.get('panel_user', '') }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">رمز عبور پنل</label>
+                        <input type="password" name="panel_pass" class="form-control" value="{{ settings.get('panel_pass', '') }}">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">قالب لینک اشتراک</label>
+                    <input type="text" name="sub_link_template" class="form-control" placeholder="https://domain:2096/sub/{sub_id}" value="{{ settings.get('sub_link_template', '') }}">
+                    <div class="form-text">خالی بگذارید تا خودکار تشخیص داده شود. از {sub_id} یا {id} استفاده کنید.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">شناسه اینباندها</label>
+                    <input type="text" name="inbound_id" class="form-control" placeholder="مثلاً 1,2,3" value="{{ settings.get('inbound_id', '') }}">
+                    <div class="form-text">با کاما جدا کنید. ربات هر کدام را امتحان می‌کند.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">تست اتصال</label>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-primary" onclick="testConnection()">
+                            <i class="bi bi-lightning"></i> تست اتصال
+                        </button>
+                        <span id="testResult" class="align-self-center"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-hand-index-thumb"></i> دکمه‌های منوی کاربر</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">دکمه کیف پول</label>
+                    <input type="text" name="btn_wallet" class="form-control" value="{{ settings.get('btn_wallet', 'Wallet') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه تست رایگان</label>
+                    <input type="text" name="btn_free_test" class="form-control" value="{{ settings.get('btn_free_test', 'Free Test') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه خرید کانفیگ</label>
+                    <input type="text" name="btn_buy_config" class="form-control" value="{{ settings.get('btn_buy_config', 'Buy Config') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه سرویس‌های من</label>
+                    <input type="text" name="btn_my_configs" class="form-control" value="{{ settings.get('btn_my_configs', 'سرویس‌های من') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه شارژ کیف پول</label>
+                    <input type="text" name="btn_topup" class="form-control" value="{{ settings.get('btn_topup', 'Top Up') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه تاریخچه تراکنش</label>
+                    <input type="text" name="btn_tx_history" class="form-control" value="{{ settings.get('btn_tx_history', 'History') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه بازگشت</label>
+                    <input type="text" name="btn_back" class="form-control" value="{{ settings.get('btn_back', 'Back') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه بازگشت به منو</label>
+                    <input type="text" name="btn_back_to_menu" class="form-control" value="{{ settings.get('btn_back_to_menu', 'Menu') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه پرداخت با کیف پول</label>
+                    <input type="text" name="btn_wallet_payment" class="form-control" value="{{ settings.get('btn_wallet_payment', 'Pay with Wallet') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه کارت به کارت</label>
+                    <input type="text" name="btn_c2c_payment" class="form-control" value="{{ settings.get('btn_c2c_payment', 'Card to Card') }}">
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-shield-lock"></i> دکمه‌های منوی ادمین</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">دکمه آمار</label>
+                    <input type="text" name="btn_admin_stats" class="form-control" value="{{ settings.get('btn_admin_stats', 'Statistics') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه رسیدها</label>
+                    <input type="text" name="btn_admin_receipts" class="form-control" value="{{ settings.get('btn_admin_receipts', 'Receipts') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه کاربران</label>
+                    <input type="text" name="btn_admin_users" class="form-control" value="{{ settings.get('btn_admin_users', 'Users') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه تنظیمات</label>
+                    <input type="text" name="btn_admin_settings" class="form-control" value="{{ settings.get('btn_admin_settings', 'Settings') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه ادمین‌ها</label>
+                    <input type="text" name="btn_admin_admins" class="form-control" value="{{ settings.get('btn_admin_admins', 'Admins') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه پلن‌ها</label>
+                    <input type="text" name="btn_admin_plans" class="form-control" value="{{ settings.get('btn_admin_plans', 'Plans') }}">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</form>
+<script>
+function testConnection() {
+    const result = document.getElementById('testResult');
+    result.innerHTML = '<span class="text-warning">در حال تست...</span>';
+    fetch('/api/test-connection')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                result.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> ' + data.message + '</span>';
+            } else {
+                result.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle"></i> ' + data.message + '</span>';
+            }
+        })
+        .catch(() => {
+            result.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle"></i> اتصال ناموفق</span>';
+        });
+}
+</script>
+{% endblock %}

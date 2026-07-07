@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}داشبورد{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h3>داشبورد</h3>
+</div>
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3">
+                <div class="stat-icon bg-primary bg-opacity-10 text-primary"><i class="bi bi-people"></i></div>
+                <div>
+                    <div class="stat-value">{{ user_count }}</div>
+                    <div class="stat-label">کل کاربران</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3">
+                <div class="stat-icon bg-success bg-opacity-10 text-success"><i class="bi bi-key"></i></div>
+                <div>
+                    <div class="stat-value">{{ config_count }}</div>
+                    <div class="stat-label">کانفیگ‌های فعال</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3">
+                <div class="stat-icon bg-warning bg-opacity-10 text-warning"><i class="bi bi-currency-dollar"></i></div>
+                <div>
+                    <div class="stat-value">{{ "{:,.0f}".format(revenue) }}</div>
+                    <div class="stat-label">درآمد ({{ symbol }})</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3">
+                <div class="stat-icon bg-danger bg-opacity-10 text-danger"><i class="bi bi-hourglass-split"></i></div>
+                <div>
+                    <div class="stat-value">{{ pending }}</div>
+                    <div class="stat-label">رسیدهای در انتظار</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-lightning"></i> دسترسی سریع</div>
+            <div class="card-body">
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ url_for('receipts') }}" class="btn btn-outline-warning btn-sm">
+                        <i class="bi bi-receipt"></i> بررسی رسیدها
+                    </a>
+                    <a href="{{ url_for('users') }}" class="btn btn-outline-info btn-sm">
+                        <i class="bi bi-people"></i> مدیریت کاربران
+                    </a>
+                    <a href="{{ url_for('settings') }}" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-gear"></i> تنظیمات ربات
+                    </a>
+                    <a href="{{ url_for('plans') }}" class="btn btn-outline-success btn-sm">
+                        <i class="bi bi-tags"></i> مدیریت پلن‌ها
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-info-circle"></i> وضعیت ربات</div>
+            <div class="card-body">
+                <p class="mb-2"><strong>دیتابیس:</strong> <span class="text-success">متصل</span></p>
+                <p class="mb-2"><strong>توکن ربات:</strong> <span class="text-success">تنظیم شده</span></p>
+                <p class="mb-0"><strong>پنل API:</strong> <span class="text-info">3x-ui</span></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

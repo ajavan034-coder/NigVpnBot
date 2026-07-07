@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}کاربر #{{ user.id }}{% endblock %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <h3>کاربر #{{ user.id }}</h3>
+    <a href="{{ url_for('users') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به لیست کاربران
+    </a>
+</div>
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-person"></i> اطلاعات کاربر</div>
+            <div class="card-body">
+                <table class="table table-dark mb-0">
+                    <tr><td class="text-muted">شناسه</td><td><code>{{ user.id }}</code></td></tr>
+                    <tr><td class="text-muted">نام کاربری</td><td>{{ '@' + user.username if user.username else '-' }}</td></tr>
+                    <tr><td class="text-muted">نام</td><td>{{ user.first_name or '-' }}</td></tr>
+                    <tr><td class="text-muted">موجودی</td><td><strong>{{ "{:,.0f}".format(user.balance) }} {{ symbol }}</strong></td></tr>
+                    <tr><td class="text-muted">تاریخ عضویت</td><td>{{ user.created_at }}</td></tr>
+                    <tr>
+                        <td class="text-muted">وضعیت</td>
+                        <td>
+                            {% if user.is_banned %}
+                            <span class="badge badge-expired">مسدود</span>
+                            {% else %}
+                            <span class="badge badge-active">فعال</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-wallet2"></i> تنظیم موجودی</div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('user_balance', user_id=user.id) }}" class="d-flex gap-2">
+                    <input type="number" name="amount" class="form-control" placeholder="مبلغ" min="1" required>
+                    <button type="submit" name="action" value="add" class="btn btn-outline-success btn-sm">
+                        <i class="bi bi-plus-lg"></i> افزودن
+                    </button>
+                    <button type="submit" name="action" value="remove" class="btn btn-outline-danger btn-sm">
+                        <i class="bi bi-dash-lg"></i> کسر
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-shield"></i> وضعیت مسدودی</div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('user_ban', user_id=user.id) }}">
+                    {% if user.is_banned %}
+                    <button type="submit" class="btn btn-outline-success">
+                        <i class="bi bi-unlock"></i> رفع مسدودی
+                    </button>
+                    {% else %}
+                    <button type="submit" class="btn btn-outline-danger" onclick="return confirm('آیا این کاربر را مسدود می‌کنید؟')">
+                        <i class="bi bi-lock"></i> مسدود کردن
+                    </button>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card card-dark">
+            <div class="card-header"><i class="bi bi-key"></i> کانفیگ‌ها ({{ configs|length }})</div>
+            <div class="card-body">
+                {% if configs %}
+                <div class="table-responsive">
+                    <table class="table table-dark mb-0">
+                        <thead>
+                            <tr><th>#</th><th>ایمیل</th><th>تاریخ انقضا</th><th>وضعیت</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for c in configs %}
+                            <tr>
+                                <td>{{ c.id }}</td>
+                                <td><code>{{ c.email }}</code></td>
+                                <td>{{ c.expire_date[:10] if c.expire_date else '-' }}</td>
+                                <td>
+                                    {% if c.is_active %}
+                                    <span class="badge badge-active">فعال</span>
+                                    {% else %}
+                                    <span class="badge badge-expired">منقضی شده</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">کانفیگی یافت نشد.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

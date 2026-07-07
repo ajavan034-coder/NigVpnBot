@@ -1,0 +1,572 @@
+import os
+import secrets
+import asyncio
+from functools import wraps
+from flask import (
+    Flask, render_template, request, redirect, url_for, session, flash, jsonify,
+)
+from dotenv import load_dotenv
+import web_db
+
+load_dotenv()
+
+app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", secrets.token_hex(32))
+
+ADMIN_USER = os.getenv("ADMIN_WEB_USER", "admin")
+ADMIN_PASS = os.getenv("ADMIN_WEB_PASS", "changeme")
+
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if username == ADMIN_USER and password == ADMIN_PASS:
+            session["logged_in"] = True
+            return redirect(url_for("dashboard"))
+        flash("Invalid credentials", "danger")
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/")
+@login_required
+def dashboard():
+    return render_template(
+        "dashboard.html",
+        user_count=web_db.get_user_count(),
+        config_count=web_db.get_config_count(),
+        revenue=web_db.get_total_revenue(),
+        pending=web_db.get_pending_receipt_count(),
+        symbol=web_db.get_setting("currency_symbol") or "تومان",
+    )
+
+
+@app.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings():
+    if request.method == "POST":
+        for key in request.form:
+            if key.startswith("_"):
+                continue
+            web_db.set_setting(key, request.form[key])
+        import config
+        if "bot_token" in request.form and request.form["bot_token"].strip():
+            new_token = request.form["bot_token"].strip()
+            config.BOT_TOKEN = new_token
+            env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+            lines = []
+            found = False
+            with open(env_path, "r") as f:
+                for line in f:
+                    if line.strip().startswith("BOT_TOKEN="):
+                        lines.append(f"BOT_TOKEN={new_token}\n")
+                        found = True
+                    else:
+                        lines.append(line)
+            if not found:
+                lines.insert(0, f"BOT_TOKEN={new_token}\n")
+            with open(env_path, "w") as f:
+                f.writelines(lines)
+        from api import panel_api
+        panel_api.reload_config()
+        flash("Settings saved successfully!", "success")
+        if "bot_token" in request.form and request.form["bot_token"].strip():
+            new_token = request.form["bot_token"].strip()
+            import config
+            if new_token != config.BOT_TOKEN:
+                restart_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "restart.sh")
+                bot_dir = os.path.dirname(os.path.abspath(__file__))
+                with open(restart_script, "w") as f:
+                    f.write(f"#!/bin/bash\nsleep 2\nkill -9 $(lsof -ti:5000) 2>/dev/null\nkill -9 $(pgrep -f run.py) 2>/dev/null\nsleep 2\ncd {bot_dir} && nohup {bot_dir}/venv/bin/python run.py > bot.log 2>&1 &\n")
+                os.chmod(restart_script, 0o755)
+                os.system("nohup bash " + restart_script + " > /dev/null 2>&1 &")
+                flash("Bot token changed! Bot will restart to apply.", "success")
+        return redirect(url_for("settings"))
+    all_settings = web_db.get_all_settings()
+    return render_template("settings.html", settings=all_settings)
+
+
+@app.route("/api/test-connection")
+@login_required
+def api_test_connection():
+    from api import panel_api
+    panel_api.reload_config()
+    if not panel_api.panel_url or not panel_api.panel_user:
+        return jsonify({"success": False, "message": "Panel URL or credentials not set"})
+    try:
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(panel_api.login())
+        loop.close()
+        if result:
+            return jsonify({"success": True, "message": "Connection successful!"})
+        else:
+            return jsonify({"success": False, "message": "Login failed - check credentials"})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Error: {str(e)}"})
+
+
+@app.route("/plans")
+@login_required
+def plans():
+    return render_template(
+        "plans.html",
+        plans=web_db.get_all_plans(),
+        symbol=web_db.get_setting("currency_symbol") or "تومان",
+        plans_header=web_db.get_setting("plans_header_text") or "",
+    )
+
+
+@app.route("/plans/save-header", methods=["POST"])
+@login_required
+def plans_save_header():
+    web_db.set_setting("plans_header_text", request.form.get("plans_header_text", ""))
+    flash("Plans header text saved!", "success")
+    return redirect(url_for("plans"))
+
+
+@app.route("/plans/add", methods=["GET", "POST"])
+@login_required
+def plan_add():
+    if request.method == "POST":
+        name = request.form["name"]
+        gb = int(request.form["gb"])
+        days = int(request.form["days"])
+        price = int(request.form["price"])
+        inbound_ids = request.form.get("inbound_ids", "").strip()
+        is_ultimate = "is_ultimate" in request.form
+        section_id = request.form.get("section_id") or None
+        if section_id:
+            section_id = int(section_id)
+        web_db.add_plan(name, gb, days, price, inbound_ids, is_ultimate)
+        flash(f"Plan '{name}' added!", "success")
+        return redirect(url_for("plans"))
+    return render_template("plan_form.html", plan=None, sections=web_db.get_plan_sections())
+
+
+@app.route("/plans/<int:plan_id>/edit", methods=["GET", "POST"])
+@login_required
+def plan_edit(plan_id):
+    plan = web_db.get_plan(plan_id)
+    if not plan:
+        flash("Plan not found", "danger")
+        return redirect(url_for("plans"))
+    if request.method == "POST":
+        section_id = request.form.get("section_id") or None
+        if section_id:
+            section_id = int(section_id)
+        web_db.update_plan(
+            plan_id,
+            name=request.form["name"],
+            gb=int(request.form["gb"]),
+            days=int(request.form["days"]),
+            price=int(request.form["price"]),
+            is_active="is_active" in request.form,
+            inbound_ids=request.form.get("inbound_ids", "").strip(),
+            is_ultimate="is_ultimate" in request.form,
+            section_id=section_id,
+        )
+        flash(f"Plan '{request.form['name']}' updated!", "success")
+        return redirect(url_for("plans"))
+    return render_template("plan_form.html", plan=plan, sections=web_db.get_plan_sections())
+
+
+@app.route("/plans/<int:plan_id>/delete", methods=["POST"])
+@login_required
+def plan_delete(plan_id):
+    web_db.delete_plan(plan_id)
+    flash("Plan deleted", "success")
+    return redirect(url_for("plans"))
+
+
+@app.route("/plan-sections")
+@login_required
+def plan_sections():
+    return render_template("plan_sections.html", sections=web_db.get_plan_sections())
+
+
+@app.route("/plan-sections/add", methods=["POST"])
+@login_required
+def plan_section_add():
+    name = request.form["name"]
+    display_order = int(request.form.get("display_order", 0))
+    web_db.add_plan_section(name, display_order)
+    flash(f"Section '{name}' added!", "success")
+    return redirect(url_for("plan_sections"))
+
+
+@app.route("/plan-sections/<int:section_id>/edit", methods=["POST"])
+@login_required
+def plan_section_edit(section_id):
+    name = request.form["name"]
+    display_order = int(request.form.get("display_order", 0))
+    web_db.update_plan_section(section_id, name=name, display_order=display_order)
+    flash("Section updated!", "success")
+    return redirect(url_for("plan_sections"))
+
+
+@app.route("/plan-sections/<int:section_id>/delete", methods=["POST"])
+@login_required
+def plan_section_delete(section_id):
+    web_db.delete_plan_section(section_id)
+    flash("Section deleted", "success")
+    return redirect(url_for("plan_sections"))
+
+
+@app.route("/users")
+@login_required
+def users():
+    search = request.args.get("q", "").strip() or None
+    return render_template("users.html", users=web_db.get_all_users(search), search=search)
+
+
+@app.route("/users/<int:user_id>")
+@login_required
+def user_detail(user_id):
+    user = web_db.get_user(user_id)
+    if not user:
+        flash("User not found", "danger")
+        return redirect(url_for("users"))
+    configs = web_db.get_user_configs(user_id)
+    symbol = web_db.get_setting("currency_symbol") or "تومان"
+    return render_template("user_detail.html", user=user, configs=configs, symbol=symbol)
+
+
+@app.route("/users/<int:user_id>/balance", methods=["POST"])
+@login_required
+def user_balance(user_id):
+    action = request.form["action"]
+    try:
+        amount = float(request.form["amount"])
+    except (ValueError, KeyError):
+        flash("Invalid amount", "danger")
+        return redirect(url_for("user_detail", user_id=user_id))
+    if action == "add":
+        web_db.update_balance(user_id, amount)
+        flash(f"Added {amount:,.0f}", "success")
+    elif action == "remove":
+        user = web_db.get_user(user_id)
+        if user and user["balance"] >= amount:
+            web_db.update_balance(user_id, -amount)
+            flash(f"Removed {amount:,.0f}", "success")
+        else:
+            flash("Insufficient balance", "danger")
+    return redirect(url_for("user_detail", user_id=user_id))
+
+
+@app.route("/users/<int:user_id>/ban", methods=["POST"])
+@login_required
+def user_ban(user_id):
+    user = web_db.get_user(user_id)
+    if user:
+        new_status = not bool(user["is_banned"])
+        web_db.set_banned(user_id, new_status)
+        flash("User unbanned" if not new_status else "User banned", "success")
+    return redirect(url_for("user_detail", user_id=user_id))
+
+
+@app.route("/receipts")
+@login_required
+def receipts():
+    status_filter = request.args.get("status", "pending")
+    if status_filter == "all":
+        receipts_list = web_db.get_receipts(limit=100)
+    else:
+        receipts_list = web_db.get_receipts(status=status_filter, limit=100)
+    symbol = web_db.get_setting("currency_symbol") or "تومان"
+    return render_template("receipts.html", receipts=receipts_list, status=status_filter, symbol=symbol)
+
+
+@app.route("/receipts/<int:receipt_id>/approve", methods=["POST"])
+@login_required
+def receipt_approve(receipt_id):
+    web_db.approve_receipt(receipt_id)
+    receipt = web_db.get_receipt(receipt_id)
+    if receipt and receipt.get("plan_id") and receipt["plan_id"] > 0:
+        import state
+        if state.bot_instance and state.loop_instance:
+            import asyncio
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="ساخت کانفیگ من", callback_data=f"make_config_{receipt['plan_id']}")],
+            ])
+            symbol = web_db.get_setting("currency_symbol") or "تومان"
+            asyncio.run_coroutine_threadsafe(
+                state.bot_instance.send_message(
+                    chat_id=receipt["user_id"],
+                    text=f"Transfer successful! ({receipt['amount']:,.0f} {symbol})\n\nClick below to get your config:",
+                    reply_markup=kb,
+                ),
+                state.loop_instance,
+            )
+    flash(f"Receipt #{receipt_id} approved!", "success")
+    return redirect(url_for("receipts"))
+
+
+@app.route("/receipts/<int:receipt_id>/reject", methods=["POST"])
+@login_required
+def receipt_reject(receipt_id):
+    receipt = web_db.get_receipt(receipt_id)
+    web_db.reject_receipt(receipt_id)
+    if receipt:
+        import state
+        if state.bot_instance and state.loop_instance:
+            import asyncio
+            symbol = web_db.get_setting("currency_symbol") or "تومان"
+            asyncio.run_coroutine_threadsafe(
+                state.bot_instance.send_message(
+                    chat_id=receipt["user_id"],
+                    text=f"Your receipt (#{receipt_id}) for {receipt['amount']:,.0f} {symbol} was rejected. Please contact admin.",
+                ),
+                state.loop_instance,
+            )
+    flash(f"Receipt #{receipt_id} rejected", "warning")
+    return redirect(url_for("receipts"))
+
+
+@app.route("/configs")
+@login_required
+def configs():
+    configs_list = web_db.get_all_configs()
+    symbol = web_db.get_setting("currency_symbol") or "تومان"
+    return render_template("configs.html", configs=configs_list, symbol=symbol)
+
+
+@app.route("/configs/<int:config_id>/delete", methods=["POST"])
+@login_required
+def config_delete(config_id):
+    web_db.delete_config(config_id)
+    flash("Config deleted", "success")
+    return redirect(url_for("configs"))
+
+
+@app.route("/configs/<int:config_id>/deactivate", methods=["POST"])
+@login_required
+def config_deactivate(config_id):
+    web_db.deactivate_config(config_id)
+    flash("Config deactivated", "warning")
+    return redirect(url_for("configs"))
+
+
+@app.route("/admins")
+@login_required
+def admins():
+    return render_template("admins.html", admins=web_db.get_admins())
+
+
+@app.route("/admins/add", methods=["POST"])
+@login_required
+def admin_add():
+    try:
+        user_id = int(request.form["user_id"])
+    except (ValueError, KeyError):
+        flash("Invalid user ID", "danger")
+        return redirect(url_for("admins"))
+    username = request.form.get("username") or None
+    web_db.add_admin(user_id, username)
+    flash(f"Admin {user_id} added!", "success")
+    return redirect(url_for("admins"))
+
+
+@app.route("/admins/<int:user_id>/remove", methods=["POST"])
+@login_required
+def admin_remove(user_id):
+    web_db.remove_admin(user_id)
+    flash(f"Admin {user_id} removed", "success")
+    return redirect(url_for("admins"))
+
+
+@app.route("/broadcast", methods=["GET", "POST"])
+@login_required
+def broadcast():
+    if request.method == "POST":
+        text = request.form.get("message", "").strip()
+        if not text:
+            flash("Message cannot be empty", "danger")
+            return redirect(url_for("broadcast"))
+        import sqlite3
+        from config import DB_PATH
+        conn = sqlite3.connect(DB_PATH)
+        users = conn.execute("SELECT id FROM users").fetchall()
+        conn.close()
+        count = len(users)
+        flash(f"Broadcast prepared for {count} users. Use the Telegram bot /admin > Broadcast to send.", "info")
+        return redirect(url_for("broadcast"))
+    return render_template("broadcast.html")
+
+
+@app.route("/bot-texts", methods=["GET", "POST"])
+@login_required
+def bot_texts():
+    if request.method == "POST":
+        for key in request.form:
+            if key.startswith("_"):
+                continue
+            web_db.set_setting(key, request.form[key])
+        flash("Bot texts saved successfully!", "success")
+        return redirect(url_for("bot_texts"))
+    from utils.texts import BOT_TEXTS
+    all_settings = web_db.get_all_settings()
+    texts = {}
+    for key, (label, hint, variables) in BOT_TEXTS.items():
+        texts[key] = {
+            "label": label,
+            "hint": hint,
+            "variables": variables,
+            "value": all_settings.get(key, ""),
+        }
+    return render_template("bot_texts.html", texts=texts)
+
+
+@app.route("/buttons", methods=["GET", "POST"])
+@login_required
+def buttons():
+    if request.method == "POST":
+        for key in request.form:
+            if key.startswith("_"):
+                continue
+            web_db.set_setting(key, request.form[key])
+        flash("Button settings saved!", "success")
+        return redirect(url_for("buttons"))
+    from keyboards.user import BUTTON_CONFIGS
+    all_settings = web_db.get_all_settings()
+    emoji_names = [
+        "wallet", "free_test", "buy_config", "my_configs", "back", "admin",
+        "stats", "users", "settings", "plans", "receipts", "admins", "check", "cross",
+        "card", "owner", "star", "copy", "cancel", "success", "approve", "reject",
+        "ban", "unban", "plus", "minus", "list", "gear", "money", "calendar", "history",
+        "menu", "package", "link", "clock", "start", "copy_number", "copy_price",
+    ]
+    registered = {}
+    try:
+        import json
+        raw = all_settings.get("premium_emojis", "")
+        if raw:
+            registered = json.loads(raw)
+    except Exception:
+        pass
+    styles = [
+        ("", "Default"),
+        ("primary", "Primary (Indigo)"),
+        ("success", "Success (Green)"),
+        ("danger", "Danger (Red)"),
+    ]
+    buttons_data = {}
+    for btn_id, cfg in BUTTON_CONFIGS.items():
+        buttons_data[btn_id] = {
+            "label": cfg["label"],
+            "emoji": all_settings.get(f"btn_emoji_{btn_id}", ""),
+            "style": all_settings.get(f"btn_style_{btn_id}", cfg["default_style"]),
+            "current_emoji_name": cfg["default_emoji"],
+        }
+    return render_template("buttons.html", buttons=buttons_data, emoji_names=emoji_names, registered=registered, styles=styles)
+
+
+@app.route("/menu-layout", methods=["GET", "POST"])
+@login_required
+def menu_layout():
+    import json
+    from keyboards.user import BUTTON_CONFIGS
+
+    BUILTIN_LABELS = {
+        "wallet": "Wallet", "free_test": "Free Test", "buy_config": "Buy Config",
+        "my_configs": "My Configs", "channel": "Channel", "support": "Support",
+        "admin": "Admin Panel",
+    }
+
+    if request.method == "POST":
+        layout_raw = request.form.getlist("layout[]")
+        enabled = {}
+        for key in request.form:
+            if key.startswith("enabled_"):
+                enabled[key.replace("enabled_", "")] = request.form[key] == "1"
+
+        layout = []
+        for item_id in layout_raw:
+            if item_id.startswith("row_"):
+                layout.append({"type": "row_break"})
+            elif item_id.startswith("custom_"):
+                text = request.form.get(f"custom_text_{item_id}", "")
+                url = request.form.get(f"custom_url_{item_id}", "")
+                style = request.form.get(f"custom_style_{item_id}", "")
+                emoji_id = request.form.get(f"custom_emoji_{item_id}", "")
+                if text and url:
+                    layout.append({
+                        "type": "custom",
+                        "text": text,
+                        "url": url,
+                        "style": style,
+                        "emoji_id": emoji_id,
+                    })
+            else:
+                layout.append({
+                    "type": "builtin",
+                    "id": item_id,
+                    "enabled": enabled.get(item_id, True),
+                })
+
+        web_db.set_setting("menu_layout", json.dumps(layout))
+        flash("Menu layout saved!", "success")
+        return redirect(url_for("menu_layout"))
+
+    raw = web_db.get_setting("menu_layout") or "[]"
+    try:
+        layout = json.loads(raw)
+    except Exception:
+        layout = []
+
+    buttons = []
+    existing_ids = set()
+    for item in layout:
+        if item.get("type") == "row_break":
+            buttons.append({"id": "row_break_" + str(len(buttons)), "type": "row_break"})
+        elif item.get("type") == "custom":
+            buttons.append({
+                "id": f"custom_{len(buttons)}",
+                "type": "custom",
+                "text": item.get("text", ""),
+                "url": item.get("url", ""),
+                "style": item.get("style", ""),
+                "emoji_id": item.get("emoji_id", ""),
+            })
+        elif item.get("type") == "builtin":
+            bid = item.get("id", "")
+            existing_ids.add(bid)
+            buttons.append({
+                "id": bid,
+                "type": "builtin",
+                "label": BUILTIN_LABELS.get(bid, bid),
+                "enabled": item.get("enabled", True),
+            })
+
+    default_order = ["wallet", "free_test", "buy_config", "my_configs", "channel", "support", "admin"]
+    for bid in default_order:
+        if bid not in existing_ids:
+            buttons.append({
+                "id": bid,
+                "type": "builtin",
+                "label": BUILTIN_LABELS.get(bid, bid),
+                "enabled": True,
+            })
+
+    return render_template("menu_layout.html", buttons=buttons)
+
+
+if __name__ == "__main__":
+    port = int(os.getenv("WEB_PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
