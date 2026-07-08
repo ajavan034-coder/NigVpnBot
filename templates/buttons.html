@@ -25,6 +25,7 @@
 </div>
 
 <form id="buttonsForm" method="POST">
+{{ csrf_field() }}
 <div class="row g-4" id="buttonsList">
     {% for btn_id, btn in buttons.items() %}
     <div class="col-lg-6 btn-card" data-search="{{ btn.label|lower }} {{ btn_id|lower }}">

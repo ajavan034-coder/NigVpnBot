@@ -1,0 +1,34 @@
+[Unit]
+Description=VPN Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vpnbot
+Group=vpnbot
+WorkingDirectory=/opt/vpnbot
+ExecStart=/opt/vpnbot/venv/bin/python3 run.py
+Restart=always
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=300
+TimeoutStopSec=30
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/vpnbot
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/vpnbot
+PrivateTmp=true
+
+# Logging (journald)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vpnbot
+
+[Install]
+WantedBy=multi-user.target

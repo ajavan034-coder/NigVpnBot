@@ -204,7 +204,7 @@ async def cb_check_membership(callback: CallbackQuery):
         try:
             await callback.bot.set_message_reaction(
                 chat_id=callback.message.chat.id,
-                message_id=message.message_id,
+                message_id=callback.message.message_id,
                 reaction=[{"type": "emoji", "emoji": "🔥"}],
             )
         except Exception:
@@ -1044,7 +1044,6 @@ async def cb_extra_volume_receipt(message: Message, state: FSMContext):
 async def cb_channel_approve(callback: CallbackQuery):
     receipt_id = int(callback.data.split("_")[-1])
     from database import approve_receipt, get_receipt, get_user
-    from keyboards.user import is_admin
 
     if not await is_admin(callback.from_user.id):
         await callback.answer("فقط ادمین می‌تواند رسید را تایید کند!", show_alert=True)
@@ -1104,7 +1103,6 @@ async def cb_channel_approve(callback: CallbackQuery):
 async def cb_channel_reject(callback: CallbackQuery):
     receipt_id = int(callback.data.split("_")[-1])
     from database import reject_receipt, get_receipt
-    from keyboards.user import is_admin
 
     if not await is_admin(callback.from_user.id):
         await callback.answer("فقط ادمین می‌تواند رسید را رد کند!", show_alert=True)

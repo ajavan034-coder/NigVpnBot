@@ -1,6 +1,7 @@
 import os
 import secrets
 import asyncio
+import time
 from functools import wraps
 from flask import (
     Flask, render_template, request, redirect, url_for, session, flash, jsonify,
@@ -12,9 +13,45 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", secrets.token_hex(32))
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 ADMIN_USER = os.getenv("ADMIN_WEB_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_WEB_PASS", "changeme")
+
+# Rate limiting for login attempts: {ip: [timestamp, ...]}
+_login_attempts: dict[str, list[float]] = {}
+_LOGIN_MAX_ATTEMPTS = 5
+_LOGIN_WINDOW = 900  # 15 minutes
+
+
+def _check_rate_limit(ip: str) -> bool:
+    now = time.time()
+    attempts = _login_attempts.get(ip, [])
+    # Purge old attempts
+    attempts = [t for t in attempts if now - t < _LOGIN_WINDOW]
+    _login_attempts[ip] = attempts
+    return len(attempts) < _LOGIN_MAX_ATTEMPTS
+
+
+def _record_failed_login(ip: str):
+    _login_attempts.setdefault(ip, []).append(time.time())
+
+
+def generate_csrf_token():
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_hex(32)
+    return session["_csrf_token"]
+
+
+app.jinja_env.globals["csrf_token"] = generate_csrf_token
+
+
+def validate_csrf():
+    token = request.form.get("_csrf_token") or request.headers.get("X-CSRF-Token")
+    if not token or token != session.get("_csrf_token"):
+        return False
+    return True
 
 
 def login_required(f):
@@ -26,14 +63,35 @@ def login_required(f):
     return decorated
 
 
+@app.before_request
+def log_request():
+    if request.endpoint and request.endpoint != "static":
+        app.logger.info("%s %s from %s", request.method, request.path, request.remote_addr)
+
+
+@app.before_request
+def csrf_protect():
+    if request.method == "POST" and request.endpoint not in ("login",):
+        if not validate_csrf():
+            flash("Invalid CSRF token. Please try again.", "danger")
+            return redirect(request.referrer or url_for("dashboard"))
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        ip = request.remote_addr
+        if not _check_rate_limit(ip):
+            flash("Too many login attempts. Try again in 15 minutes.", "danger")
+            return render_template("login.html"), 429
         username = request.form.get("username", "")
         password = request.form.get("password", "")
         if username == ADMIN_USER and password == ADMIN_PASS:
             session["logged_in"] = True
+            session.permanent = True
+            _login_attempts.pop(ip, None)
             return redirect(url_for("dashboard"))
+        _record_failed_login(ip)
         flash("Invalid credentials", "danger")
     return render_template("login.html")
 
@@ -88,14 +146,14 @@ def settings():
         flash("Settings saved successfully!", "success")
         if "bot_token" in request.form and request.form["bot_token"].strip():
             new_token = request.form["bot_token"].strip()
-            import config
-            if new_token != config.BOT_TOKEN:
-                restart_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "restart.sh")
-                bot_dir = os.path.dirname(os.path.abspath(__file__))
-                with open(restart_script, "w") as f:
-                    f.write(f"#!/bin/bash\nsleep 2\nkill -9 $(lsof -ti:5000) 2>/dev/null\nkill -9 $(pgrep -f run.py) 2>/dev/null\nsleep 2\ncd {bot_dir} && nohup {bot_dir}/venv/bin/python run.py > bot.log 2>&1 &\n")
-                os.chmod(restart_script, 0o755)
-                os.system("nohup bash " + restart_script + " > /dev/null 2>&1 &")
+            import config as _cfg
+            if new_token != _cfg.BOT_TOKEN:
+                import subprocess
+                subprocess.Popen(
+                    ["systemctl", "restart", "vpnbot"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 flash("Bot token changed! Bot will restart to apply.", "success")
         return redirect(url_for("settings"))
     all_settings = web_db.get_all_settings()

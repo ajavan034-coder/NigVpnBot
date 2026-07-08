@@ -39,6 +39,7 @@
     {% block head %}{% endblock %}
 </head>
 <body>
+    {% macro csrf_field() %}<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">{% endmacro %}
     <nav class="sidebar" id="sidebar">
         <div class="brand">
             <h5><i class="bi bi-robot"></i> مدیریت ربات</h5>

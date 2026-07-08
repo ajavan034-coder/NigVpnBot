@@ -3,8 +3,21 @@ bot_database.db
 bot_database.db.bak
 __pycache__/
 *.pyc
+*.pyo
 bot.log
 deploy.py
 _deploy.tar.gz
 screenshots/
 *.bak
+.mimocode/
+
+# Test/debug scripts
+_check_*.py
+_resolve.py
+_try_url.py
+check_*.py
+debug_*.py
+fix_*.py
+patch_*.py
+test_*.py
+user_keyboards.py

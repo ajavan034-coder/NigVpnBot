@@ -10,6 +10,7 @@
             <div class="card-header"><i class="bi bi-person-plus"></i> افزودن ادمین</div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('admin_add') }}">
+                    {{ csrf_field() }}
                     <div class="mb-3">
                         <label class="form-label">شناسه تلگرام</label>
                         <input type="number" name="user_id" class="form-control" required placeholder="123456789">
@@ -43,6 +44,7 @@
                                 <td>{{ a.added_at[:10] if a.added_at else '-' }}</td>
                                 <td>
                                     <form method="POST" action="{{ url_for('admin_remove', user_id=a.user_id) }}" class="d-inline">
+                                        {{ csrf_field() }}
                                         <button type="submit" class="btn btn-sm btn-outline-danger"
                                                 onclick="return confirm('آیا این ادمین را حذف می‌کنید؟')">
                                             <i class="bi bi-trash"></i>

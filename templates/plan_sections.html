@@ -11,6 +11,7 @@
             <div class="card-header"><i class="bi bi-plus-circle"></i> افزودن بخش جدید</div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('plan_section_add') }}">
+                    {{ csrf_field() }}
                     <div class="mb-3">
                         <label class="form-label">نام بخش</label>
                         <input type="text" name="name" class="form-control" required placeholder="مثلاً التیمیت">
@@ -47,6 +48,7 @@
                                     </button>
                                     <form method="POST" action="{{ url_for('plan_section_delete', section_id=s.id) }}" class="d-inline"
                                           onsubmit="return confirm('آیا این بخش را حذف می‌کنید؟')">
+                                        {{ csrf_field() }}
                                         <button type="submit" class="btn btn-sm btn-outline-danger">
                                             <i class="bi bi-trash"></i>
                                         </button>
@@ -69,6 +71,7 @@
     <div class="modal-dialog">
         <div class="modal-content" style="background:#131926;border:1px solid #1e293b;">
             <form method="POST" id="editForm">
+                {{ csrf_field() }}
                 <div class="modal-header" style="border-bottom:1px solid #1e293b;">
                     <h5 class="modal-title">ویرایش بخش</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>

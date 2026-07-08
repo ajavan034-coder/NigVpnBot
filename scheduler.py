@@ -1,10 +1,11 @@
 import asyncio
+import json
 import logging
 import os
-import json
-from datetime import datetime, timedelta
+import tempfile
+from datetime import datetime, timedelta, timezone
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("vpnbot.scheduler")
 
 _notified_today: set[int] = set()
 _last_reset_date: str = ""
@@ -16,7 +17,10 @@ async def _deactivate_expired():
     configs = await get_expired_active_configs()
     if configs:
         for c in configs:
-            await deactivate_config(c["id"])
+            try:
+                await deactivate_config(c["id"])
+            except Exception as e:
+                logger.warning("Failed to deactivate config %s: %s", c["id"], e)
         logger.info("Deactivated %d expired configs", len(configs))
 
 
@@ -28,7 +32,7 @@ async def _send_expiry_reminders(bot):
     if enabled == "0":
         return
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if today != _last_reset_date:
         _notified_today.clear()
         _last_reset_date = today
@@ -41,7 +45,8 @@ async def _send_expiry_reminders(bot):
             continue
 
         expire = datetime.fromisoformat(c["expire_date"])
-        days_left = max(1, (expire - datetime.utcnow()).days)
+        now = datetime.now(timezone.utc)
+        days_left = max(1, (expire - now).days)
         symbol = "تومان"
         try:
             symbol = await get_setting("currency_symbol") or symbol
@@ -64,7 +69,7 @@ async def _send_expiry_reminders(bot):
 
 async def _send_backup(bot):
     global _last_backup_time
-    now = datetime.utcnow().timestamp()
+    now = datetime.now(timezone.utc).timestamp()
     if _last_backup_time and (now - _last_backup_time) < 12 * 3600:
         return
 
@@ -86,8 +91,9 @@ async def _send_backup(bot):
             if detail:
                 full_data.append(detail)
 
-        now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-        backup_file = f"/tmp/3xui_backup_{now_str.replace(' ', '_').replace(':', '-')}.json"
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        safe_name = now_str.replace(" ", "_").replace(":", "-")
+        backup_file = os.path.join(tempfile.gettempdir(), f"3xui_backup_{safe_name}.json")
         with open(backup_file, "w", encoding="utf-8") as f:
             json.dump(full_data, f, ensure_ascii=False, indent=2)
 
@@ -95,7 +101,7 @@ async def _send_backup(bot):
         file_size = os.path.getsize(backup_file)
         await bot.send_document(
             chat_id=channel_id,
-            document=FSInputFile(backup_file, filename=f"3xui_backup_{now_str.replace(' ', '_').replace(':', '-')}.json"),
+            document=FSInputFile(backup_file, filename=f"3xui_backup_{safe_name}.json"),
             caption=f"📦 <b>بکاپ پنل 3x-ui</b>\n\n🕐 {now_str} UTC\n📋 تعداد اینباند: {len(full_data)}\n💾 حجم: {file_size / 1024:.1f} KB",
             parse_mode="HTML",
         )
@@ -114,5 +120,5 @@ async def scheduler_loop(bot, interval: int = 300):
             await _send_expiry_reminders(bot)
             await _send_backup(bot)
         except Exception as e:
-            logger.error("Scheduler error: %s", e)
+            logger.error("Scheduler error: %s", e, exc_info=True)
         await asyncio.sleep(interval)

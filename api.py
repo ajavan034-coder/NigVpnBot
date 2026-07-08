@@ -386,52 +386,61 @@ class PanelAPI:
         return configs
 
     async def get_client_traffic(self, email: str) -> dict | None:
-        data = await self._get("/panel/api/inbounds/get/1")
-        if not data or not data.get("success"):
-            return None
-        obj = data.get("obj", {})
+        inbound_ids = self.inbound_ids if self.inbound_ids else []
+        if not inbound_ids:
+            vid = await self.get_vless_inbound_id()
+            if vid is not None:
+                inbound_ids = [vid]
 
-        # Traffic data lives in clientStats, not in settings.clients
-        client_stats = obj.get("clientStats", [])
-        traffic = None
-        for stat in client_stats:
-            if stat.get("email") == email:
-                traffic = stat
-                break
+        for inbound_id in inbound_ids:
+            data = await self._get(f"/panel/api/inbounds/get/{inbound_id}")
+            if not data or not data.get("success"):
+                continue
+            obj = data.get("obj", {})
 
-        # Get totalGB/expiryTime from settings.clients
-        settings = obj.get("settings", {})
-        if isinstance(settings, str):
-            import json
-            settings = json.loads(settings)
-        clients = settings.get("clients", [])
-        total_bytes = 0
-        expiry_time = 0
-        for client in clients:
-            if client.get("email") == email:
-                total_bytes = client.get("totalGB", 0)
-                expiry_time = client.get("expiryTime", 0)
-                break
+            client_stats = obj.get("clientStats", [])
+            traffic = None
+            for stat in client_stats:
+                if stat.get("email") == email:
+                    traffic = stat
+                    break
 
-        up_bytes = traffic.get("up", 0) if traffic else 0
-        down_bytes = traffic.get("down", 0) if traffic else 0
-        # clientStats may also have its own total field
-        if traffic and traffic.get("total", 0) > 0:
-            total_bytes = traffic["total"]
+            settings = obj.get("settings", {})
+            if isinstance(settings, str):
+                import json
+                settings = json.loads(settings)
+            clients = settings.get("clients", [])
+            total_bytes = 0
+            expiry_time = 0
+            for client in clients:
+                if client.get("email") == email:
+                    total_bytes = client.get("totalGB", 0)
+                    expiry_time = client.get("expiryTime", 0)
+                    break
 
-        used_bytes = up_bytes + down_bytes
-        remaining_bytes = max(0, total_bytes - used_bytes) if total_bytes > 0 else 0
-        return {
-            "total_bytes": total_bytes,
-            "total_gb": round(total_bytes / (1024 * 1024 * 1024), 2) if total_bytes > 0 else 0,
-            "up_bytes": up_bytes,
-            "down_bytes": down_bytes,
-            "used_bytes": used_bytes,
-            "used_gb": round(used_bytes / (1024 * 1024 * 1024), 2),
-            "remaining_bytes": remaining_bytes,
-            "remaining_gb": round(remaining_bytes / (1024 * 1024 * 1024), 2) if total_bytes > 0 else 0,
-            "expiry_time": expiry_time,
-        }
+            if not traffic and total_bytes == 0:
+                continue
+
+            up_bytes = traffic.get("up", 0) if traffic else 0
+            down_bytes = traffic.get("down", 0) if traffic else 0
+            if traffic and traffic.get("total", 0) > 0:
+                total_bytes = traffic["total"]
+
+            used_bytes = up_bytes + down_bytes
+            remaining_bytes = max(0, total_bytes - used_bytes) if total_bytes > 0 else 0
+            return {
+                "total_bytes": total_bytes,
+                "total_gb": round(total_bytes / (1024 * 1024 * 1024), 2) if total_bytes > 0 else 0,
+                "up_bytes": up_bytes,
+                "down_bytes": down_bytes,
+                "used_bytes": used_bytes,
+                "used_gb": round(used_bytes / (1024 * 1024 * 1024), 2),
+                "remaining_bytes": remaining_bytes,
+                "remaining_gb": round(remaining_bytes / (1024 * 1024 * 1024), 2) if total_bytes > 0 else 0,
+                "expiry_time": expiry_time,
+            }
+
+        return None
 
     async def _update_client(self, email: str, updates: dict) -> bool:
         inbounds = await self.get_inbounds()

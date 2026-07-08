@@ -1188,12 +1188,11 @@ async def cb_panel_info(callback: CallbackQuery):
     import os
     web_port = os.getenv("WEB_PORT", "5000")
     admin_user = os.getenv("ADMIN_WEB_USER", "admin")
-    admin_pass = os.getenv("ADMIN_WEB_PASS", "changeme")
     text = (
         f"**Dashboard Info**\n\n"
         f"URL: `http://YOUR_IP:{web_port}`\n"
         f"Username: `{admin_user}`\n"
-        f"Password: `{admin_pass}`\n\n"
+        f"Password: See .env file (ADMIN_WEB_PASS)\n\n"
         f"Replace YOUR_IP with your server IP."
     )
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await back_to_admin())

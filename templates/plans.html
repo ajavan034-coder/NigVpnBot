@@ -12,6 +12,7 @@
     <div class="card-header"><i class="bi bi-chat-text"></i> متن هدر پلن‌ها</div>
     <div class="card-body">
         <form method="POST" action="{{ url_for('plans_save_header') }}">
+            {{ csrf_field() }}
             <div class="mb-3">
                 <label class="form-label">متن نمایش داده شده بالای پلن‌ها در ربات</label>
                 <textarea name="plans_header_text" class="form-control" rows="3" placeholder="متن هدر را وارد کنید...">{{ plans_header }}</textarea>
@@ -59,6 +60,7 @@
                         </a>
                         <form method="POST" action="{{ url_for('plan_delete', plan_id=plan.id) }}" class="d-inline"
                               onsubmit="return confirm('آیا این پلن را حذف می‌کنید؟')">
+                            {{ csrf_field() }}
                             <button type="submit" class="btn btn-sm btn-outline-danger">
                                 <i class="bi bi-trash"></i>
                             </button>
