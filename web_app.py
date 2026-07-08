@@ -91,6 +91,8 @@ def setup():
         panel_url = request.form.get("PANEL_URL", "").strip()
         panel_user = request.form.get("PANEL_USER", "").strip()
         panel_pass = request.form.get("PANEL_PASS", "").strip()
+        sub_link_template = request.form.get("sub_link_template", "").strip()
+        web_port = request.form.get("WEB_PORT", "5000").strip()
         web_user = request.form.get("ADMIN_WEB_USER", "admin").strip()
         web_pass = request.form.get("ADMIN_WEB_PASS", "").strip()
 
@@ -112,7 +114,7 @@ def setup():
             f"ADMIN_WEB_USER={web_user}\n"
             f"ADMIN_WEB_PASS={web_pass}\n"
             f"SECRET_KEY={secret_key}\n"
-            f"WEB_PORT={os.getenv('WEB_PORT', '5000')}\n"
+            f"WEB_PORT={web_port}\n"
             f"DB_PATH=bot_database.db\n"
         )
         with open(env_path, "w") as f:
@@ -122,6 +124,8 @@ def setup():
         web_db.set_setting("panel_url", panel_url)
         web_db.set_setting("panel_user", panel_user)
         web_db.set_setting("panel_pass", panel_pass)
+        if sub_link_template:
+            web_db.set_setting("sub_link_template", sub_link_template)
 
         flash("Setup complete! Bot is restarting...", "success")
 
@@ -158,7 +162,7 @@ def log_request():
 
 @app.before_request
 def csrf_protect():
-    if request.method == "POST" and request.endpoint not in ("login",):
+    if request.method == "POST" and request.endpoint not in ("login", "setup"):
         if not validate_csrf():
             flash("Invalid CSRF token. Please try again.", "danger")
             return redirect(request.referrer or url_for("dashboard"))
