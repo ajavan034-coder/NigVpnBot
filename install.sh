@@ -2,14 +2,14 @@
 set -euo pipefail
 
 # ============================================================
-# VPN Bot — Fresh Install Script (Ubuntu/Debian)
+# VPN Bot — One-Command Install (Ubuntu/Debian)
 # Usage: sudo bash install.sh
 # ============================================================
 
 BOT_DIR="/opt/vpnbot"
 SERVICE_NAME="vpnbot"
 BOT_USER="vpnbot"
-REPO_URL="${REPO_URL:-}"  # Set via env or edit here
+REPO_URL="https://github.com/Smertam/3-xui-telbot.git"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,12 +22,12 @@ err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # ---- preflight ------------------------------------------------
 if [[ $EUID -ne 0 ]]; then
-    err "This script must be run as root (use sudo)"
+    err "Run as root: sudo bash install.sh"
     exit 1
 fi
 
 if [[ ! -f /etc/debian_version ]]; then
-    err "This script supports Debian/Ubuntu only"
+    err "Debian/Ubuntu only"
     exit 1
 fi
 
@@ -35,66 +35,63 @@ fi
 log "Installing system packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq python3 python3-venv python3-pip git curl >/dev/null
-
-PYTHON_MAJOR=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-log "Python version: $PYTHON_MAJOR"
+apt-get install -y -qq python3 python3-venv python3-pip git curl >/dev/null 2>&1
+log "Python: $(python3 --version)"
 
 # ---- create bot user -------------------------------------------
 if ! id "$BOT_USER" &>/dev/null; then
-    log "Creating system user: $BOT_USER"
+    log "Creating user: $BOT_USER"
     useradd --system --shell /usr/sbin/nologin --home-dir "$BOT_DIR" --create-home "$BOT_USER"
-else
-    log "User $BOT_USER already exists"
 fi
 
-# ---- clone or copy repo ----------------------------------------
+# ---- clone repo ------------------------------------------------
 if [[ -d "$BOT_DIR/.git" ]]; then
-    log "Repository already exists at $BOT_DIR, pulling latest..."
+    log "Repo exists, updating..."
     cd "$BOT_DIR"
-    sudo -u "$BOT_USER" git pull --ff-only || warn "git pull failed, keeping current version"
+    chown -R "$BOT_USER":"$BOT_USER" "$BOT_DIR"
+    sudo -u "$BOT_USER" git pull --ff-only 2>/dev/null || warn "Pull failed, keeping current"
 else
-    if [[ -n "$REPO_URL" ]]; then
-        log "Cloning repository..."
-        sudo -u "$BOT_USER" git clone "$REPO_URL" "$BOT_DIR"
-    else
-        log "No REPO_URL set. Copying current directory to $BOT_DIR..."
-        SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-        mkdir -p "$BOT_DIR"
-        cp -r "$SCRIPT_DIR"/* "$SCRIPT_DIR"/.* "$BOT_DIR" 2>/dev/null || true
-        chown -R "$BOT_USER":"$BOT_USER" "$BOT_DIR"
-    fi
+    log "Cloning repo..."
+    rm -rf "$BOT_DIR"
+    git clone "$REPO_URL" "$BOT_DIR"
 fi
 
+chown -R "$BOT_USER":"$BOT_USER" "$BOT_DIR"
 cd "$BOT_DIR"
 
-# ---- create venv & install deps --------------------------------
+# ---- venv & deps -----------------------------------------------
 if [[ ! -d venv ]]; then
-    log "Creating Python virtual environment..."
+    log "Creating venv..."
     sudo -u "$BOT_USER" python3 -m venv venv
 fi
 
-log "Installing Python dependencies..."
-sudo -u "$BOT_USER" "$BOT_DIR/venv/bin/pip" install -q --upgrade pip
+log "Installing dependencies..."
+sudo -u "$BOT_USER" "$BOT_DIR/venv/bin/pip" install -q --upgrade pip 2>/dev/null
 sudo -u "$BOT_USER" "$BOT_DIR/venv/bin/pip" install -q -r requirements.txt
 
-# ---- create .env from example ----------------------------------
+# ---- .env from example -----------------------------------------
 if [[ ! -f .env ]]; then
     if [[ -f .env.example ]]; then
         cp .env.example .env
-        chown "$BOT_USER":"$BOT_USER" .env
-        chmod 600 .env
-        warn "Created .env from .env.example — EDIT IT with your real values!"
     else
-        warn "No .env file found. Create one with: cp .env.example .env && nano .env"
+        cat > .env << 'ENVEOF'
+BOT_TOKEN=
+ADMIN_IDS=
+PANEL_URL=
+PANEL_USER=
+PANEL_PASS=
+ADMIN_WEB_USER=admin
+ADMIN_WEB_PASS=admin
+SECRET_KEY=
+WEB_PORT=5000
+DB_PATH=bot_database.db
+ENVEOF
     fi
+    chown "$BOT_USER":"$BOT_USER" .env
+    chmod 600 .env
 fi
 
-# ---- set permissions -------------------------------------------
-chown -R "$BOT_USER":"$BOT_USER" "$BOT_DIR"
-chmod 600 .env 2>/dev/null || true
-
-# ---- create systemd service ------------------------------------
+# ---- systemd service -------------------------------------------
 log "Creating systemd service..."
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" << SERVICEEOF
 [Unit]
@@ -113,18 +110,12 @@ RestartSec=5
 StartLimitBurst=5
 StartLimitIntervalSec=300
 TimeoutStopSec=30
-
-# Environment
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=${BOT_DIR}
-
-# Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=${BOT_DIR}
 PrivateTmp=true
-
-# Logging (journald)
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=${SERVICE_NAME}
@@ -133,29 +124,23 @@ SyslogIdentifier=${SERVICE_NAME}
 WantedBy=multi-user.target
 SERVICEEOF
 
-# ---- enable & start --------------------------------------------
-log "Enabling and starting service..."
+# ---- start -----------------------------------------------------
 systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
+systemctl enable "$SERVICE_NAME" >/dev/null 2>&1
 systemctl restart "$SERVICE_NAME"
 
-# ---- summary ---------------------------------------------------
 sleep 2
+
+# ---- summary ---------------------------------------------------
 echo ""
 echo "============================================"
-echo -e "${GREEN}  VPN Bot installed successfully!${NC}"
+echo -e "${GREEN}  Bot installed successfully!${NC}"
 echo "============================================"
 echo ""
-echo "  Service:  $SERVICE_NAME"
-echo "  Location: $BOT_DIR"
-echo "  User:     $BOT_USER"
+echo "  Next step: open in browser"
 echo ""
-echo "  Commands:"
-echo "    systemctl status $SERVICE_NAME    # check status"
-echo "    systemctl restart $SERVICE_NAME   # restart bot"
-echo "    journalctl -u $SERVICE_NAME -f    # live logs"
-echo "    nano $BOT_DIR/.env                # edit config"
+IP=$(hostname -I | awk '{print $1}')
+echo -e "  ${GREEN}http://${IP}:5000${NC}"
 echo ""
-echo "  Web dashboard: http://YOUR_IP:5000"
+echo "  The setup wizard will guide you."
 echo ""
-systemctl status "$SERVICE_NAME" --no-pager -l || true
