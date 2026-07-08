@@ -54,6 +54,93 @@ def validate_csrf():
     return True
 
 
+def _needs_setup() -> bool:
+    """Check if bot needs initial setup (no BOT_TOKEN configured)."""
+    token = os.getenv("BOT_TOKEN", "")
+    if token:
+        return False
+    try:
+        import sqlite3
+        from config import DB_PATH
+        conn = sqlite3.connect(DB_PATH, timeout=5)
+        row = conn.execute("SELECT value FROM settings WHERE key = 'bot_token'").fetchone()
+        conn.close()
+        return not (row and row[0])
+    except Exception:
+        return True
+
+
+@app.before_request
+def setup_redirect():
+    if _needs_setup() and request.endpoint not in ("setup", "static"):
+        return redirect(url_for("setup"))
+
+
+@app.route("/setup", methods=["GET", "POST"])
+def setup():
+    if not _needs_setup():
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        if not validate_csrf():
+            flash("Invalid CSRF token. Please try again.", "danger")
+            return redirect(url_for("setup"))
+
+        token = request.form.get("BOT_TOKEN", "").strip()
+        admin_ids = request.form.get("ADMIN_IDS", "").strip()
+        panel_url = request.form.get("PANEL_URL", "").strip()
+        panel_user = request.form.get("PANEL_USER", "").strip()
+        panel_pass = request.form.get("PANEL_PASS", "").strip()
+        web_user = request.form.get("ADMIN_WEB_USER", "admin").strip()
+        web_pass = request.form.get("ADMIN_WEB_PASS", "").strip()
+
+        if not token or not admin_ids or not panel_url:
+            flash("Bot token, admin ID, and panel URL are required.", "danger")
+            return redirect(url_for("setup"))
+
+        # Generate secret key
+        secret_key = secrets.token_hex(32)
+
+        # Write .env file
+        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        env_content = (
+            f"BOT_TOKEN={token}\n"
+            f"ADMIN_IDS={admin_ids}\n"
+            f"PANEL_URL={panel_url}\n"
+            f"PANEL_USER={panel_user}\n"
+            f"PANEL_PASS={panel_pass}\n"
+            f"ADMIN_WEB_USER={web_user}\n"
+            f"ADMIN_WEB_PASS={web_pass}\n"
+            f"SECRET_KEY={secret_key}\n"
+            f"WEB_PORT={os.getenv('WEB_PORT', '5000')}\n"
+            f"DB_PATH=bot_database.db\n"
+        )
+        with open(env_path, "w") as f:
+            f.write(env_content)
+
+        # Also save panel settings to DB
+        web_db.set_setting("panel_url", panel_url)
+        web_db.set_setting("panel_user", panel_user)
+        web_db.set_setting("panel_pass", panel_pass)
+
+        flash("Setup complete! Bot is restarting...", "success")
+
+        # Restart via systemd
+        import subprocess
+        try:
+            subprocess.Popen(
+                ["systemctl", "restart", "vpnbot"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+        return render_template("setup_done.html")
+
+    return render_template("setup.html", values={})
+
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):

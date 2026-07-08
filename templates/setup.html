@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Setup Wizard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background: #0a0e17; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .setup-card { background: #131926; border: 1px solid #1e293b; border-radius: 16px; padding: 40px; width: 100%; max-width: 560px; }
+        .setup-card h2 { color: #e2e8f0; font-weight: 700; }
+        .form-control { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; }
+        .form-control:focus { background: #1e293b; border-color: #6366f1; color: #e2e8f0; box-shadow: 0 0 0 0.2rem rgba(99,102,241,.25); }
+        .form-label { color: #94a3b8; font-size: 14px; }
+        .form-text { color: #64748b; }
+        .btn-primary { background: #6366f1; border-color: #6366f1; }
+        .btn-primary:hover { background: #4f46e5; border-color: #4f46e5; }
+        .step-indicator { display: flex; gap: 6px; justify-content: center; margin-bottom: 30px; }
+        .step-dot { width: 10px; height: 10px; border-radius: 50%; background: #334155; transition: all .3s; }
+        .step-dot.active { background: #6366f1; width: 28px; border-radius: 5px; }
+        .step-dot.done { background: #22c55e; }
+        .step { display: none; }
+        .step.active { display: block; }
+        .step-title { color: #e2e8f0; font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+        .step-desc { color: #64748b; font-size: 13px; margin-bottom: 20px; }
+        .alert { font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="setup-card">
+        <div class="text-center mb-4">
+            <i class="bi bi-robot fs-1 text-primary"></i>
+        </div>
+        <h2 class="text-center mb-1">Bot Setup Wizard</h2>
+        <p class="text-center text-muted mb-4" style="font-size:13px;">Configure your VPN bot in a few steps</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for cat, msg in messages %}
+        <div class="alert alert-{{ cat }} py-2" role="alert">{{ msg }}</div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <div class="step-indicator">
+            <div class="step-dot active" data-step="1"></div>
+            <div class="step-dot" data-step="2"></div>
+            <div class="step-dot" data-step="3"></div>
+            <div class="step-dot" data-step="4"></div>
+            <div class="step-dot" data-step="5"></div>
+        </div>
+
+        <form method="POST" id="setupForm">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+            <!-- Step 1: Bot Token -->
+            <div class="step active" id="step1">
+                <div class="step-title"><i class="bi bi-telegram"></i> Telegram Bot Token</div>
+                <div class="step-desc">Get this from <a href="https://t.me/BotFather" target="_blank" style="color:#818cf8;">@BotFather</a> on Telegram</div>
+                <div class="mb-3">
+                    <input type="text" name="BOT_TOKEN" class="form-control" placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz" required
+                           value="{{ values.get('BOT_TOKEN', '') }}">
+                    <div class="form-text">Format: number:alphanumeric_string</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Your Telegram User ID (admin)</label>
+                    <input type="number" name="ADMIN_IDS" class="form-control" placeholder="123456789" required
+                           value="{{ values.get('ADMIN_IDS', '') }}">
+                    <div class="form-text">Send /start to <a href="https://t.me/userinfobot" target="_blank" style="color:#818cf8;">@userinfobot</a> to find your ID</div>
+                </div>
+                <button type="button" class="btn btn-primary w-100" onclick="nextStep(2)">Next <i class="bi bi-arrow-left"></i></button>
+            </div>
+
+            <!-- Step 2: Panel URL -->
+            <div class="step" id="step2">
+                <div class="step-title"><i class="bi bi-hdd-network"></i> 3x-ui Panel URL</div>
+                <div class="step-desc">The full URL of your 3x-ui panel including the path</div>
+                <div class="mb-3">
+                    <input type="text" name="PANEL_URL" class="form-control" placeholder="https://your-panel.com:5443/abc123/" required
+                           value="{{ values.get('PANEL_URL', '') }}">
+                    <div class="form-text">Include the full path after the domain (e.g. https://1.2.3.4:5443/xYz123/)</div>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary flex-fill" onclick="prevStep(1)"><i class="bi bi-arrow-right"></i> Back</button>
+                    <button type="button" class="btn btn-primary flex-fill" onclick="nextStep(3)">Next <i class="bi bi-arrow-left"></i></button>
+                </div>
+            </div>
+
+            <!-- Step 3: Panel Credentials -->
+            <div class="step" id="step3">
+                <div class="step-title"><i class="bi bi-key"></i> Panel Login</div>
+                <div class="step-desc">Your 3x-ui panel admin credentials</div>
+                <div class="mb-3">
+                    <label class="form-label">Panel Username</label>
+                    <input type="text" name="PANEL_USER" class="form-control" placeholder="admin" required
+                           value="{{ values.get('PANEL_USER', '') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Panel Password</label>
+                    <input type="password" name="PANEL_PASS" class="form-control" placeholder="your panel password" required
+                           value="{{ values.get('PANEL_PASS', '') }}">
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary flex-fill" onclick="prevStep(2)"><i class="bi bi-arrow-right"></i> Back</button>
+                    <button type="button" class="btn btn-primary flex-fill" onclick="nextStep(4)">Next <i class="bi bi-arrow-left"></i></button>
+                </div>
+            </div>
+
+            <!-- Step 4: Web Dashboard -->
+            <div class="step" id="step4">
+                <div class="step-title"><i class="bi bi-globe"></i> Web Dashboard</div>
+                <div class="step-desc">Set your admin panel login credentials</div>
+                <div class="mb-3">
+                    <label class="form-label">Dashboard Username</label>
+                    <input type="text" name="ADMIN_WEB_USER" class="form-control" placeholder="admin" required
+                           value="{{ values.get('ADMIN_WEB_USER', 'admin') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Dashboard Password</label>
+                    <input type="password" name="ADMIN_WEB_PASS" class="form-control" placeholder="Choose a strong password" required
+                           value="{{ values.get('ADMIN_WEB_PASS', '') }}">
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary flex-fill" onclick="prevStep(3)"><i class="bi bi-arrow-right"></i> Back</button>
+                    <button type="button" class="btn btn-primary flex-fill" onclick="nextStep(5)">Next <i class="bi bi-arrow-left"></i></button>
+                </div>
+            </div>
+
+            <!-- Step 5: Confirm & Start -->
+            <div class="step" id="step5">
+                <div class="step-title"><i class="bi bi-check-circle"></i> Ready to Start!</div>
+                <div class="step-desc">Review your settings and start the bot</div>
+                <div class="card" style="background:#1e293b;border:1px solid #334155;border-radius:10px;">
+                    <div class="card-body" style="font-size:13px;">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted">Bot Token</span>
+                            <span id="review_token" class="text-end" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;"></span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted">Admin ID</span>
+                            <span id="review_admin"></span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted">Panel URL</span>
+                            <span id="review_panel" class="text-end" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;"></span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted">Panel User</span>
+                            <span id="review_panel_user"></span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="text-muted">Dashboard</span>
+                            <span id="review_web_user"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="alert alert-info mt-3 py-2" style="font-size:12px;">
+                    <i class="bi bi-info-circle"></i> The bot will restart after saving. You can change these later from the dashboard settings.
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary flex-fill" onclick="prevStep(4)"><i class="bi bi-arrow-right"></i> Back</button>
+                    <button type="submit" class="btn btn-success flex-fill"><i class="bi bi-rocket-takeoff"></i> Save & Start Bot</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script>
+    function showStep(n) {
+        document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+        document.getElementById('step' + n).classList.add('active');
+        document.querySelectorAll('.step-dot').forEach(d => {
+            const s = parseInt(d.dataset.step);
+            d.classList.remove('active', 'done');
+            if (s === n) d.classList.add('active');
+            else if (s < n) d.classList.add('done');
+        });
+    }
+    function nextStep(n) {
+        // Basic validation of current step
+        const current = document.querySelector('.step.active');
+        const inputs = current.querySelectorAll('input[required]');
+        for (const inp of inputs) {
+            if (!inp.value.trim()) {
+                inp.focus();
+                inp.style.borderColor = '#ef4444';
+                setTimeout(() => inp.style.borderColor = '', 2000);
+                return;
+            }
+        }
+        if (n === 5) {
+            // Fill review
+            const f = document.forms['setupForm'];
+            document.getElementById('review_token').textContent = f.BOT_TOKEN.value.substring(0, 12) + '...';
+            document.getElementById('review_admin').textContent = f.ADMIN_IDS.value;
+            document.getElementById('review_panel').textContent = f.PANEL_URL.value;
+            document.getElementById('review_panel_user').textContent = f.PANEL_USER.value;
+            document.getElementById('review_web_user').textContent = f.ADMIN_WEB_USER.value;
+        }
+        showStep(n);
+    }
+    function prevStep(n) { showStep(n); }
+    </script>
+</body>
+</html>
