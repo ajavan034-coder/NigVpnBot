@@ -202,10 +202,25 @@ systemctl restart "$SERVICE_NAME"
 
 sleep 2
 
-# ---- auto-update cron job --------------------------------------
-log "Setting up auto-update cron job (every 5 minutes)..."
-(crontab -l 2>/dev/null | grep -v "vpnbot" ; echo "*/5 * * * * cd $BOT_DIR && git pull -q && systemctl restart $SERVICE_NAME >> /var/log/vpnbot-update.log 2>&1") | crontab -
-log "Auto-update cron job installed"
+# ---- auto-update cron job (every 24h) -------------------------
+log "Setting up auto-update cron job (every 24 hours)..."
+(crontab -l 2>/dev/null | grep -v "vpnbot" ; echo "47 3 * * * cd $BOT_DIR && git pull -q && sudo systemctl restart $SERVICE_NAME >> /var/log/vpnbot-update.log 2>&1") | crontab -
+log "Auto-update cron job installed (runs daily at 3:47 AM)"
+
+# ---- manual update script --------------------------------------
+log "Creating update script..."
+cat > "$BOT_DIR/update.sh" << 'UPDATEEOF'
+#!/bin/bash
+echo "Updating bot from GitHub..."
+cd /opt/vpnbot
+git pull
+pip install -q -r requirements.txt
+sudo systemctl restart vpnbot
+echo "Done! Bot updated and restarted."
+UPDATEEOF
+chmod +x "$BOT_DIR/update.sh"
+chown "$BOT_USER":"$BOT_USER" "$BOT_DIR/update.sh"
+log "Update script created: $BOT_DIR/update.sh"
 
 # ---- summary ---------------------------------------------------
 IP=$(hostname -I | awk '{print $1}')
@@ -222,7 +237,9 @@ echo "    systemctl status vpnbot     # check status"
 echo "    systemctl restart vpnbot    # restart"
 echo "    journalctl -u vpnbot -f     # live logs"
 echo "    nano /opt/vpnbot/.env       # edit config"
+echo "    bash /opt/vpnbot/update.sh  # manual update"
 echo ""
-echo "  Auto-update:  Every 5 min from GitHub"
+echo "  Auto-update:  Daily at 3:47 AM from GitHub"
+echo "  Manual update: bash /opt/vpnbot/update.sh"
 echo "  Update log:   /var/log/vpnbot-update.log"
 echo ""
