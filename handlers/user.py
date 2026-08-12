@@ -1,19 +1,22 @@
 from aiogram import Router, F, BaseMiddleware
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import CommandStart, Command
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
+from aiogram.filters import CommandStart, Command, BaseFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import time
+from datetime import datetime, timedelta
 from database import (
     add_user, get_user, get_user_configs, has_free_test, add_config,
     get_setting, is_admin, get_plan, add_receipt, get_admins, update_balance,
     get_config_by_id, update_config_sub_link, get_plan_name,
+    get_invite_stats, get_active_configs, get_balance,
 )
-from api import panel_api
+from api import panel_api, panel_manager
 from keyboards.user import (
-    main_menu, back_to_menu, plans_menu, payment_method_menu, config_detail,
+    main_menu, back_to_menu, plans_menu, payment_method_menu, config_detail, name_selection_menu,
     force_join_keyboard, service_detail_keyboard, extra_volume_keyboard,
-    regenerate_link_keyboard, sections_menu,
+    regenerate_link_keyboard, sections_menu, view_user_keyboard,
+    my_services_panel_menu, my_services_configs_menu,
 )
 from utils.texts import (
     WELCOME_TEXT_DEFAULT, config_list_text, config_created, free_test_config, no_balance,
@@ -23,10 +26,16 @@ from utils.texts import (
 )
 from utils.premium_emoji import pe, get_button_emoji_id
 from utils.qr_generator import generate_qr
+from io import BytesIO
+from data_tracker import log_bot_user, update_user_balance, log_purchase
+try:
+    from wireguard_api import wireguard_api
+except ImportError:
+    wireguard_api = None
 
 router = Router()
 
-TEST_CONFIG_DAYS = 1
+# TEST_CONFIG_DAYS is now read from settings (free_test_days)
 
 
 async def _is_channel_member(bot, user_id: int) -> bool:
@@ -52,27 +61,32 @@ async def _send_force_join(bot, chat_id: int):
 
 
 async def _notify_new_user(bot, user):
+    import logging
+    _log = logging.getLogger(__name__)
     channel_id = await get_setting("notification_channel_id") or ""
     if not channel_id:
         return
     try:
         from database import get_user_count_by_period
+        from utils.premium_emoji import pe
         today = await get_user_count_by_period(1)
         week = await get_user_count_by_period(7)
         month = await get_user_count_by_period(30)
         lifetime = await get_user_count_by_period(0)
         username = f"@{user.username}" if user.username else "ندارد"
+        eu = await pe("users")
+        es = await pe("stats")
 
         tpl = await get_setting("text_new_user_notification") or (
-            "🆕 <b>کاربر جدید ربات را استارت کرد!</b>\n\n"
-            "  👤 نام کاربری: {username}\n"
-            "  🔢 آیدی عددی: <code>{user_id}</code>\n"
-            "  📛 نام: {first_name}\n\n"
-            "  📊 آمار کاربران:\n"
-            "     امروز: <b>{today}</b>\n"
-            "     ۷ روز: <b>{week}</b>\n"
-            "     ۳۰ روز: <b>{month}</b>\n"
-            "     کل: <b>{lifetime}</b>"
+            f"{eu} <b>کاربر جدید ربات را استارت کرد!</b>\n\n"
+            f"  👤 نام کاربری: {{username}}\n"
+            f"  🔢 آیدی عددی: <code>{{user_id}}</code>\n"
+            f"  📛 نام: {{first_name}}\n\n"
+            f"  {es} آمار کاربران:\n"
+            f"     امروز: <b>{{today}}</b>\n"
+            f"     ۷ روز: <b>{{week}}</b>\n"
+            f"     ۳۰ روز: <b>{{month}}</b>\n"
+            f"     کل: <b>{{lifetime}}</b>"
         )
 
         text = tpl.replace("{username}", username) \
@@ -83,17 +97,19 @@ async def _notify_new_user(bot, user):
             .replace("{month}", str(month)) \
             .replace("{lifetime}", str(lifetime))
 
-        await bot.send_message(chat_id=channel_id, text=text, parse_mode="HTML")
-    except Exception:
-        pass
+        await bot.send_message(chat_id=channel_id, text=text, parse_mode="HTML", reply_markup=await view_user_keyboard(user.id))
+    except Exception as e:
+        _log.error("Failed to send new user notification: %s %s", type(e).__name__, e)
 
 
 async def _send_receipt_to_channel(bot, photo_file_id, caption: str, receipt_id: int = 0):
+    import logging
+    _log = logging.getLogger(__name__)
     channel_id = await get_setting("notification_channel_id") or ""
     if not channel_id:
+        _log.warning("notification_channel_id not set - skipping channel receipt notification")
         return
     try:
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         from keyboards.user import _btn
         kb = None
         if receipt_id:
@@ -104,8 +120,20 @@ async def _send_receipt_to_channel(bot, photo_file_id, caption: str, receipt_id:
                 ]
             ])
         await bot.send_photo(chat_id=channel_id, photo=photo_file_id, caption=caption, parse_mode="Markdown", reply_markup=kb)
-    except Exception:
-        pass
+        _log.info("Receipt %s sent to channel %s", receipt_id, channel_id)
+        if receipt_id:
+            try:
+                from database import mark_receipt_sent
+                await mark_receipt_sent(receipt_id)
+            except Exception:
+                pass
+    except Exception as e:
+        _log.error("send_photo to channel %s failed (%s: %s) - trying text fallback", channel_id, type(e).__name__, e)
+        try:
+            await bot.send_message(chat_id=channel_id, text=caption, parse_mode="Markdown", reply_markup=kb)
+            _log.info("Text fallback to channel %s succeeded", channel_id)
+        except Exception as e2:
+            _log.error("Text fallback also failed for channel %s: %s %s", channel_id, type(e2).__name__, e2)
 
 
 class ForceJoinMiddleware(BaseMiddleware):
@@ -122,39 +150,315 @@ class ForceJoinMiddleware(BaseMiddleware):
 router.callback_query.middleware(ForceJoinMiddleware())
 
 
+class _StartBtnFilter(BaseFilter):
+    async def __call__(self, message) -> bool:
+        try:
+            btn = await get_setting("btn_start")
+            return message.text == (btn or "\u25b6\ufe0f \u0634\u0631\u0648\u0639")
+        except Exception:
+            return False
+
+
+_start_btn_match = _StartBtnFilter()
+
 async def _start_kb():
+    btn_text = await get_setting("btn_start") or "▶️ شروع"
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="▶️ شروع")]],
+        keyboard=[[KeyboardButton(text=btn_text)]],
         resize_keyboard=True,
     )
-
 
 class C2CState(StatesGroup):
     waiting_confirm = State()
     waiting_photo = State()
+    upload_photo = State()
+
+
+class ConfigNameState(StatesGroup):
+    waiting_name = State()
+
+
+class DiscountState(StatesGroup):
+    waiting_code = State()
+
+
+import json as _json
+
+@router.message(F.web_app_data)
+async def handle_web_app_data(message: Message, state: FSMContext):
+    try:
+        data = _json.loads(message.web_app_data.data)
+    except Exception:
+        return
+
+    action = data.get("action")
+
+    if action == "c2c_upload":
+        plan_id = int(data.get("plan_id", 0))
+        plan = await get_plan(plan_id)
+        if not plan:
+            await message.answer("پلن یافت نشد.", reply_markup=await back_to_menu())
+            return
+        symbol = await get_setting("currency_symbol") or "تومان"
+        card_number = await get_setting("card_number") or "1234-5678-9012-3456"
+        card_owner = await get_setting("card_owner") or "Card Owner"
+        await state.update_data(c2c_plan_id=plan_id)
+        from utils.texts import c2c_payment_text
+        text = await c2c_payment_text(plan, symbol, card_number, card_owner)
+        from keyboards.user import _btn
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [await _btn("پرداخت موفق", f"c2c_confirm_{plan_id}", "success", btn_id="c2c_confirm")],
+            [await _btn("لغو", "main_menu", "cancel", "danger", "cancel")],
+        ])
+        await message.answer(text, parse_mode="HTML", reply_markup=kb)
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
     args = message.text.split(maxsplit=1)
-    invite_code = args[1] if len(args) > 1 else None
+    param = args[1] if len(args) > 1 else None
+
+    deep_link_actions = {
+        "buy_config": "buy_config",
+        "wallet": "wallet",
+        "free_test": "free_test",
+        "my_configs": "my_configs",
+        "view_user": "view_user",
+    }
+
+    invite_code = None
+    deep_link_action = None
+    deep_link_param = None
+    if param:
+        if param in deep_link_actions:
+            deep_link_action = deep_link_actions[param]
+        elif param.startswith("view_user_"):
+            deep_link_action = "view_user"
+            deep_link_param = param.replace("view_user_", "")
+        elif param.startswith("c2c_"):
+            deep_link_action = "c2c"
+            deep_link_param = param
+        elif param.startswith("upload_receipt_"):
+            deep_link_action = "upload_receipt"
+            deep_link_param = param
+        else:
+            invite_code = param
 
     is_new = await add_user(
         message.from_user.id,
         message.from_user.username,
         message.from_user.first_name,
     )
+    log_bot_user(message.from_user.id, message.from_user.username or "", message.from_user.first_name or "")
     if is_new:
         if invite_code:
             from database import get_user_by_invite_code, set_referred_by
             referrer = await get_user_by_invite_code(invite_code)
             if referrer and referrer["id"] != message.from_user.id:
                 await set_referred_by(message.from_user.id, referrer["id"])
+
+                invite_enabled = await get_setting("invite_enabled")
+                if invite_enabled == "1":
+                    reward = float(await get_setting("invite_reward_amount") or "0")
+                    if reward > 0:
+                        await update_balance(referrer["id"], reward)
+
+                channel_id = await get_setting("notification_channel_id") or ""
+                if channel_id:
+                    try:
+                        stats = await get_invite_stats(referrer["id"])
+                        invitee_count = stats["count"]
+                        referrer_display = f"@{referrer.get('username')}" if referrer.get("username") else str(referrer["id"])
+                        invitee_display = f"@{message.from_user.username}" if message.from_user.username else str(message.from_user.id)
+                        symbol = await get_setting("currency_symbol") or "تومان"
+                        reward_val = float(await get_setting("invite_reward_amount") or "0")
+                        invite_enabled_val = await get_setting("invite_enabled")
+
+                        notif_text = (
+                            f"👥 <b>زیرمجموعه جدید!</b>\n\n"
+                            f"  👤 دعوت‌کننده: {referrer_display} (ID: {referrer['id']})\n"
+                            f"  👤 زیرمجموعه: {invitee_display} (ID: {message.from_user.id})\n\n"
+                            f"  📊 تعداد زیرمجموعه‌های کاربر: <b>{invitee_count}</b>\n"
+                        )
+                        if invite_enabled_val == "1" and reward_val > 0:
+                            notif_text += f"  💰 پاداش اعطا شده: <b>{reward_val:,.0f} {symbol}</b>\n"
+
+                        await message.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(referrer["id"]))
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).error("Failed invite notification: %s %s", type(e).__name__, e)
+
         await _notify_new_user(message.bot, message.from_user)
+
+    if deep_link_action:
+        from utils.texts import WELCOME_TEXT_DEFAULT
+        from database import get_plan_sections, get_user_configs
+
+        if deep_link_action == "buy_config":
+            sections = await get_plan_sections()
+            if sections:
+                text = "━━━━━━━━━━━━━━━━━━━━\n  🛒 <b>خرید سرویس</b>\n━━━━━━━━━━━━━━━━━━━━\n\n  بخش مورد نظر را انتخاب کنید:"
+                reply_markup = await sections_menu()
+            else:
+                text = await get_setting("plans_header_text") or (
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    "  🛒 <b>خرید سرویس</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "  پلن مورد نظر خود را انتخاب کنید:"
+                )
+                reply_markup = await plans_menu()
+            await message.answer(text, parse_mode="HTML", reply_markup=reply_markup)
+
+        elif deep_link_action == "wallet":
+            user = await get_user(message.from_user.id)
+            symbol = await get_setting("currency_symbol") or "تومان"
+            from utils.texts import wallet_text
+            text = await wallet_text(user["balance"] if user else 0, symbol)
+            await message.answer(text, parse_mode="HTML", reply_markup=await wallet_menu())
+
+        elif deep_link_action == "view_user":
+            try:
+                target_uid = int(deep_link_param)
+            except (ValueError, TypeError):
+                target_uid = None
+
+            if target_uid:
+                target_user = await get_user(target_uid)
+                if target_user:
+                    active_configs = await get_active_configs(target_uid)
+                    invite_stats = await get_invite_stats(target_uid)
+                    balance = await get_balance(target_uid)
+                    symbol = await get_setting("currency_symbol") or "تومان"
+
+                    uname = target_user.get("username") or "ندارد"
+                    fname = target_user.get("first_name") or "ندارد"
+                    joined = (target_user.get("created_at") or "")[:10]
+
+                    text = (
+                        "👤 <b>پروفایل کاربر</b>\n\n"
+                        f"  🔗 آیدی عددی: <code>{target_uid}</code>\n"
+                        f"  👤 نام کاربری: {uname}\n"
+                        f"  👥 نام: {fname}\n"
+                        f"  📅 تاریخ عضویت: {joined}\n\n"
+                        f"  📊 کانفیگ‌های فعال: <b>{len(active_configs)}</b>\n"
+                        f"  💰 موجودی: <b>{balance:,.0f} {symbol}</b>\n"
+                        f"  👥 زیرمجموعه‌ها: <b>{invite_stats['count']} نفر</b>\n\n"
+                        f"کد دعوت: <code>{invite_stats.get('code') or '—'}</code>"
+                    )
+
+                    kb = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="\U0001f4e6 کانفیگ‌های کاربر", callback_data=f"view_user_configs_{target_uid}")],
+                    ])
+
+                    try:
+                        photos = await message.bot.get_user_profile_photos(target_uid, limit=1)
+                        if photos.photos:
+                            await message.answer_photo(
+                                photo=photos.photos[0][-1].file_id,
+                                caption=text,
+                                parse_mode="HTML",
+                                reply_markup=kb,
+                            )
+                        else:
+                            await message.answer(text, parse_mode="HTML", reply_markup=kb)
+                    except Exception:
+                        await message.answer(text, parse_mode="HTML", reply_markup=kb)
+                else:
+                    await message.answer("❌ کاربر یافت نشد.", reply_markup=await main_menu())
+            else:
+                await message.answer("❌ آیدی نامعتبر.", reply_markup=await main_menu())
+            return
+
+        elif deep_link_action == "free_test":
+            from keyboards.user import _btn
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [await _btn("🧪 تست رایگان", "free_test", "free_test", btn_id="free_test")],
+                [await _btn("بازگشت", "main_menu", btn_id="back")],
+            ])
+            await message.answer(
+                "━━━━━━━━━━━━━━━━━━━━\n  🧪 <b>تست رایگان</b>\n━━━━━━━━━━━━━━━━━━━━\n\n  برای دریافت تست رایگان کلیک کنید:",
+                parse_mode="HTML", reply_markup=kb,
+            )
+
+        elif deep_link_action == "my_configs":
+            configs = await get_user_configs(message.from_user.id)
+            active = [c for c in configs if c["is_active"]]
+            if active:
+                buttons = []
+                for cfg in active[:5]:
+                    svc_name = cfg.get("config_name") or f"سرویس #{cfg['id']}"
+                    buttons.append([InlineKeyboardButton(
+                        text=f"🟢 {svc_name} — انقضا: {cfg['expire_date'][:10]}",
+                        callback_data=f"config_detail_{cfg['id']}",
+                    )])
+                from keyboards.user import _btn
+                buttons.append([await _btn("بازگشت", "main_menu", btn_id="back")])
+                kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+                await message.answer("📋 <b>سرویس‌های فعال شما</b>", parse_mode="HTML", reply_markup=kb)
+            else:
+                await message.answer(
+                    "📋 <b>سرویس‌های من</b>\\n\\nشما هیچ سرویس فعالی ندارید.",
+                    parse_mode="HTML", reply_markup=await back_to_menu(),
+                )
+
+        elif deep_link_action == "c2c":
+            try:
+                parts = deep_link_param.split("_")
+                plan_id = int(parts[1])
+            except (IndexError, ValueError):
+                plan_id = 0
+            plan = await get_plan(plan_id)
+            if not plan:
+                await message.answer("پلن یافت نشد.", reply_markup=await back_to_menu())
+                return
+            symbol = await get_setting("currency_symbol") or "تومان"
+            card_number = await get_setting("card_number") or "1234-5678-9012-3456"
+            card_owner = await get_setting("card_owner") or "Card Owner"
+            c2c_cfg_name = ""
+            if len(parts) > 2:
+                from urllib.parse import unquote
+                c2c_cfg_name = unquote("_".join(parts[2:]))
+            await state.update_data(c2c_plan_id=plan_id, config_name=c2c_cfg_name)
+            await state.set_state(C2CState.waiting_photo)
+            from utils.texts import c2c_payment_text, c2c_upload_photo_text
+            card_text = await c2c_payment_text(plan, symbol, card_number, card_owner)
+            photo_text = await c2c_upload_photo_text()
+            text = card_text + "\n\n" + photo_text
+            from keyboards.user import _btn
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [await _btn("لغو", "main_menu", "cancel", "danger", "cancel")],
+            ])
+            await message.answer(text, parse_mode="HTML", reply_markup=kb)
+
+        elif deep_link_action == "upload_receipt":
+            try:
+                receipt_id = int(deep_link_param.split("_")[2])
+            except (IndexError, ValueError):
+                receipt_id = 0
+            from database import get_receipt
+            receipt = await get_receipt(receipt_id) if receipt_id else None
+            if not receipt or receipt["user_id"] != message.from_user.id:
+                await message.answer("رسید یافت نشد.", reply_markup=await back_to_menu())
+                return
+            if receipt["status"] != "pending":
+                await message.answer("این رسید قبلاً پردازش شده است.", reply_markup=await back_to_menu())
+                return
+            await state.update_data(upload_receipt_id=receipt_id)
+            await state.set_state(C2CState.upload_photo)
+            from utils.texts import c2c_upload_photo_text
+            text = await c2c_upload_photo_text()
+            await message.answer(text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+        return
+
     if not await _is_channel_member(message.bot, message.from_user.id):
         await _send_force_join(message.bot, message.from_user.id)
         return
+    we = await get_setting("welcome_emoji") or ""
     welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
+    welcome = welcome.replace("{name}", message.from_user.first_name or "doust aziz")
+    if we:
+        welcome = '<tg-emoji emoji-id="' + we + '"></tg-emoji>\n' + welcome
     await message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
     menu_msg = await message.answer("منوی اصلی", reply_markup=await main_menu(message.from_user.id))
     try:
@@ -167,7 +471,7 @@ async def cmd_start(message: Message):
         pass
 
 
-@router.message(F.text == "▶️ شروع")
+@router.message(_start_btn_match)
 async def btn_start(message: Message):
     is_new = await add_user(
         message.from_user.id,
@@ -179,7 +483,12 @@ async def btn_start(message: Message):
     if not await _is_channel_member(message.bot, message.from_user.id):
         await _send_force_join(message.bot, message.from_user.id)
         return
+    we = await get_setting("welcome_emoji") or ""
+    if we:
+        try: await message.answer(we)
+        except: pass
     welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
+    welcome = welcome.replace("{name}", message.from_user.first_name or "doust aziz")
     menu_msg = await message.answer(welcome, parse_mode="HTML", reply_markup=await main_menu(message.from_user.id))
     try:
         await message.bot.set_message_reaction(
@@ -198,13 +507,18 @@ async def cb_check_membership(callback: CallbackQuery):
             await callback.message.delete()
         except Exception:
             pass
+        we = await get_setting("welcome_emoji") or ""
+        if we:
+            try: await callback.message.answer(we)
+            except: pass
         welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
+        welcome = welcome.replace("{name}", callback.from_user.first_name or "doust aziz")
         await callback.message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
         menu_msg = await callback.message.answer("منوی اصلی", reply_markup=await main_menu(callback.from_user.id))
         try:
             await callback.bot.set_message_reaction(
                 chat_id=callback.message.chat.id,
-                message_id=callback.message.message_id,
+                message_id=message.message_id,
                 reaction=[{"type": "emoji", "emoji": "🔥"}],
             )
         except Exception:
@@ -216,7 +530,7 @@ async def cb_check_membership(callback: CallbackQuery):
 
 @router.callback_query(F.data == "invite")
 async def cb_invite(callback: CallbackQuery):
-    from database import get_invite_stats, get_setting
+    from database import get_setting
     enabled = await get_setting("invite_enabled")
     if enabled != "1":
         await callback.answer("این قابلیت غیرفعال است", show_alert=True)
@@ -225,15 +539,33 @@ async def cb_invite(callback: CallbackQuery):
     code = stats["code"] or "N/A"
     count = stats["count"]
     reward = await get_setting("invite_reward_amount") or "0"
+    symbol = await get_setting("currency_symbol") or "تومان"
     me = await callback.bot.get_me()
     link = f"https://t.me/{me.username}?start={code}"
-    text = (
-        f"👥 <b>زیر مجموعه گیری</b>\n\n"
+
+    tpl = await get_setting("text_invite") or (
+        f"👥 <b>زیرمجموعه گیری</b>\n\n"
         f"لینک دعوت شما:\n<code>{link}</code>\n\n"
         f"تعداد زیرمجموعه‌ها: <b>{count}</b>\n"
-        f"پاداش هر زیرمجموعه: <b>{reward} تومان</b>"
+        f"پاداش هر زیرمجموعه: <b>{reward} {symbol}</b>"
     )
-    await callback.message.edit_text(text, parse_mode="HTML")
+    text = tpl.replace("{link}", link) \
+        .replace("{count}", str(count)) \
+        .replace("{reward}", str(reward)) \
+        .replace("{symbol}", symbol)
+
+    from keyboards.user import _btn
+
+    copy_btn = InlineKeyboardButton(
+        text=await get_setting("btn_invite_copy") or "📋 کپی لینک دعوت",
+        copy_text=CopyTextButton(text=link),
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [copy_btn],
+        [await _btn("بازگشت", "main_menu", btn_id="back")],
+    ])
+
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
 
 
 @router.message(Command("menu"))
@@ -257,13 +589,56 @@ async def cb_main_menu(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "free_test")
 async def cb_free_test(callback: CallbackQuery):
     user_id = callback.from_user.id
-    free_test_enabled = await get_setting("free_test_enabled")
-    if free_test_enabled != "1":
-        await callback.answer("Free test is currently disabled.", show_alert=True)
-        return
     admin = await is_admin(user_id)
     if not admin and await has_free_test(user_id):
         await callback.answer("You already used your free test!", show_alert=True)
+        return
+
+    import database as db
+    all_panels = await db.get_active_panels()
+    ft_panels = [p for p in all_panels if p.get("free_test_enabled")]
+    if not ft_panels:
+        await callback.answer("Free test is currently disabled.", show_alert=True)
+        return
+
+    from keyboards.user import _btn
+    lines = ["🧪 **تست رایگان**\n\nپنل مورد نظر را انتخاب کنید:\n"]
+    kb_rows = []
+    for p in ft_panels:
+        ptype = p.get("panel_type", "v2ray")
+        mb = p.get("free_test_mb", 0)
+        days = p.get("free_test_days", 1)
+        mb_text = f"{mb // 1024}GB" if mb >= 1024 else f"{mb}MB"
+        lines.append(f"**{p['name']}** — {mb_text} / {days}روز")
+        btn = await _btn(p["name"], f"free_test_select_{p['id']}", "link", btn_id="plan_name")
+        if p.get("emoji_id"):
+            btn.icon_custom_emoji_id = p["emoji_id"]
+        kb_rows.append([btn])
+    back = await get_setting("btn_back")
+    kb_rows.append([await _btn(back, "main_menu", "back", btn_id="back3")])
+    from aiogram.types import InlineKeyboardMarkup
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+
+    try:
+        await callback.message.edit_text("\n".join(lines), reply_markup=kb, parse_mode="Markdown")
+    except Exception:
+        await callback.message.answer("\n".join(lines), reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("free_test_select_"))
+async def cb_free_test_select(callback: CallbackQuery):
+    panel_id = int(callback.data.split("_")[-1])
+    user_id = callback.from_user.id
+    admin = await is_admin(user_id)
+    if not admin and await has_free_test(user_id):
+        await callback.answer("You already used your free test!", show_alert=True)
+        return
+
+    import database as db
+    ft_panel = await db.get_panel(panel_id)
+    if not ft_panel or not ft_panel.get("free_test_enabled"):
+        await callback.answer("این پنل برای تست رایگان غیرفعال است.", show_alert=True)
         return
 
     user = await get_user(user_id)
@@ -277,13 +652,42 @@ async def cb_free_test(callback: CallbackQuery):
     email = f"free{suffix}"
 
     await callback.answer("در حال ساخت کانفیگ رایگان...", show_alert=False)
-    free_test_mb = int(await get_setting("free_test_mb") or "102400")
-    result = await panel_api.create_test_config(email, total_mb=free_test_mb)
-    if not result:
-        await callback.message.edit_text(
-            "ساخت کانفیگ ناموفق بود. لطفاً با ادمین تماس بگیرید.", reply_markup=await back_to_menu()
+    free_test_mb = ft_panel.get("free_test_mb") or 102400
+    free_test_days = ft_panel.get("free_test_days") or 1
+    free_test_inbound_raw = ft_panel.get("free_test_inbound_ids") or ""
+    free_test_inbound_ids = [int(x.strip()) for x in free_test_inbound_raw.split(",") if x.strip().isdigit()] or None
+
+    ft_panel_type = ft_panel.get("panel_type", "v2ray")
+
+    if ft_panel_type == "wireguard":
+        if not wireguard_api:
+            await callback.message.edit_text("پنل Wireguard متصل نیست.", reply_markup=await back_to_menu())
+            return
+        import random, string
+        rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        peer_name = f"nig_{user_id}_{rand_suffix}"
+        ft_data_limit_gb = (free_test_mb / 1024) if free_test_mb else 0
+        wg_result = await wireguard_api.create_peer(
+            peer_name=peer_name,
+            data_limit_gb=ft_data_limit_gb,
+            expiry_days=free_test_days,
         )
-        return
+        if not wg_result:
+            await callback.message.edit_text(
+                "ساخت کانفیگ ناموفق بود. لطفاً با ادمین تماس بگیرید.", reply_markup=await back_to_menu()
+            )
+            return
+        sub_link = wg_result.get("short_link", "") or f"wireguard:{peer_name}"
+        expire_date = (datetime.utcnow() + timedelta(days=free_test_days)).isoformat()
+        result = {"sub_link": sub_link, "uuid": peer_name, "expire_date": expire_date}
+    else:
+        ft_panel_api = panel_manager.get(ft_panel["id"]) or panel_api
+        result = await ft_panel_api.create_test_config(email, total_mb=free_test_mb, days=free_test_days, custom_inbound_ids=free_test_inbound_ids)
+        if not result:
+            await callback.message.edit_text(
+                "ساخت کانفیگ ناموفق بود. لطفاً با ادمین تماس بگیرید.", reply_markup=await back_to_menu()
+            )
+            return
 
     await add_config(
         user_id=user_id,
@@ -292,38 +696,72 @@ async def cb_free_test(callback: CallbackQuery):
         uuid=result["uuid"],
         email=email,
         expire_date=result["expire_date"],
+        panel_id=ft_panel["id"],
     )
-
-    text = await free_test_config(result["sub_link"], TEST_CONFIG_DAYS)
-    qr_img = generate_qr(result["sub_link"])
+    log_purchase(user_id, username or str(user_id), "Free Test", free_test_mb // 1024, free_test_days, 0, "تومان", "test")
 
     try:
         await callback.message.delete()
     except Exception:
         pass
-    await callback.message.answer_photo(
-        photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
-    )
+
+    if ft_panel_type == "wireguard":
+        from aiogram.types import BufferedInputFile
+        conf_content = await wireguard_api.download_config(result["uuid"])
+        qr_bytes = await wireguard_api.download_qr(result["uuid"])
+
+        wg_text = (
+            "✅ <b>تست رایگان Wireguard ساخته شد!</b>\n\n"
+            f"📊 حجم: <b>{free_test_mb // 1024} GB</b>\n"
+            f"📅 مدت: <b>{free_test_days} روز</b>\n"
+            f"🔗 لینک کوتاه: <code>{result['sub_link']}</code>\n\n"
+            "📄 فایل تنظیمات در ادامه ارسال شد."
+        )
+        await callback.message.answer(wg_text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+        if conf_content:
+            conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"{result['uuid']}.conf")
+            await callback.message.answer_document(document=conf_file, caption=f"📄 فایل تنظیمات")
+
+        if qr_bytes:
+            qr_file = BufferedInputFile(qr_bytes, filename=f"{result['uuid']}_qr.png")
+            await callback.message.answer_photo(photo=qr_file, caption=f"📷 QR کد کانفیگ")
+    else:
+        text = await free_test_config(result["sub_link"], free_test_days)
+        qr_img = generate_qr(result["sub_link"])
+        await callback.message.answer_photo(
+            photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
+        )
 
     # Notify admin channel
     channel_id = await get_setting("notification_channel_id") or ""
     if channel_id:
         try:
+            from utils.premium_emoji import pe
+            ef = await pe("free_test")
+            ep = await pe("package")
+            el = await pe("link")
             user_display = f"@{username}" if username and not username.isdigit() else str(user_id)
-            notif_text = (
-                f"**کانفیگ رایگان ساخته شد!**\n\n"
-                f"**کاربر:** {user_display} (ID: {user_id})\n"
-                f"**حجم:** {free_test_mb // 1024} GB\n"
-                f"**مدت:** {TEST_CONFIG_DAYS} روز\n\n"
-                f"**لینک اشتراک:**\n`{result['sub_link']}`"
+            tpl = await get_setting("text_free_test_notification") or (
+                f"{ef} <b>کانفیگ رایگان ساخته شد!</b>\n\n"
+                f"  👤 کاربر: {{user_display}} (ID: {{user_id}})\n"
+                f"  {ep} حجم: <b>{{free_test_mb}} GB</b>\n"
+                f"  📅 مدت: <b>{free_test_days} روز</b>\n\n"
+                f"  {el} لینک اشتراک:\n"
+                f"<code>{{sub_link}}</code>"
             )
-            await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="Markdown")
-        except Exception:
-            pass
+            notif_text = tpl.replace("{user_display}", user_display) \
+                .replace("{user_id}", str(user_id)) \
+                .replace("{free_test_mb}", str(free_test_mb // 1024)) \
+                .replace("{sub_link}", result["sub_link"])
+            await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(user_id))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Failed free test channel notification: %s %s", type(e).__name__, e)
 
 
 @router.callback_query(F.data.startswith("make_config_"))
-async def cb_make_config(callback: CallbackQuery):
+async def cb_make_config(callback: CallbackQuery, state: FSMContext):
     plan_id = int(callback.data.split("_")[-1])
     plan = await get_plan(plan_id)
     if not plan:
@@ -334,55 +772,150 @@ async def cb_make_config(callback: CallbackQuery):
     user = await get_user(user_id)
     username = user.get("username") or str(user_id)
     email = f"c2c_{user_id}_{username}_{int(time.time())}"
+    mdata = await state.get_data()
+    cfg_name = mdata.get("config_name")
+    pay_price_mk = mdata.get("discounted_price", plan["price"])
+    disc_code_mk = mdata.get("discount_code", "")
+    await state.clear()
+    if not cfg_name:
+        try:
+            import sqlite3
+            from config import DB_PATH
+            conn = sqlite3.connect(DB_PATH, timeout=5)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT config_name FROM receipts WHERE user_id = ? AND plan_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", (user_id, plan_id)).fetchone()
+            conn.close()
+            if row and row['config_name']:
+                cfg_name = row['config_name']
+        except Exception:
+            pass
 
     await callback.answer("در حال ساخت کانفیگ...", show_alert=False)
-    plan_inbound_ids = None
-    if plan.get("inbound_ids"):
-        plan_inbound_ids = [int(x.strip()) for x in plan["inbound_ids"].split(",") if x.strip().isdigit()]
-    result = await panel_api.create_config(email, days=plan["days"], total_gb=plan["gb"], inbound_ids=plan_inbound_ids)
-    if not result:
-        await callback.message.edit_text("ساخت کانفیگ ناموفق بود. لطفاً دوباره تلاش کنید.", reply_markup=await back_to_menu())
-        return
+    
+    service_type = plan.get("service_type", "v2ray")
+    
+    if service_type == "wireguard":
+        # Wireguard config creation
+        if not wireguard_api:
+            await callback.message.edit_text("پنل Wireguard متصل نیست. لطفاً دوباره تلاش کنید.", reply_markup=await back_to_menu())
+            return
+        import random, string
+        rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        peer_name = f"nig_{user_id}_{rand_suffix}"
+        wg_result = await wireguard_api.create_peer(
+            peer_name=peer_name,
+            data_limit_gb=plan["gb"],
+            expiry_days=plan["days"],
+        )
+        if not wg_result:
+            await callback.message.edit_text("ساخت کانفیگ Wireguard ناموفق بود. لطفاً دوباره تلاش کنید.", reply_markup=await back_to_menu())
+            return
+        sub_link = wg_result.get("short_link", "") or f"wireguard:{peer_name}"
+        expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
+        result = {"sub_link": sub_link, "uuid": peer_name, "expire_date": expire_date}
+    else:
+        # V2Ray config creation (existing flow)
+        plan_inbound_ids = None
+        if plan.get("inbound_ids"):
+            plan_inbound_ids = [int(x.strip()) for x in plan["inbound_ids"].split(",") if x.strip().isdigit()]
+        ip_limit = plan.get("ip_limit", 0) or 0
+        plan_panel = panel_manager.get(plan.get("panel_id")) if plan.get("panel_id") else panel_api
+        if not plan_panel:
+            plan_panel = panel_api
+        result = await plan_panel.create_config(email, days=plan["days"], total_gb=plan["gb"], inbound_ids=plan_inbound_ids, ip_limit=ip_limit)
+        if not result:
+            await callback.message.edit_text("ساخت کانفیگ ناموفق بود. لطفاً دوباره تلاش کنید.", reply_markup=await back_to_menu())
+            return
 
     await add_config(
         user_id=user_id, plan_id=plan_id, sub_link=result["sub_link"],
         uuid=result["uuid"], email=email, expire_date=result["expire_date"],
+        panel_id=plan.get("panel_id"),
     )
 
-    await update_balance(user_id, -plan["price"])
+    await update_balance(user_id, -pay_price_mk)
+    symbol = await get_setting("currency_symbol") or "تومان"
+    log_purchase(user_id, username, plan["name"], plan["gb"], plan["days"], plan["price"], symbol)
 
     symbol = await get_setting("currency_symbol") or "تومان"
-    text = await config_created(
-        result["sub_link"], result["expire_date"][:10],
-        plan["price"], plan["name"], plan["gb"], plan["days"], symbol,
-    )
-    qr_img = generate_qr(result["sub_link"])
 
     try:
         await callback.message.delete()
     except Exception:
         pass
-    await callback.message.answer_photo(
-        photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
-    )
+
+    if service_type == "wireguard":
+        from aiogram.types import BufferedInputFile
+        conf_content = await wireguard_api.download_config(result["uuid"])
+        qr_bytes = await wireguard_api.download_qr(result["uuid"])
+
+        wg_text = (
+            "✅ <b>کانفیگ Wireguard ساخته شد!</b>\n\n"
+            f"📦 پلن: <b>{plan['name']}</b>\n"
+            f"📊 حجم: <b>{plan['gb']} GB</b>\n"
+            f"📅 مدت: <b>{plan['days']} روز</b>\n"
+            f"💰 پرداخت: <b>{plan['price']:,} {symbol}</b>\n"
+            f"📅 انقضا: <b>{result['expire_date'][:10]}</b>\n\n"
+            f"🔗 لینک کوتاه: <code>{result['sub_link']}</code>\n\n"
+            "📄 فایل تنظیمات در ادامه ارسال شد."
+        )
+        await callback.message.answer(wg_text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+        if conf_content:
+            conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"{result['uuid']}.conf")
+            await callback.message.answer_document(
+                document=conf_file,
+                caption=f"📄 فایل تنظیمات {result['uuid']}",
+            )
+
+        if qr_bytes:
+            qr_file = BufferedInputFile(qr_bytes, filename=f"{result['uuid']}_qr.png")
+            await callback.message.answer_photo(
+                photo=qr_file,
+                caption=f"📷 QR کد کانفیگ {result['uuid']}",
+            )
+    else:
+        # V2Ray: existing flow
+        text = await config_created(
+            result["sub_link"], result["expire_date"][:10],
+            plan["price"], plan["name"], plan["gb"], plan["days"], symbol,
+        )
+        qr_img = generate_qr(result["sub_link"])
+        await callback.message.answer_photo(
+            photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
+        )
 
     # Notify admin channel
     channel_id = await get_setting("notification_channel_id") or ""
     if channel_id:
         try:
+            from utils.premium_emoji import pe
+            ep = await pe("package")
+            em = await pe("money")
+            el = await pe("link")
+            eu = await pe("users")
             user_display = f"@{username}" if username and not username.isdigit() else str(user_id)
-            notif_text = (
-                f"**کانفیگ جدید ساخته شد!**\n\n"
-                f"**کاربر:** {user_display} (ID: {user_id})\n"
-                f"**پلن:** {plan['name']}\n"
-                f"**حجم:** {plan['gb']} GB\n"
-                f"**مدت:** {plan['days']} روز\n"
-                f"**مبلغ:** {plan['price']:,} {symbol}\n\n"
-                f"**لینک اشتراک:**\n`{result['sub_link']}`"
+            tpl = await get_setting("text_new_config_notification") or (
+                f"{ep} <b>کانفیگ جدید ساخته شد!</b>\n\n"
+                f"  {eu} کاربر: {{user_display}} (ID: {{user_id}})\n"
+                f"  📦 پلن: <b>{{plan_name}}</b>\n"
+                f"  📊 حجم: <b>{{plan_gb}} GB</b>\n"
+                f"  📅 مدت: <b>{{plan_days}} روز</b>\n"
+                f"  {em} مبلغ: <b>{{plan_price}} {symbol}</b>\n\n"
+                f"  {el} لینک اشتراک:\n"
+                f"<code>{{sub_link}}</code>"
             )
-            await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="Markdown")
-        except Exception:
-            pass
+            notif_text = tpl.replace("{user_display}", user_display) \
+                .replace("{user_id}", str(user_id)) \
+                .replace("{plan_name}", plan["name"]) \
+                .replace("{plan_gb}", str(plan["gb"])) \
+                .replace("{plan_days}", str(plan["days"])) \
+                .replace("{plan_price}", f"{plan['price']:,}") \
+                .replace("{sub_link}", result["sub_link"])
+            await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(user_id))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Failed config channel notification: %s %s", type(e).__name__, e)
 
 
 @router.callback_query(F.data == "buy_config")
@@ -458,12 +991,14 @@ async def cb_all_plans(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("select_plan_"))
-async def cb_select_plan(callback: CallbackQuery):
+async def cb_select_plan(callback: CallbackQuery, state: FSMContext):
     plan_id = int(callback.data.split("_")[-1])
     plan = await get_plan(plan_id)
     if not plan:
         await callback.answer("پلن یافت نشد!", show_alert=True)
         return
+
+    await state.update_data(config_plan_id=plan_id)
 
     symbol = await get_setting("currency_symbol") or "تومان"
     volume_line = "" if plan.get("is_ultimate") else f"  📊 حجم: <b>{plan['gb']} GB</b>\n"
@@ -475,16 +1010,206 @@ async def cb_select_plan(callback: CallbackQuery):
         f"  📅 مدت: <b>{plan['days']} روز</b>\n"
         f"  💰 قیمت: <b>{plan['price']:,} {symbol}</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"  برای سرویس خود یک نام انتخاب کنید:"
+    )
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await name_selection_menu(plan_id))
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=await name_selection_menu(plan_id))
+
+
+
+@router.callback_query(F.data.startswith("name_custom_"))
+async def cb_name_custom(callback: CallbackQuery, state: FSMContext):
+    plan_id = int(callback.data.split("_")[-1])
+    await state.update_data(config_plan_id=plan_id)
+    await state.set_state(ConfigNameState.waiting_name)
+    text = "✏️ <b>نام دلخواه خود را وارد کنید:</b>\n\nحداکثر ۲۰ کاراکتر"
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("name_random_"))
+async def cb_name_random(callback: CallbackQuery, state: FSMContext):
+    import random
+    plan_id = int(callback.data.split("_")[-1])
+    words = ["سریع", "آزاد", "امن", "پرسرعت", "نامحدود", "پایدار", "برتر", "ویژه", "فوق‌سریع", "پرواز"]
+    name = f"{random.choice(words)}-{random.randint(10, 99)}"
+    await state.update_data(config_plan_id=plan_id, config_name=name)
+    await show_payment_methods(callback, plan_id)
+
+
+@router.message(ConfigNameState.waiting_name)
+async def handle_config_name(message: Message, state: FSMContext):
+    name = (message.text or "").strip()[:20]
+    if not name:
+        await message.answer("لطفاً یک نام وارد کنید:")
+        return
+    data = await state.get_data()
+    plan_id = data.get("config_plan_id")
+    await state.update_data(config_name=name)
+    await show_payment_methods(message, plan_id)
+
+async def validate_discount(code_text: str, plan_id: int):
+    from database import get_discount_code
+    from datetime import datetime
+    code = await get_discount_code(code_text.strip().upper())
+    if not code:
+        return None, "کد تخفیف نامعتبر است."
+    if not code["is_active"]:
+        return None, "این کد غیرفعال است."
+    if code["expires_at"]:
+        try:
+            exp = datetime.fromisoformat(code["expires_at"])
+            if datetime.utcnow() > exp:
+                return None, "اعتبار این کد تمام شده است."
+        except Exception:
+            pass
+    if code["max_uses"] > 0 and code["used_count"] >= code["max_uses"]:
+        return None, "تعداد استفاده از این کد تمام شده است."
+    if code["plan_id"] > 0 and code["plan_id"] != plan_id:
+        return None, "این کد برای این پلن معتبر نیست."
+    return code, None
+
+
+def calc_discount(price: float, code: dict) -> tuple[float, str]:
+    if code["discount_type"] == "percent":
+        amount = price * (code["discount_value"] / 100)
+    else:
+        amount = min(code["discount_value"], price)
+    final = max(0, price - amount)
+    return final, f"{amount:,.0f}"
+
+
+@router.callback_query(F.data.startswith("apply_discount_"))
+async def cb_apply_discount(callback: CallbackQuery, state: FSMContext):
+    plan_id = int(callback.data.split("_")[-1])
+    await state.update_data(discount_plan_id=plan_id)
+    await state.set_state(DiscountState.waiting_code)
+    text = "🏷️ <b>کد تخفیف خود را وارد کنید:</b>\n\nپس از اعمال کد، قیمت نهایی نمایش داده می‌شود."
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML")
+
+
+@router.message(DiscountState.waiting_code)
+async def handle_discount_code(message: Message, state: FSMContext):
+    if not message.text:
+        await message.answer("لطفاً کد تخفیف را به صورت متنی وارد کنید:")
+        return
+    data = await state.get_data()
+    plan_id = data.get("discount_plan_id")
+    plan = await get_plan(plan_id)
+    if not plan:
+        await message.answer("پلن یافت نشد.", reply_markup=await back_to_menu())
+        await state.clear()
+        return
+
+    code, error = await validate_discount(message.text, plan_id)
+    if error:
+        await message.answer(f"❌ {error}\n\nکد دیگری وارد کنید یا بازگردید:")
+        return
+
+    final_price, discount_amount_str = calc_discount(plan["price"], code)
+    discount_amount = plan["price"] - final_price
+    await state.update_data(
+        discount_code=code["code"],
+        discount_amount=discount_amount,
+        discounted_price=final_price,
+    )
+
+    # Send discount usage notification to admin channel
+    try:
+        channel_id = await get_setting("notification_channel_id") or ""
+        if channel_id:
+            user_display = f"@{message.from_user.username}" if message.from_user.username else str(message.from_user.id)
+            type_label = "درصد" if code["discount_type"] == "percent" else "تومان"
+            await message.bot.send_message(
+                chat_id=channel_id,
+                text="🏷️ <b>کد تخفیف اعمال شد!</b>\n\n"
+                     f"  👤 کاربر: {user_display} (ID: {message.from_user.id})\n"
+                     f"  🏷️ کد: <code>{code['code']}</code>\n"
+                     f"  📊 نوع: {type_label} ({code['discount_value']})\n"
+                     f"  💰 تخفیف: {discount_amount:,.0f} {symbol}\n"
+                     f"  💰 قیمت نهایی: {final_price:,.0f} {symbol}",
+                parse_mode="HTML",
+            )
+    except Exception:
+        pass
+
+    saved_cfg = (await state.get_data()).get("config_name", "")
+    await state.clear()
+    await state.update_data(
+        discounted_price=final_price,
+        discount_code=code["code"],
+        discount_amount=discount_amount,
+        config_name=saved_cfg,
+    )
+
+    symbol = await get_setting("currency_symbol") or "تومان"
+    from keyboards.user import payment_method_menu
+    volume_line = "" if plan.get("is_ultimate") else f"  📊 حجم: <b>{plan['gb']} GB</b>\n"
+    discount_label = f"{code['discount_value']}{'%' if code['discount_type'] == 'percent' else 'تومان'}"
+    text = (
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"  📦 <b>{plan['name']}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{volume_line}"
+        f"  📅 مدت: <b>{plan['days']} روز</b>\n"
+        f"  💰 قیمت: <b>{plan['price']:,} {symbol}</b>\n"
+        f"  🏷️ تخفیف ({discount_label}): <b>\u2212{discount_amount:,.0f} {symbol}</b>\n"
+        f"  💰 قیمت نهایی: <b>{final_price:,.0f} {symbol}</b>\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
         f"  روش پرداخت را انتخاب کنید:"
     )
     try:
-        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await payment_method_menu(plan_id))
+        await message.edit_text(text, parse_mode="HTML", reply_markup=await payment_method_menu(plan_id))
     except Exception:
-        await callback.message.answer(text, parse_mode="HTML", reply_markup=await payment_method_menu(plan_id))
+        await message.answer(text, parse_mode="HTML", reply_markup=await payment_method_menu(plan_id))
 
+
+
+async def show_payment_methods(target, plan_id: int, discount_amount: float = 0, discount_label: str = ""):
+    from database import get_plan, get_setting
+    plan = await get_plan(plan_id)
+    symbol = await get_setting("currency_symbol") or "تومان"
+    volume_line = "" if plan.get("is_ultimate") else f"  📊 حجم: <b>{plan['gb']} GB</b>\n"
+    discount_line = ""
+    final_price = plan['price']
+    if discount_amount > 0:
+        final_price = max(0, plan['price'] - discount_amount)
+        discount_line = f"  🏷️ تخفیف ({discount_label}): <b>\u2212{discount_amount:,.0f} {symbol}</b>\n"
+    price_display = f"{final_price:,.0f}" if discount_amount > 0 else f"{plan['price']:,}"
+    price_key = "discounted_price" if discount_amount > 0 else "price"
+    text = (
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"  📦 <b>{plan['name']}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{volume_line}"
+        f"  📅 مدت: <b>{plan['days']} روز</b>\n"
+        f"  💰 قیمت: <b>{plan['price']:,} {symbol}</b>\n"
+        f"{discount_line}"
+        f"  💰 قیمت نهایی: <b>{price_display} {symbol}</b>\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"  روش پرداخت را انتخاب کنید:"
+    )
+    from aiogram.types import CallbackQuery, Message
+    if isinstance(target, CallbackQuery):
+        try:
+            await target.message.edit_text(text, parse_mode="HTML", reply_markup=await payment_method_menu(plan_id))
+        except Exception:
+            await target.message.answer(text, parse_mode="HTML", reply_markup=await payment_method_menu(plan_id))
+    else:
+        try:
+            await target.edit_text(text, parse_mode="HTML", reply_markup=await payment_method_menu(plan_id))
+        except Exception:
+            await target.answer(text, parse_mode="HTML", reply_markup=await payment_method_menu(plan_id))
 
 @router.callback_query(F.data.startswith("pay_wallet_"))
-async def cb_pay_wallet(callback: CallbackQuery):
+async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
     plan_id = int(callback.data.split("_")[-1])
     plan = await get_plan(plan_id)
     if not plan:
@@ -495,8 +1220,13 @@ async def cb_pay_wallet(callback: CallbackQuery):
     user = await get_user(user_id)
     symbol = await get_setting("currency_symbol") or "تومان"
 
-    if user["balance"] < plan["price"]:
-        text = await no_balance(plan["price"], user["balance"], symbol)
+    wdata_pre = await state.get_data()
+    pay_price = wdata_pre.get("discounted_price", plan["price"])
+    disc_amount = wdata_pre.get("discount_amount", 0)
+    disc_code = wdata_pre.get("discount_code", "")
+
+    if user["balance"] < pay_price:
+        text = await no_balance(pay_price, user["balance"], symbol)
         try:
             await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await back_to_menu())
         except Exception:
@@ -504,44 +1234,157 @@ async def cb_pay_wallet(callback: CallbackQuery):
         return
 
     from database import update_balance
-    await update_balance(user_id, -plan["price"])
+    await update_balance(user_id, -pay_price)
+    update_user_balance(user_id, user["balance"] - pay_price, symbol)
 
     username = user.get("username") or str(user_id)
     ts = int(time.time())
     email = f"user_{user_id}_{username}_{ts}"
+    wdata = await state.get_data()
+    cfg_name = wdata.get("config_name")
+    await state.clear()
 
     await callback.answer("در حال ساخت کانفیگ...", show_alert=False)
-    plan_inbound_ids = None
-    if plan.get("inbound_ids"):
-        plan_inbound_ids = [int(x.strip()) for x in plan["inbound_ids"].split(",") if x.strip().isdigit()]
-    result = await panel_api.create_config(email, days=plan["days"], total_gb=plan["gb"], inbound_ids=plan_inbound_ids)
-    if not result:
-        await update_balance(user_id, plan["price"])
-        try:
-            await callback.message.edit_text(
-                "ساخت کانفیگ ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
-            )
-        except Exception:
-            await callback.message.answer(
-                "ساخت کانفیگ ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
-            )
-        return
+    
+    service_type = plan.get("service_type", "v2ray")
+    
+    if service_type == "wireguard":
+        if not wireguard_api:
+            await update_balance(user_id, pay_price)
+            await callback.message.edit_text("پنل Wireguard متصل نیست. موجودی بازگردانده شد.", reply_markup=await back_to_menu())
+            return
+        import random, string
+        rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        peer_name = f"nig_{user_id}_{rand_suffix}"
+        wg_result = await wireguard_api.create_peer(
+            peer_name=peer_name,
+            data_limit_gb=plan["gb"],
+            expiry_days=plan["days"],
+        )
+        if not wg_result:
+            await update_balance(user_id, pay_price)
+            try:
+                await callback.message.edit_text(
+                    "ساخت کانفیگ Wireguard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                )
+            except Exception:
+                await callback.message.answer(
+                    "ساخت کانفیگ Wireguard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                )
+            return
+        sub_link = wg_result.get("short_link", "") or f"wireguard:{peer_name}"
+        expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
+        result = {"sub_link": sub_link, "uuid": peer_name, "expire_date": expire_date}
+    else:
+        plan_inbound_ids = None
+        if plan.get("inbound_ids"):
+            plan_inbound_ids = [int(x.strip()) for x in plan["inbound_ids"].split(",") if x.strip().isdigit()]
+        ip_limit = plan.get("ip_limit", 0) or 0
+        plan_panel = panel_manager.get(plan.get("panel_id")) if plan.get("panel_id") else panel_api
+        if not plan_panel:
+            plan_panel = panel_api
+        result = await plan_panel.create_config(email, days=plan["days"], total_gb=plan["gb"], inbound_ids=plan_inbound_ids, ip_limit=ip_limit)
+        if not result:
+            await update_balance(user_id, pay_price)
+            try:
+                await callback.message.edit_text(
+                    "ساخت کانفیگ ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                )
+            except Exception:
+                await callback.message.answer(
+                    "ساخت کانفیگ ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                )
+            return
 
     await add_config(
         user_id=user_id, plan_id=plan_id, sub_link=result["sub_link"],
         uuid=result["uuid"], email=email, expire_date=result["expire_date"],
+        panel_id=plan.get("panel_id"), config_name=cfg_name,
     )
 
-    text = await config_created(result["sub_link"], result["expire_date"][:10], plan["price"], plan["name"], plan["gb"], plan["days"], symbol)
-    qr_img = generate_qr(result["sub_link"])
+    if disc_code:
+        try:
+            from database import get_discount_code, use_discount_code as _use_dc
+            dc = await get_discount_code(disc_code)
+            if dc:
+                await _use_dc(dc["id"])
+        except Exception:
+            pass
 
     try:
         await callback.message.delete()
     except Exception:
         pass
-    await callback.message.answer_photo(
-        photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
-    )
+
+    if service_type == "wireguard":
+        from aiogram.types import BufferedInputFile
+        conf_content = await wireguard_api.download_config(result["uuid"])
+        qr_bytes = await wireguard_api.download_qr(result["uuid"])
+
+        wg_text = (
+            "✅ <b>کانفیگ Wireguard ساخته شد!</b>\n\n"
+            f"📦 پلن: <b>{plan['name']}</b>\n"
+            f"📊 حجم: <b>{plan['gb']} GB</b>\n"
+            f"📅 مدت: <b>{plan['days']} روز</b>\n"
+            f"💰 پرداخت: <b>{pay_price:,} {symbol}</b>\n"
+            f"📅 انقضا: <b>{result['expire_date'][:10]}</b>\n\n"
+            f"🔗 لینک کوتاه: <code>{result['sub_link']}</code>\n\n"
+            "📄 فایل تنظیمات در ادامه ارسال شد."
+        )
+        await callback.message.answer(wg_text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+        if conf_content:
+            conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"{result['uuid']}.conf")
+            await callback.message.answer_document(
+                document=conf_file,
+                caption=f"📄 فایل تنظیمات {result['uuid']}",
+            )
+
+        if qr_bytes:
+            qr_file = BufferedInputFile(qr_bytes, filename=f"{result['uuid']}_qr.png")
+            await callback.message.answer_photo(
+                photo=qr_file,
+                caption=f"📷 QR کد کانفیگ {result['uuid']}",
+            )
+    else:
+        text = await config_created(result["sub_link"], result["expire_date"][:10], pay_price, plan["name"], plan["gb"], plan["days"], symbol)
+        qr_img = generate_qr(result["sub_link"])
+        await callback.message.answer_photo(
+            photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
+        )
+
+    # Notify admin channel - wallet payment
+    channel_id = await get_setting("notification_channel_id") or ""
+    if channel_id:
+        try:
+            from utils.premium_emoji import pe
+            ep = await pe("package")
+            em = await pe("money")
+            el = await pe("link")
+            eu = await pe("users")
+            user_display = f"@{username}" if username and not username.isdigit() else str(user_id)
+            tpl = await get_setting("text_new_config_notification") or (
+                f"{ep} <b>کانفیگ جدید ساخته شد!</b>\n\n"
+                f"  {eu} کاربر: {{user_display}} (ID: {{user_id}})\n"
+                f"  📦 پلن: <b>{{plan_name}}</b>\n"
+                f"  📊 حجم: <b>{{plan_gb}} GB</b>\n"
+                f"  📅 مدت: <b>{{plan_days}} روز</b>\n"
+                f"  {em} مبلغ: <b>{{plan_price}} {symbol}</b>\n"
+                f"  💳 پرداخت: <b>کیف پول</b>\n\n"
+                f"  {el} لینک اشتراک:\n"
+                f"<code>{{sub_link}}</code>"
+            )
+            notif_text = tpl.replace("{user_display}", user_display) \
+                .replace("{user_id}", str(user_id)) \
+                .replace("{plan_name}", plan["name"]) \
+                .replace("{plan_gb}", str(plan["gb"])) \
+                .replace("{plan_days}", str(plan["days"])) \
+                .replace("{plan_price}", f"{plan['price']:,}") \
+                .replace("{sub_link}", result["sub_link"])
+            await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(user_id))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Failed wallet config notification: %s %s", type(e).__name__, e)
 
 
 @router.callback_query(F.data.startswith("pay_c2c_"))
@@ -556,10 +1399,11 @@ async def cb_pay_c2c(callback: CallbackQuery, state: FSMContext):
     card_number = await get_setting("card_number") or "1234-5678-9012-3456"
     card_owner = await get_setting("card_owner") or "Card Owner"
 
-    await state.update_data(c2c_plan_id=plan_id)
+    c2c_data = await state.get_data()
+    c2c_pay_price = c2c_data.get("discounted_price", plan["price"])
+    await state.update_data(c2c_plan_id=plan_id, c2c_pay_price=c2c_pay_price)
     await state.set_state(C2CState.waiting_confirm)
 
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
     from utils.premium_emoji import pe, get_button_emoji_id
     from keyboards.user import _btn
 
@@ -573,7 +1417,7 @@ async def cb_pay_c2c(callback: CallbackQuery, state: FSMContext):
 
     copy_both_btn = InlineKeyboardButton(
         text="کپی مبلغ",
-        copy_text=CopyTextButton(text=f"{plan['price']:,} {symbol}"),
+        copy_text=CopyTextButton(text=f"{c2c_pay_price:,.0f} {symbol}"),
     )
     eid = await get_button_emoji_id("copy_price")
     if eid:
@@ -586,12 +1430,13 @@ async def cb_pay_c2c(callback: CallbackQuery, state: FSMContext):
     ])
 
     from utils.texts import c2c_payment_text
-    text = await c2c_payment_text(plan, symbol, card_number, card_owner)
+    text = await c2c_payment_text(plan, symbol, card_number, card_owner, pay_price=c2c_pay_price)
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("c2c_confirm_"))
 async def cb_c2c_confirm(callback: CallbackQuery, state: FSMContext):
+    import logging; logging.getLogger("receipt_debug").info("c2c_confirm fired for plan %s, user %s", callback.data, callback.from_user.id)
     plan_id = int(callback.data.split("_")[-1])
     await state.update_data(c2c_plan_id=plan_id)
     await state.set_state(C2CState.waiting_photo)
@@ -603,6 +1448,9 @@ async def cb_c2c_confirm(callback: CallbackQuery, state: FSMContext):
 
 @router.message(C2CState.waiting_photo, F.photo)
 async def cb_c2c_receipt_photo(message: Message, state: FSMContext):
+    import logging
+    _log = logging.getLogger("receipt_debug")
+    _log.info("C2C receipt photo received from user %s, state=%s", message.from_user.id, await state.get_state())
     data = await state.get_data()
     plan_id = data.get("c2c_plan_id", 0)
     plan = await get_plan(plan_id)
@@ -613,12 +1461,13 @@ async def cb_c2c_receipt_photo(message: Message, state: FSMContext):
         return
 
     photo_file_id = message.photo[-1].file_id
-    receipt_id = await add_receipt(message.from_user.id, plan["price"], photo_file_id, plan_id)
+    cfg_name = data.get("config_name", "")
+    receipt_id = await add_receipt(message.from_user.id, data.get("c2c_pay_price", plan["price"]), photo_file_id, plan_id, config_name=cfg_name)
     await state.clear()
 
     symbol = await get_setting("currency_symbol") or "تومان"
     from utils.texts import c2c_receipt_submitted_text
-    text = await c2c_receipt_submitted_text(plan, symbol)
+    text = await c2c_receipt_submitted_text(plan, symbol, pay_price=data.get("c2c_pay_price", plan["price"]))
     await message.answer(text, parse_mode="HTML", reply_markup=await back_to_menu())
 
     await _send_receipt_to_channel(
@@ -626,9 +1475,63 @@ async def cb_c2c_receipt_photo(message: Message, state: FSMContext):
         f"**New C2C Receipt**\n\n"
         f"User: @{message.from_user.username or 'N/A'} (ID: {message.from_user.id})\n"
         f"Plan: {plan['name']} ({plan['gb']}GB / {plan['days']} days)\n"
-        f"Amount: {plan['price']:,} {symbol}\n\n"
+        f"Amount: {{data.get('c2c_pay_price', plan['price']):,.0f}} {symbol}\n\n"
         f"Use /admin to review.",
         receipt_id=receipt_id,
+    )
+
+
+@router.message(C2CState.upload_photo, F.photo)
+async def cb_upload_receipt_photo(message: Message, state: FSMContext):
+    data = await state.get_data()
+    receipt_id = data.get("upload_receipt_id", 0)
+
+    from database import get_receipt, get_plan
+    receipt = await get_receipt(receipt_id)
+    if not receipt or receipt["user_id"] != message.from_user.id:
+        await message.answer("رسید یافت نشد.", reply_markup=await back_to_menu())
+        await state.clear()
+        return
+
+    if receipt["status"] != "pending":
+        await message.answer("این رسید قبلاً پردازش شده است.", reply_markup=await back_to_menu())
+        await state.clear()
+        return
+
+    photo_file_id = message.photo[-1].file_id
+
+    import sqlite3
+    from config import DB_PATH
+    conn = sqlite3.connect(DB_PATH, timeout=5)
+    conn.execute("UPDATE receipts SET photo_file_id = ? WHERE id = ?", (photo_file_id, receipt_id))
+    conn.commit()
+    conn.close()
+
+    await state.clear()
+
+    plan = await get_plan(receipt["plan_id"]) if receipt["plan_id"] else None
+    symbol = await get_setting("currency_symbol") or "تومان"
+
+    if plan:
+        from utils.texts import c2c_receipt_submitted_text
+        text = await c2c_receipt_submitted_text(plan, symbol)
+    else:
+        text = "✅ <b>رسید شما دریافت شد</b>\n\nپس از بررسی توسط ادمین، نتیجه اطلاع رسانی خواهد شد."
+
+    await message.answer(text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+    caption_parts = ["**رسید جدید**\n\n"]
+    caption_parts.append(f"User: @{message.from_user.username or 'N/A'} (ID: {message.from_user.id})\n")
+    if plan:
+        caption_parts.append(f"Plan: {plan['name']} ({plan['gb']}GB / {plan['days']} days)\n")
+        caption_parts.append(f"Amount: {plan['price']:,} {symbol}\n")
+    else:
+        caption_parts.append(f"Amount: {receipt['amount']:,} {symbol} (Wallet Top-up)\n")
+    caption_parts.append("\nUse /admin to review.")
+    caption = "".join(caption_parts)
+
+    await _send_receipt_to_channel(
+        message.bot, photo_file_id, caption, receipt_id=receipt_id,
     )
 
 
@@ -642,30 +1545,20 @@ async def cb_cancel_receipt(callback: CallbackQuery, state: FSMContext):
 async def cb_my_configs(callback: CallbackQuery):
     user_id = callback.from_user.id
     configs = await get_user_configs(user_id)
-
-    active_configs = [c for c in configs if c["is_active"]]
-    text = await service_list_text(active_configs)
+    active_configs = [c for c in configs if c.get("is_active")]
+    from utils.premium_emoji import pe
+    el = await pe("list")
+    text = f"━━━━━━━━━━━━━━━━━━━━\n  {el} <b>سرویس‌های من</b>\n━━━━━━━━━━━━━━━━━━━━"
 
     if active_configs:
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        from keyboards.user import _btn
-        buttons = []
-        for cfg in active_configs[:5]:
-            buttons.append([InlineKeyboardButton(
-                text=f"🟢 سرویس #{cfg['id']} — انقضا: {cfg['expire_date'][:10]}",
-                callback_data=f"config_detail_{cfg['id']}",
-            )])
-        btn_back = await get_setting("btn_back")
-        buttons.append([await _btn(btn_back, "main_menu", "back", btn_id="back")])
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
         try:
-            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await my_services_panel_menu(user_id))
         except Exception:
             try:
                 await callback.message.delete()
             except Exception:
                 pass
-            await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
+            await callback.message.answer(text, parse_mode="HTML", reply_markup=await my_services_panel_menu(user_id))
     else:
         try:
             await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await back_to_menu())
@@ -675,6 +1568,222 @@ async def cb_my_configs(callback: CallbackQuery):
             except Exception:
                 pass
             await callback.message.answer(text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+
+@router.callback_query(F.data.startswith("my_services_panel_"))
+async def cb_my_services_panel(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    panel_id = int(callback.data.split("_")[-1])
+    from database import get_panel
+    panel = await get_panel(panel_id)
+    panel_name = panel["name"] if panel else "پنل"
+    text = f"📦 <b>{panel_name}</b>\n\nسرویس خود را انتخاب کنید:"
+    
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await my_services_configs_menu(user_id, panel_id))
+    except Exception:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=await my_services_configs_menu(user_id, panel_id))
+
+
+# --- Collaboration Request Flow ---
+@router.callback_query(F.data == "collab_request")
+async def cb_collab_request(callback: CallbackQuery, state: FSMContext):
+    user = await get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("لطفاً ابتدا /start را بزنید", show_alert=True)
+        return
+    if user.get("is_collaborator"):
+        await callback.answer("شما قبلاً همکار شده‌اید!", show_alert=True)
+        return
+    await state.set_state(CollabRequestState.waiting_text)
+    text = (
+        "🤝 <b>درخواست همکاری</b>
+
+"
+        "لطفاً درباره کار خود توضیح دهید:
+"
+        "(نحوه همکاری، تعداد مشتریان و...)"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ لغو", callback_data="main_menu")]
+    ])
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await callback.answer()
+
+
+@router.message(CollabRequestState.waiting_text)
+async def process_collab_request(message: Message, state: FSMContext):
+    if not message.text or len(message.text.strip()) < 5:
+        await message.answer("لطفاً توضیحات بیشتری بنویسید (حداقل 5 کاراکتر):")
+        return
+
+    user_id = message.from_user.id
+    username = message.from_user.username or "ندارد"
+    first_name = message.from_user.first_name or ""
+    request_text = message.text.strip()
+
+    # Save request to DB
+    import sqlite3
+    conn = sqlite3.connect('/root/robot/bot_database.db')
+    c = conn.cursor()
+    c.execute('INSERT INTO collab_requests (user_id, message) VALUES (?, ?)', (user_id, request_text))
+    request_id = c.lastrowid
+    conn.commit()
+    conn.close()
+
+    await state.clear()
+
+    # Send to notification channel
+    channel_id = await get_setting("collab_notification_channel") or await get_setting("notification_channel_id")
+    if channel_id:
+        try:
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✅ تایید", callback_data=f"collab_approve_{request_id}"),
+                    InlineKeyboardButton(text="❌ رد", callback_data=f"collab_reject_{request_id}"),
+                ]
+            ])
+            admin_text = (
+                f"🤝 <b>درخواست همکاری جدید</b>
+
+"
+                f"👤 کاربر: @{username} (ID: <code>{user_id}</code>)
+"
+                f"📝 نام: {first_name}
+
+"
+                f"💬 پیام:
+{request_text}"
+            )
+            await message.bot.send_message(chat_id=channel_id, text=admin_text, parse_mode="HTML", reply_markup=admin_kb)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Failed collab notification: %s", e)
+
+    await message.answer(
+        "✅ درخواست شما ارسال شد!
+پس از بررسی توسط مدیر به شما اطلاع داده خواهد شد.",
+        reply_markup=await back_to_menu()
+    )
+
+
+# --- Recover config flow ---
+class RecoverState(StatesGroup):
+    waiting_link = State()
+    waiting_name = State()
+
+
+class CollabRequestState(StatesGroup):
+    waiting_text = State()
+
+
+@router.callback_query(F.data.startswith("recover_config_"))
+async def cb_recover_config(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != (await get_user(callback.from_user.id) or {}).get("id") and not await get_user(callback.from_user.id):
+        await callback.answer("لطفاً ابتدا /start را بزنید", show_alert=True)
+        return
+    panel_id = int(callback.data.split("_")[-1])
+    await state.update_data(recover_panel_id=panel_id)
+    await state.set_state(RecoverState.waiting_link)
+    text = (
+        "🔗 <b>بازیابی کانفیگ</b>\n\n"
+        "لینک اشتراک (sub link) خود را ارسال کنید:"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ لغو", callback_data=f"my_services_panel_{panel_id}")]
+    ])
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await callback.answer()
+
+
+@router.message(RecoverState.waiting_link)
+async def process_recover_link(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    data = await state.get_data()
+    panel_id = data["recover_panel_id"]
+    link = message.text.strip()
+
+    if not link.startswith("http"):
+        await message.answer("لینک معتبر نیست. لطفاً دوباره تلاش کنید:")
+        return
+
+    # Check if link already exists in user's configs
+    existing = await get_user_configs(user_id)
+    for cfg in existing:
+        if cfg.get("sub_link") == link:
+            await message.answer(
+                "⚠️ این لینک قبلاً در سرویس‌های شما موجود است.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"my_services_panel_{panel_id}")]
+                ])
+            )
+            await state.clear()
+            return
+
+    await state.update_data(recover_link=link)
+    await state.set_state(RecoverState.waiting_name)
+    text = "📝 <b>نام سرویس</b>\n\nیک نام برای این سرویس وارد کنید:"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ لغو", callback_data=f"my_services_panel_{panel_id}")]
+    ])
+    await message.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.message(RecoverState.waiting_name)
+async def process_recover_name(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    data = await state.get_data()
+    panel_id = data["recover_panel_id"]
+    link = data["recover_link"]
+    config_name = message.text.strip()
+
+    # Extract sub_id from link for expire_date and uuid
+    import re
+    sub_match = re.search(r'/sub/([a-f0-9-]+)', link)
+    sub_id = sub_match.group(1) if sub_match else None
+
+    from database import get_plan
+    plan = await get_plan((await get_user_configs(user_id) or [{}])[0].get("plan_id")) if await get_user_configs(user_id) else None
+    days = 30
+    if plan:
+        days = plan.get("days", 30)
+
+    from datetime import datetime, timedelta
+    from utils.texts import to_jalali
+    expire_date = (datetime.now() + timedelta(days=days)).isoformat()
+
+    await add_config(
+        user_id=user_id,
+        plan_id=0,
+        sub_link=link,
+        uuid=sub_id or "",
+        email=f"recover_{user_id}",
+        expire_date=expire_date,
+        panel_id=panel_id,
+        config_name=config_name,
+    )
+
+    await state.clear()
+    text = (
+        f"✅ <b>سرویس اضافه شد!</b>\n\n"
+        f"📦 نام: {config_name}\n"
+        f"📅 تاریخ انقضا: {to_jalali(expire_date)}"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"my_services_panel_{panel_id}")]
+    ])
+    await message.answer(text, parse_mode="HTML", reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("config_detail_"))
@@ -696,11 +1805,13 @@ async def cb_config_detail(callback: CallbackQuery):
 
     traffic_info = None
     try:
-        traffic_info = await panel_api.get_client_traffic(cfg["email"])
+        _cpanel = panel_manager.get(cfg.get("panel_id")) if cfg.get("panel_id") else panel_api
+        if not _cpanel: _cpanel = panel_api
+        traffic_info = await _cpanel.get_client_traffic(cfg["email"])
     except Exception:
         pass
 
-    text = await service_detail_text(config_id, plan_name, expire_date, sub_link, traffic_info)
+    text = await service_detail_text(config_id, plan_name, expire_date, sub_link, traffic_info, config_name=cfg.get("config_name") or "")
     qr_img = generate_qr(sub_link)
 
     try:
@@ -724,7 +1835,9 @@ async def cb_volume_info(callback: CallbackQuery):
 
     plan_name = await get_plan_name(cfg.get("plan_id"))
     try:
-        traffic_info = await panel_api.get_client_traffic(cfg["email"])
+        _cpanel = panel_manager.get(cfg.get("panel_id")) if cfg.get("panel_id") else panel_api
+        if not _cpanel: _cpanel = panel_api
+        traffic_info = await _cpanel.get_client_traffic(cfg["email"])
     except Exception:
         traffic_info = None
 
@@ -734,7 +1847,6 @@ async def cb_volume_info(callback: CallbackQuery):
 
     text = await volume_detail_text(config_id, plan_name, traffic_info)
 
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     from keyboards.user import _btn
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -758,13 +1870,14 @@ async def cb_extract_configs(callback: CallbackQuery):
         return
 
     try:
-        client_configs = await panel_api.get_client_configs(cfg["email"])
+        _cpanel = panel_manager.get(cfg.get("panel_id")) if cfg.get("panel_id") else panel_api
+        if not _cpanel: _cpanel = panel_api
+        client_configs = await _cpanel.get_client_configs(cfg["email"])
     except Exception:
         client_configs = []
 
     text = await extract_configs_text(config_id, client_configs)
 
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     from keyboards.user import _btn
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -792,7 +1905,9 @@ async def cb_buy_extra(callback: CallbackQuery):
     symbol = await get_setting("currency_symbol") or "تومان"
 
     try:
-        traffic_info = await panel_api.get_client_traffic(cfg["email"])
+        _cpanel = panel_manager.get(cfg.get("panel_id")) if cfg.get("panel_id") else panel_api
+        if not _cpanel: _cpanel = panel_api
+        traffic_info = await _cpanel.get_client_traffic(cfg["email"])
     except Exception:
         traffic_info = None
 
@@ -823,7 +1938,6 @@ async def cb_confirm_extra(callback: CallbackQuery):
     symbol = await get_setting("currency_symbol") or "تومان"
     user = await get_user(callback.from_user.id)
 
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     from keyboards.user import _btn
 
     text = (
@@ -885,13 +1999,17 @@ async def cb_pay_extra_wallet(callback: CallbackQuery):
     await update_balance(user_id, -total_price)
     await callback.answer("در حال اضافه کردن حجم...", show_alert=False)
 
-    success = await panel_api.update_client_total_gb(cfg["email"], extra_gb)
+    _cpanel = panel_manager.get(cfg.get("panel_id")) if cfg.get("panel_id") else panel_api
+    if not _cpanel: _cpanel = panel_api
+    success = await _cpanel.update_client_total_gb(cfg["email"], extra_gb)
     if not success:
         await update_balance(user_id, total_price)
         await callback.answer("خطا در اضافه کردن حجم! موجودی بازگردانده شد.", show_alert=True)
         return
 
-    traffic_info = await panel_api.get_client_traffic(cfg["email"])
+    _cpanel = panel_manager.get(cfg.get("panel_id")) if cfg.get("panel_id") else panel_api
+    if not _cpanel: _cpanel = panel_api
+    traffic_info = await _cpanel.get_client_traffic(cfg["email"])
     new_total_gb = traffic_info["total_gb"] if traffic_info else extra_gb
 
     text = await extra_volume_success_text(extra_gb, new_total_gb)
@@ -932,7 +2050,6 @@ async def cb_pay_extra_c2c(callback: CallbackQuery, state: FSMContext):
     await state.update_data(extra_volume_config_id=config_id, extra_volume_gb=extra_gb, extra_volume_price=total_price)
     await state.set_state(ExtraVolumeC2CState.waiting_confirm)
 
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
     from keyboards.user import _btn
 
     copy_card_btn = InlineKeyboardButton(
@@ -1044,6 +2161,7 @@ async def cb_extra_volume_receipt(message: Message, state: FSMContext):
 async def cb_channel_approve(callback: CallbackQuery):
     receipt_id = int(callback.data.split("_")[-1])
     from database import approve_receipt, get_receipt, get_user
+    from keyboards.user import is_admin
 
     if not await is_admin(callback.from_user.id):
         await callback.answer("فقط ادمین می‌تواند رسید را تایید کند!", show_alert=True)
@@ -1103,6 +2221,7 @@ async def cb_channel_approve(callback: CallbackQuery):
 async def cb_channel_reject(callback: CallbackQuery):
     receipt_id = int(callback.data.split("_")[-1])
     from database import reject_receipt, get_receipt
+    from keyboards.user import is_admin
 
     if not await is_admin(callback.from_user.id):
         await callback.answer("فقط ادمین می‌تواند رسید را رد کند!", show_alert=True)
@@ -1162,7 +2281,9 @@ async def cb_confirm_regenerate(callback: CallbackQuery):
         return
 
     await callback.answer("در حال بازسازی لینک...", show_alert=False)
-    new_link = await panel_api.regenerate_sub_link(cfg["email"])
+    _cpanel = panel_manager.get(cfg.get("panel_id")) if cfg.get("panel_id") else panel_api
+    if not _cpanel: _cpanel = panel_api
+    new_link = await _cpanel.regenerate_sub_link(cfg["email"])
 
     if not new_link:
         await callback.answer("خطا در بازسازی لینک!", show_alert=True)
@@ -1186,7 +2307,6 @@ async def cb_confirm_regenerate(callback: CallbackQuery):
 async def cb_copy_link(callback: CallbackQuery):
     config_id = int(callback.data.split("_")[-1])
     from database import get_db
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
     db = await get_db()
     cursor = await db.execute("SELECT sub_link FROM configs WHERE id = ?", (config_id,))
     cfg = await cursor.fetchone()
@@ -1201,3 +2321,65 @@ async def cb_copy_link(callback: CallbackQuery):
         await callback.answer()
     else:
         await callback.answer("سرویس یافت نشد!", show_alert=True)
+
+
+
+
+@router.callback_query(F.data.startswith("view_user_configs_"))
+async def cb_view_user_configs(callback: CallbackQuery):
+    try:
+        uid = int(callback.data.split("_")[-1])
+    except ValueError:
+        return
+
+    configs = await get_user_configs(uid)
+    if not configs:
+        await callback.answer("این کاربر هیچ کانفیگی ندارد!", show_alert=True)
+        return
+
+    await callback.answer("در حال بارگذاری...", show_alert=False)
+
+    for cfg in configs[:10]:
+        sub_link = cfg.get("sub_link") or ""
+        plan_name = await get_plan_name(cfg.get("plan_id"))
+        expire_date = (cfg.get("expire_date") or "")[:10]
+        svc_name = cfg.get("config_name") or f"سرویس #{cfg['id']}"
+
+        traffic_info = None
+        try:
+            _cpanel = panel_manager.get(cfg.get("panel_id")) if cfg.get("panel_id") else panel_api
+            if not _cpanel: _cpanel = panel_api
+            traffic_info = await _cpanel.get_client_traffic(cfg["email"])
+        except Exception:
+            pass
+
+        status = "🟢" if cfg.get("is_active") else "🔴"
+        detail = f"{status} <b>{svc_name}</b> — {plan_name}\n  انقضا: {expire_date}\n"
+
+        if traffic_info:
+            detail += f"  📊 {traffic_info['used_gb']}/{traffic_info['total_gb']} GB\n"
+        else:
+            plan = await get_plan(cfg.get("plan_id"))
+            if plan:
+                detail += f"  📊 {plan.get('gb', '?')} GB\n"
+
+        if sub_link:
+            detail += f"  🔗 <code>{sub_link}</code>"
+
+        qr_img = generate_qr(sub_link)
+        try:
+            await callback.message.answer_photo(
+                photo=qr_img,
+                caption=detail,
+                parse_mode="HTML",
+            )
+        except Exception:
+            try:
+                await callback.message.answer(detail, parse_mode="HTML")
+            except Exception:
+                pass
+
+    try:
+        await callback.message.answer("پایان لیست کانفیگ‌ها.", parse_mode="HTML")
+    except Exception:
+        pass

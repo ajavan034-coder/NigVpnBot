@@ -1,11 +1,10 @@
 import asyncio
-import json
 import logging
 import os
-import tempfile
-from datetime import datetime, timedelta, timezone
+import json
+from datetime import datetime, timedelta
 
-logger = logging.getLogger("vpnbot.scheduler")
+logger = logging.getLogger(__name__)
 
 _notified_today: set[int] = set()
 _last_reset_date: str = ""
@@ -17,10 +16,7 @@ async def _deactivate_expired():
     configs = await get_expired_active_configs()
     if configs:
         for c in configs:
-            try:
-                await deactivate_config(c["id"])
-            except Exception as e:
-                logger.warning("Failed to deactivate config %s: %s", c["id"], e)
+            await deactivate_config(c["id"])
         logger.info("Deactivated %d expired configs", len(configs))
 
 
@@ -32,7 +28,7 @@ async def _send_expiry_reminders(bot):
     if enabled == "0":
         return
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.utcnow().strftime("%Y-%m-%d")
     if today != _last_reset_date:
         _notified_today.clear()
         _last_reset_date = today
@@ -45,8 +41,7 @@ async def _send_expiry_reminders(bot):
             continue
 
         expire = datetime.fromisoformat(c["expire_date"])
-        now = datetime.now(timezone.utc)
-        days_left = max(1, (expire - now).days)
+        days_left = max(1, (expire - datetime.utcnow()).days)
         symbol = "تومان"
         try:
             symbol = await get_setting("currency_symbol") or symbol
@@ -69,7 +64,7 @@ async def _send_expiry_reminders(bot):
 
 async def _send_backup(bot):
     global _last_backup_time
-    now = datetime.now(timezone.utc).timestamp()
+    now = datetime.utcnow().timestamp()
     if _last_backup_time and (now - _last_backup_time) < 12 * 3600:
         return
 
@@ -91,9 +86,8 @@ async def _send_backup(bot):
             if detail:
                 full_data.append(detail)
 
-        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-        safe_name = now_str.replace(" ", "_").replace(":", "-")
-        backup_file = os.path.join(tempfile.gettempdir(), f"3xui_backup_{safe_name}.json")
+        now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        backup_file = f"/tmp/3xui_backup_{now_str.replace(' ', '_').replace(':', '-')}.json"
         with open(backup_file, "w", encoding="utf-8") as f:
             json.dump(full_data, f, ensure_ascii=False, indent=2)
 
@@ -101,7 +95,7 @@ async def _send_backup(bot):
         file_size = os.path.getsize(backup_file)
         await bot.send_document(
             chat_id=channel_id,
-            document=FSInputFile(backup_file, filename=f"3xui_backup_{safe_name}.json"),
+            document=FSInputFile(backup_file, filename=f"3xui_backup_{now_str.replace(' ', '_').replace(':', '-')}.json"),
             caption=f"📦 <b>بکاپ پنل 3x-ui</b>\n\n🕐 {now_str} UTC\n📋 تعداد اینباند: {len(full_data)}\n💾 حجم: {file_size / 1024:.1f} KB",
             parse_mode="HTML",
         )
@@ -112,6 +106,43 @@ async def _send_backup(bot):
         logger.error("Failed to send 3x-ui backup: %s", e)
 
 
+async def _retry_unsent_receipts(bot):
+    try:
+        from database import get_unsent_receipts, mark_receipt_sent, get_user, get_plan_name
+        from handlers.user import _send_receipt_to_channel
+        unsent = await get_unsent_receipts()
+        if not unsent:
+            return
+
+        logger.info("Retrying %d unsent receipts to channel", len(unsent))
+        for receipt in unsent[:10]:
+            try:
+                user = await get_user(receipt["user_id"])
+                plan_name = await get_plan_name(receipt.get("plan_id"))
+                uname = f"@{user.get('username')}" if user and user.get("username") else str(receipt["user_id"])
+                symbol = "تومان"
+                try:
+                    from database import get_setting
+                    symbol = await get_setting("currency_symbol") or symbol
+                except Exception:
+                    pass
+                caption = (
+                    f"**رسید پرداخت**\n\n"
+                    f"کاربر: {uname} (ID: {receipt['user_id']})\n"
+                    f"پلن: {plan_name}\n"
+                    f"مبلغ: {receipt['amount']:,.0f} {symbol}\n"
+                    f"وضعیت: در انتظار بررسی\n\n"
+                    f"Use /admin to review."
+                )
+                await _send_receipt_to_channel(
+                    bot, receipt["photo_file_id"], caption, receipt_id=receipt["id"]
+                )
+            except Exception as e:
+                logger.error("Failed to retry receipt %s: %s", receipt["id"], e)
+    except Exception as e:
+        logger.error("Error in _retry_unsent_receipts: %s", e)
+
+
 async def scheduler_loop(bot, interval: int = 300):
     logger.info("Scheduler started (interval=%ds)", interval)
     while True:
@@ -120,5 +151,5 @@ async def scheduler_loop(bot, interval: int = 300):
             await _send_expiry_reminders(bot)
             await _send_backup(bot)
         except Exception as e:
-            logger.error("Scheduler error: %s", e, exc_info=True)
+            logger.error("Scheduler error: %s", e)
         await asyncio.sleep(interval)

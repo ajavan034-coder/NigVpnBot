@@ -1,767 +1,538 @@
+import logging
+import os
+import asyncio
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from database import (
-    is_admin,
-    get_pending_receipts,
-    get_receipt,
-    approve_receipt,
-    reject_receipt,
-    get_user,
-    get_user_count,
-    get_config_count,
-    get_total_revenue,
-    search_users,
-    set_banned,
-    set_setting,
-    get_setting,
-    add_admin,
-    remove_admin,
-    get_admins,
-    get_user_configs,
-    get_all_plans,
-    get_plan,
-    add_plan,
-    update_plan,
-    delete_plan,
-    add_config,
-    update_balance,
-    delete_config,
-    get_all_users,
+    is_admin, get_setting, set_setting,
+    get_user, get_user_count, search_users, get_all_users,
+    update_balance, set_banned,
+    get_config_count, get_all_plans, get_plan, add_plan, update_plan, delete_plan,
+    get_pending_receipts, get_receipt, approve_receipt, reject_receipt,
+    get_user_configs, get_all_plans as _get_all_plans,
+    add_admin, remove_admin, get_admins, get_user_count_by_period,
+    get_total_revenue, get_plan_sections, get_plan_section,
+    add_plan_section, update_plan_section, delete_plan_section,
+    add_discount_code, get_discount_code, get_discount_code_by_id,
+    use_discount_code, delete_discount_code, get_all_discount_codes,
+    reset_free_test, get_free_test_users, reset_all_free_tests,
 )
 from api import panel_api
 from keyboards.admin import (
-    admin_menu,
-    receipt_actions,
-    user_actions,
-    admin_settings_menu,
-    buttons_menu,
-    plans_management_menu,
-    plan_actions,
-    manage_admins_menu,
-    back_to_admin,
-    user_config_list,
-    config_detail_actions,
+    admin_menu, back_to_admin, stats_menu,
+    users_menu, user_actions, user_list_keyboard,
+    plans_menu, plan_actions, plan_sections_menu, plan_section_actions,
+    receipts_menu, receipt_list_keyboard, receipt_actions,
+    configs_menu, config_list_keyboard, config_actions,
+    admins_menu, settings_menu, payment_settings_menu,
+    buttons_editor_menu, force_join_settings_menu, invite_settings_menu,
+    premium_emojis_menu, bot_texts_menu,
+    control_panel_menu, backup_list_keyboard,
+    broadcast_menu, broadcast_destination_keyboard, broadcast_button_keyboard, broadcast_pin_keyboard, menu_editor_menu, confirm_action,
+    discount_codes_menu, discount_code_detail_menu,
+    trial_management_menu,
 )
-from utils.texts import (
-    admin_stats,
-    receipt_info,
-    user_info,
-    setting_updated,
-    no_pending_receipts,
-)
+from keyboards.user import _btn
 
+logger = logging.getLogger(__name__)
 router = Router()
 
-BUTTON_SETTINGS = {
-    "edit_btn_wallet": "btn_wallet",
-    "edit_btn_free_test": "btn_free_test",
-    "edit_btn_buy_config": "btn_buy_config",
-    "edit_btn_my_configs": "btn_my_configs",
-    "edit_btn_topup": "btn_topup",
-    "edit_btn_tx_history": "btn_tx_history",
-    "edit_btn_back": "btn_back",
-    "edit_btn_back_to_menu": "btn_back_to_menu",
-    "edit_btn_admin_stats": "btn_admin_stats",
-    "edit_btn_admin_receipts": "btn_admin_receipts",
-    "edit_btn_admin_users": "btn_admin_users",
-    "edit_btn_admin_settings": "btn_admin_settings",
-    "edit_btn_admin_admins": "btn_admin_admins",
-    "edit_btn_admin_plans": "btn_admin_plans",
-}
+ITEMS_PER_PAGE = 5
 
 
+# ─── FSM States ──────────────────────────────────────────────
 class AdminState(StatesGroup):
-    edit_welcome = State()
     search_user = State()
-    add_admin_id = State()
-    remove_admin_id = State()
-    edit_button_name = State()
-    edit_currency = State()
-    edit_card_number = State()
-    edit_card_owner = State()
-    waiting_emoji_name = State()
-    waiting_emoji_id = State()
+    search_config = State()
     add_plan_name = State()
     add_plan_gb = State()
     add_plan_days = State()
     add_plan_price = State()
+    add_plan_panel = State()
+    add_plan_ip_limit = State()
+    add_plan_service_type = State()
     edit_plan_field = State()
+    add_plan_section_name = State()
+    edit_plan_section_name = State()
+    add_admin_id = State()
+    edit_welcome = State()
+    edit_welcome_emoji = State()
+    edit_button_name = State()
+    edit_currency = State()
+    edit_card_number = State()
+    edit_card_owner = State()
+    edit_c2c_title = State()
+    edit_c2c_instruction = State()
     edit_free_test_mb = State()
+    edit_trial_days = State()
+    edit_trial_inbounds = State()
+    edit_auto_approve = State()
+    edit_required_channel = State()
+    edit_force_join_text = State()
+    edit_force_join_fail_text = State()
     add_balance = State()
     remove_balance = State()
     broadcast = State()
-    edit_auto_approve = State()
+    broadcast_destination = State()
+    broadcast_text = State()
+    broadcast_button = State()
+    broadcast_pin = State()
+    waiting_emoji_name = State()
+    waiting_emoji_id = State()
+    edit_bot_text_key = State()
+    edit_invite_reward = State()
+    edit_invite_text = State()
+    add_discount_code = State()
+    add_discount_type = State()
+    add_discount_value = State()
+    add_discount_max = State()
+    add_discount_expiry = State()
+    add_discount_plan = State()
 
 
+# ─── Entry Point ─────────────────────────────────────────────
 @router.message(Command("admin"))
 async def cmd_admin(message: Message):
     if not await is_admin(message.from_user.id):
-        await message.answer("شما ادمین نیستید.")
         return
-    await message.answer("<b>پنل ادمین</b>", reply_markup=await admin_menu())
+    await message.answer("🛡️ <b>پنل مدیریت ربات</b>", parse_mode="HTML", reply_markup=await admin_menu())
 
 
-@router.callback_query(F.data == "admin_menu")
+@router.callback_query(F.data == "adm_menu")
 async def cb_admin_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
+        await callback.answer("⛔ دسترسی غیرمجاز!", show_alert=True)
         return
     try:
-        await callback.message.edit_text("<b>پنل ادمین</b>", reply_markup=await admin_menu())
+        await callback.message.edit_text("🛡️ <b>پنل مدیریت ربات</b>", parse_mode="HTML", reply_markup=await admin_menu())
     except Exception:
-        await callback.message.answer("<b>پنل ادمین</b>", reply_markup=await admin_menu())
+        await callback.message.answer("🛡️ <b>پنل مدیریت ربات</b>", parse_mode="HTML", reply_markup=await admin_menu())
 
 
-@router.callback_query(F.data == "admin_stats")
-async def cb_admin_stats(callback: CallbackQuery):
+# ═══════════════════════════════════════════════════════════════
+# SECTION 1: Stats & Reports
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_stats")
+async def cb_stats(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
-
     symbol = await get_setting("currency_symbol") or "تومان"
     user_count = await get_user_count()
     config_count = await get_config_count()
     revenue = await get_total_revenue()
     pending = len(await get_pending_receipts())
+    today = await get_user_count_by_period(1)
+    week = await get_user_count_by_period(7)
+    text = (
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"  📊 <b>آمار و گزارش‌ها</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  👥 کل کاربران: <b>{user_count}</b>\n"
+        f"  🔑 کانفیگ‌های فعال: <b>{config_count}</b>\n"
+        f"  💰 درآمد کل: <b>{revenue:,.0f} {symbol}</b>\n"
+        f"  📋 رسیدهای در انتظار: <b>{pending}</b>\n"
+        f"  📅 امروز: <b>{today}</b> کاربر جدید\n"
+        f"  📅 ۷ روز اخیر: <b>{week}</b> کاربر"
+    )
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await stats_menu())
 
-    text = await admin_stats(user_count, config_count, revenue, pending, symbol)
-    await callback.message.edit_text(text, reply_markup=await back_to_admin())
 
 
-@router.callback_query(F.data == "pending_receipts")
-async def cb_pending_receipts(callback: CallbackQuery):
+# ─── Data Files ──────────────────────────────────────────────
+DATA_DIR = "/root/robot/data"
+
+DATA_FILE_MAP = {
+    "adm_data_users": ("bot_users.txt", "👥 لیست کاربران ربات"),
+    "adm_data_balances": ("user_balances.txt", "💰 موجودی کاربران"),
+    "adm_data_configs": ("purchased_configs.txt", "🔑 کانفیگ‌های خریداری شده"),
+    "adm_data_all": (None, "📦 همه فایل‌ها"),
+}
+
+
+@router.callback_query(F.data == "adm_data_files")
+async def cb_data_files(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
-
-    receipts = await get_pending_receipts()
-    if not receipts:
-        await callback.message.edit_text(await no_pending_receipts(), reply_markup=await back_to_admin())
-        return
-
-    symbol = await get_setting("currency_symbol") or "تومان"
-    text = "**Pending Receipts**\n\n"
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    buttons = []
-    for r in receipts[:10]:
-        text += f"#{r['id']} - @{r.get('username', 'N/A')} - {r['amount']:,.0f} {symbol}\n"
-        buttons.append([InlineKeyboardButton(
-            text=f"#{r['id']} - {r['amount']:,.0f} {symbol}",
-            callback_data=f"view_receipt_{r['id']}",
-        )])
-    btn_back = await get_setting("btn_back")
-    buttons.append([InlineKeyboardButton(text=btn_back, callback_data="admin_menu")])
-
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-
-
-@router.callback_query(F.data.startswith("view_receipt_"))
-async def cb_view_receipt(callback: CallbackQuery):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-
-    receipt_id = int(callback.data.split("_")[-1])
-    receipt = await get_receipt(receipt_id)
-    if not receipt:
-        await callback.answer("رسید یافت نشد!", show_alert=True)
-        return
-
-    symbol = await get_setting("currency_symbol") or "تومان"
-    text = await receipt_info(receipt, symbol)
-    user = await get_user(receipt["user_id"])
-    if user:
-        text += f"\n\nموجودی: {user['balance']:,.0f} {symbol}"
-    if receipt.get("plan_id") and receipt["plan_id"] > 0:
-        plan = await get_plan(receipt["plan_id"])
-        if plan:
-            text += f"\n\n<b>پلن:</b> {plan['name']} ({plan['gb']}GB / {plan['days']} روز)"
-            text += f"\n**Type:** Card-to-Card"
-
-    await callback.message.delete()
-    await callback.message.answer_photo(
-        photo=receipt["photo_file_id"],
-        caption=text,
-        parse_mode="Markdown",
-        reply_markup=await receipt_actions(receipt_id),
+    from keyboards.admin import data_files_menu
+    await callback.message.edit_text(
+        "📥 <b>انتخاب فایل متنی:</b>",
+        parse_mode="HTML",
+        reply_markup=await data_files_menu(),
     )
 
 
-@router.callback_query(F.data.startswith("approve_"))
-async def cb_approve(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("adm_data_"))
+async def cb_send_data_file(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
+        return
+    from aiogram.types import FSInputFile
+    from datetime import datetime
+
+    data_key = callback.data
+    if data_key == "adm_data_files":
         return
 
-    receipt_id = int(callback.data.split("_")[-1])
-    receipt = await get_receipt(receipt_id)
-    if not receipt:
-        await callback.answer("رسید یافت نشد!", show_alert=True)
-        return
-
-    await approve_receipt(receipt_id, callback.from_user.id)
-    symbol = await get_setting("currency_symbol") or "تومان"
-
-    try:
-        await callback.message.edit_caption(
-            caption=f"**Receipt #{receipt_id} Approved**",
-            parse_mode="Markdown",
-            reply_markup=await back_to_admin(),
-        )
-    except Exception:
-        pass
-
-    try:
-        if receipt["plan_id"] and receipt["plan_id"] > 0:
-            from aiogram.types import InlineKeyboardMarkup
-            from keyboards.user import _btn
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [await _btn("ساخت کانفیگ من", f"make_config_{receipt['plan_id']}", "package", btn_id="make_config")],
-            ])
-            await callback.bot.send_message(
-                chat_id=receipt["user_id"],
-                text=f"Transfer successful! ({receipt['amount']:,.0f} {symbol})\n\nClick below to get your config:",
-                reply_markup=kb,
+    if data_key == "adm_data_all":
+        for fname, _label in DATA_FILE_MAP.values():
+            if fname is None:
+                continue
+            path = os.path.join(DATA_DIR, fname)
+            if os.path.exists(path):
+                await callback.message.answer_document(
+                    FSInputFile(path),
+                    caption=f"📄 {fname}",
+                )
+        await callback.answer("✅ همه فایل‌ها ارسال شد!", show_alert=True)
+    elif data_key in DATA_FILE_MAP:
+        fname, label = DATA_FILE_MAP[data_key]
+        path = os.path.join(DATA_DIR, fname)
+        if os.path.exists(path):
+            await callback.message.answer_document(
+                FSInputFile(path),
+                caption=f"📄 {label} ({fname})",
             )
+            await callback.answer("✅ فایل ارسال شد!", show_alert=True)
         else:
-            from utils.texts import receipt_approved
-            user = await get_user(receipt["user_id"])
-            new_balance = user["balance"] if user else 0
-            await callback.bot.send_message(
-                chat_id=receipt["user_id"],
-                text=await receipt_approved(receipt["amount"], new_balance, symbol),
-            )
-    except Exception:
-        pass
+            await callback.answer("❌ فایل یافت نشد!", show_alert=True)
 
-
-@router.callback_query(F.data.startswith("reject_"))
-async def cb_reject(callback: CallbackQuery):
+@router.callback_query(F.data == "adm_all_configs")
+async def cb_all_configs(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
-
-    receipt_id = int(callback.data.split("_")[-1])
-    receipt = await get_receipt(receipt_id)
-    if not receipt:
-        await callback.answer("رسید یافت نشد!", show_alert=True)
-        return
-
-    await reject_receipt(receipt_id, callback.from_user.id)
-
-    await callback.message.edit_caption(
-        caption=f"**Receipt #{receipt_id} Rejected**",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
+    from database import get_db
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT c.*, u.username FROM configs c LEFT JOIN users u ON c.user_id = u.id "
+        "WHERE c.is_active = 1 ORDER BY c.created_at DESC LIMIT 15"
     )
+    configs = [dict(r) for r in await cursor.fetchall()]
+    await db.close()
+    if not configs:
+        await callback.message.edit_text("🔑 <b>کانفیگ‌های فعال</b>\n\nهیچ کانفیگ فعالی وجود ندارد.", parse_mode="HTML", reply_markup=await back_to_admin())
+        return
+    symbol = await get_setting("currency_symbol") or "تومان"
+    text = "━━━━━━━━━━━━━━━━━━━━━━\n  🔑 <b>کانفیگ‌های فعال</b>\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    for c in configs:
+        uname = f"@{c.get('username', 'ندارد')}" if c.get("username") else str(c["user_id"])
+        text += f"  🟢 #{c['id']} — {uname} — انقضا: {c['expire_date'][:10]}\n"
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await back_to_admin())
 
-    try:
-        from utils.texts import receipt_rejected
-        symbol = await get_setting("currency_symbol") or "تومان"
-        await callback.bot.send_message(
-            chat_id=receipt["user_id"],
-            text=await receipt_rejected(receipt["amount"], symbol),
-        )
-    except Exception:
-        pass
 
-
-@router.callback_query(F.data == "admin_users")
-async def cb_admin_users(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "adm_revenue")
+async def cb_revenue(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
+        return
+    from database import get_db
+    symbol = await get_setting("currency_symbol") or "تومان"
+    db = await get_db()
+    cursor = await db.execute("SELECT SUM(amount) as total FROM receipts WHERE status = 'approved'")
+    total = (await cursor.fetchone())["total"] or 0
+    cursor = await db.execute("SELECT COUNT(*) as cnt FROM receipts WHERE status = 'approved'")
+    count = (await cursor.fetchone())["cnt"]
+    cursor = await db.execute("SELECT COUNT(*) as cnt FROM receipts WHERE status = 'pending'")
+    pending = (await cursor.fetchone())["cnt"]
+    cursor = await db.execute("SELECT COUNT(*) as cnt FROM receipts WHERE status = 'rejected'")
+    rejected = (await cursor.fetchone())["cnt"]
+    await db.close()
+    text = (
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"  💰 <b>گزارش درآمد</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  💰 درآمد کل: <b>{total:,.0f} {symbol}</b>\n"
+        f"  ✅ تعداد تایید شده: <b>{count}</b>\n"
+        f"  ⏳ در انتظار: <b>{pending}</b>\n"
+        f"  ❌ رد شده: <b>{rejected}</b>"
+    )
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await stats_menu())
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION 2: User Management
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_users")
+async def cb_users(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    text = (
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "  👥 <b>مدیریت کاربران</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "  🔍 آیدی عددی یا نام کاربری را ارسال کنید\n"
+        "  یا از دکمه‌های زیر استفاده کنید:"
+    )
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await users_menu())
+
+
+@router.callback_query(F.data == "adm_user_list")
+async def cb_user_list(callback: CallbackQuery):
+    await _show_user_page(callback, 1)
+
+
+@router.callback_query(F.data.startswith("adm_user_page_"))
+async def cb_user_page(callback: CallbackQuery):
+    page = int(callback.data.split("_")[-1])
+    await _show_user_page(callback, page)
+
+
+async def _show_user_page(callback: CallbackQuery, page: int):
+    if not await is_admin(callback.from_user.id):
+        return
+    users = await get_all_users()
+    total = len(users)
+    total_pages = max(1, (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * ITEMS_PER_PAGE
+    page_users = users[start:start + ITEMS_PER_PAGE]
+    text = f"━━━━━━━━━━━━━━━━━━━━━━\n  👥 <b>لیست کاربران</b> ({page}/{total_pages})\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    for i, u in enumerate(page_users, start + 1):
+        uname = f"@{u.get('username', 'ندارد')}" if u.get("username") else str(u["id"])
+        text += f"  {i}. {uname} — 💰 {u.get('balance', 0):,.0f}\n"
+    kb = await user_list_keyboard(page_users, page, total_pages)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data == "adm_search_user")
+async def cb_search_user(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
         return
     await state.set_state(AdminState.search_user)
     await callback.message.edit_text(
-        "**User Management**\n\nEnter user ID or username to search:",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
+        "🔍 <b>جستجوی کاربر</b>\n\nآیدی عددی یا نام کاربری را ارسال کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
     )
 
 
-@router.message(F.text, AdminState.search_user)
+@router.message(AdminState.search_user)
 async def process_search_user(message: Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
         return
     await state.clear()
-
     users = await search_users(message.text.strip())
     if not users:
-        await message.answer("کاربری یافت نشد.", reply_markup=await back_to_admin())
+        await message.answer("❌ کاربری یافت نشد.", reply_markup=await back_to_admin())
         return
-
+    symbol = await get_setting("currency_symbol") or "تومان"
+    text = f"🔍 <b>نتایج جستجو</b> ({len(users)} نتیجه)\n\n"
+    for u in users[:10]:
+        uname = f"@{u.get('username', 'ندارد')}" if u.get("username") else str(u["id"])
+        text += f"  👤 {uname} (ID: {u['id']}) — 💰 {u.get('balance', 0):,.0f}\n"
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     buttons = []
     for u in users[:10]:
-        buttons.append([InlineKeyboardButton(
-            text=f"@{u.get('username', 'N/A')} ({u['id']}) - {u['balance']:,.0f}",
-            callback_data=f"view_user_{u['id']}",
-        )])
-    btn_back = await get_setting("btn_back")
-    buttons.append([InlineKeyboardButton(text=btn_back, callback_data="admin_menu")])
-
-    await message.answer(
-        f"**Search Results** ({len(users)} found)",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
-    )
+        uname = f"@{u.get('username', 'ندارد')}" if u.get("username") else str(u["id"])
+        buttons.append([InlineKeyboardButton(text=f"👤 {uname}", callback_data=f"adm_view_user_{u['id']}")])
+    buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm_users")])
+    await message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
-@router.callback_query(F.data.startswith("view_user_"))
+@router.callback_query(F.data.startswith("adm_view_user_"))
 async def cb_view_user(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
-
     user_id = int(callback.data.split("_")[-1])
     user = await get_user(user_id)
     if not user:
-        await callback.answer("کاربر یافت نشد!", show_alert=True)
+        await callback.answer("❌ کاربر یافت نشد!", show_alert=True)
         return
-
     symbol = await get_setting("currency_symbol") or "تومان"
     configs = await get_user_configs(user_id)
-    text = await user_info(user, symbol)
-    text += f"\nکانفیگ‌ها: {len(configs)}"
+    active = len([c for c in configs if c["is_active"]])
+    banned = "🔒 بله" if user["is_banned"] else "🔓 خیر"
+    text = (
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"  👤 <b>اطلاعات کاربر</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  🔢 آیدی: <code>{user['id']}</code>\n"
+        f"  👤 نام کاربری: @{user.get('username', 'ندارد')}\n"
+        f"  📛 نام: {user.get('first_name', 'ندارد')}\n"
+        f"  💰 موجودی: <b>{user.get('balance', 0):,.0f} {symbol}</b>\n"
+        f"  📅 تاریخ عضویت: {user.get('created_at', '?')[:10]}\n"
+        f"  🔑 کانفیگ‌ها: {active} فعال\n"
+        f"  {banned}"
+    )
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await user_actions(user_id))
 
-    await callback.message.edit_text(text, reply_markup=await user_actions(user_id))
 
-
-@router.callback_query(F.data.startswith("ban_"))
-async def cb_ban(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("adm_toggle_ban_"))
+async def cb_toggle_ban(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
-
     user_id = int(callback.data.split("_")[-1])
-    await set_banned(user_id, True)
-    await callback.answer("کاربر مسدود شد!", show_alert=True)
+    user = await get_user(user_id)
+    if not user:
+        await callback.answer("❌ کاربر یافت نشد!", show_alert=True)
+        return
+    new_status = not bool(user["is_banned"])
+    await set_banned(user_id, new_status)
+    status = "مسدود شد 🔒" if new_status else "از مسدودی خارج شد 🔓"
+    await callback.answer(f"کاربر {status}", show_alert=True)
     await cb_view_user(callback)
 
 
-@router.callback_query(F.data.startswith("unban_"))
-async def cb_unban(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("adm_add_bal_"))
+async def cb_add_balance(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
-
     user_id = int(callback.data.split("_")[-1])
-    await set_banned(user_id, False)
-    await callback.answer("کاربر از مسدودی خارج شد!", show_alert=True)
-    await cb_view_user(callback)
-
-
-@router.callback_query(F.data == "admin_settings")
-async def cb_admin_settings(callback: CallbackQuery):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    await callback.message.edit_text("**Bot Settings**", parse_mode="Markdown", reply_markup=await admin_settings_menu())
-
-
-@router.callback_query(F.data == "edit_welcome")
-async def cb_edit_welcome(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    await state.set_state(AdminState.edit_welcome)
-    await callback.message.edit_text(
-        "متن خوش‌آمدگویی جدید را وارد کنید:",
-        reply_markup=await back_to_admin(),
-    )
-
-
-@router.message(AdminState.edit_welcome)
-async def process_edit_welcome(message: Message, state: FSMContext):
-    if not await is_admin(message.from_user.id):
-        return
-    await set_setting("welcome_text", message.text)
-    await state.clear()
-    await message.answer(await setting_updated("Welcome Text", message.text[:100]), reply_markup=await back_to_admin())
-
-
-@router.callback_query(F.data == "edit_buttons")
-async def cb_edit_buttons(callback: CallbackQuery):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    await callback.message.edit_text(
-        "**Edit Button Names**\n\nClick a button to change its text:",
-        parse_mode="Markdown",
-        reply_markup=await buttons_menu(),
-    )
-
-
-@router.callback_query(F.data.startswith("edit_btn_"))
-async def cb_edit_button(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-
-    setting_key = BUTTON_SETTINGS.get(callback.data)
-    if not setting_key:
-        await callback.answer("Unknown button!", show_alert=True)
-        return
-
-    current = await get_setting(setting_key) or ""
-    await state.update_data(button_key=setting_key)
-    await state.set_state(AdminState.edit_button_name)
-    await callback.message.edit_text(
-        f"Current text: **{current}**\n\nEnter new button text:",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
-    )
-
-
-@router.message(AdminState.edit_button_name)
-async def process_edit_button(message: Message, state: FSMContext):
-    if not await is_admin(message.from_user.id):
-        return
-    data = await state.get_data()
-    key = data.get("button_key")
-    if key:
-        await set_setting(key, message.text)
-    await state.clear()
-    await message.answer(
-        f"Button updated to: **{message.text}**",
-        parse_mode="Markdown",
-        reply_markup=await buttons_menu(),
-    )
-
-
-@router.callback_query(F.data == "edit_currency")
-async def cb_edit_currency(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    current = await get_setting("currency_symbol") or "تومان"
-    await state.set_state(AdminState.edit_currency)
-    await callback.message.edit_text(
-        f"Current currency symbol: **{current}**\n\nEnter new currency symbol (e.g., تومان, IRR, $):",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
-    )
-
-
-@router.message(AdminState.edit_currency)
-async def process_edit_currency(message: Message, state: FSMContext):
-    if not await is_admin(message.from_user.id):
-        return
-    await set_setting("currency_symbol", message.text)
-    await state.clear()
-    await message.answer(
-        f"Currency symbol updated to: **{message.text}**",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
-    )
-
-
-@router.callback_query(F.data == "edit_card_number")
-async def cb_edit_card_number(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    current = await get_setting("card_number") or ""
-    await state.set_state(AdminState.edit_card_number)
-    await callback.message.edit_text(
-        f"Current card number: `{current}`\n\nEnter new card number:",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
-    )
-
-
-@router.message(AdminState.edit_card_number)
-async def process_edit_card_number(message: Message, state: FSMContext):
-    if not await is_admin(message.from_user.id):
-        return
-    await set_setting("card_number", message.text)
-    await state.clear()
-    await message.answer(
-        f"Card number updated to: `{message.text}`",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
-    )
-
-
-@router.callback_query(F.data == "edit_card_owner")
-async def cb_edit_card_owner(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    current = await get_setting("card_owner") or ""
-    await state.set_state(AdminState.edit_card_owner)
-    await callback.message.edit_text(
-        f"Current card owner: **{current}**\n\nEnter new card owner name:",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
-    )
-
-
-@router.message(AdminState.edit_card_owner)
-async def process_edit_card_owner(message: Message, state: FSMContext):
-    if not await is_admin(message.from_user.id):
-        return
-    await set_setting("card_owner", message.text)
-    await state.clear()
-    await message.answer(
-        f"Card owner updated to: **{message.text}**",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
-    )
-
-
-@router.callback_query(F.data == "edit_free_test_mb")
-async def cb_edit_free_test_mb(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    current = await get_setting("free_test_mb") or "102400"
-    await state.set_state(AdminState.edit_free_test_mb)
-    await callback.message.edit_text(
-        f"Current free test volume: **{current} MB**\n\nEnter new volume in MB:",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
-    )
-
-
-@router.message(AdminState.edit_free_test_mb)
-async def process_edit_free_test_mb(message: Message, state: FSMContext):
-    if not await is_admin(message.from_user.id):
-        return
-    try:
-        mb = int(message.text.strip())
-        if mb <= 0:
-            raise ValueError
-    except ValueError:
-        await message.answer("عدد نامعتبر. یک عدد مثبت وارد کنید:")
-        return
-    await set_setting("free_test_mb", str(mb))
-    await state.clear()
-    await message.answer(
-        f"Free test volume updated to: **{mb} MB**",
-        parse_mode="Markdown",
-        reply_markup=await admin_settings_menu(),
-    )
-
-
-@router.callback_query(F.data == "toggle_free_test")
-async def cb_toggle_free_test(callback: CallbackQuery):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    current = await get_setting("free_test_enabled") or "1"
-    new_value = "0" if current == "1" else "1"
-    await set_setting("free_test_enabled", new_value)
-    status = "enabled" if new_value == "1" else "disabled"
-    await callback.answer(f"Free test {status}!", show_alert=True)
-    await callback.message.edit_text("**Bot Settings**", parse_mode="Markdown", reply_markup=await admin_settings_menu())
-
-
-@router.callback_query(F.data == "edit_auto_approve")
-async def cb_edit_auto_approve(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    current = await get_setting("auto_approve_max") or "0"
+    await state.update_data(bal_user_id=user_id)
+    await state.set_state(AdminState.add_balance)
     symbol = await get_setting("currency_symbol") or "تومان"
-    status = f"{float(current):,.0f} {symbol}" if float(current) > 0 else "Disabled"
-    await state.set_state(AdminState.edit_auto_approve)
     await callback.message.edit_text(
-        f"**Auto-Approve Receipts**\n\n"
-        f"Current limit: **{status}**\n\n"
-        f"Receipts at or below this amount are auto-approved.\n"
-        f"Enter 0 to disable, or enter the threshold in {symbol}:",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
+        f"💰 <b>شارژ موجودی</b>\n\nمبلغ را به {symbol} وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
     )
 
 
-@router.message(AdminState.edit_auto_approve)
-async def process_edit_auto_approve(message: Message, state: FSMContext):
+@router.message(AdminState.add_balance)
+async def process_add_balance(message: Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
         return
     try:
         amount = float(message.text.strip())
-        if amount < 0:
+        if amount <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("عدد نامعتبر. یک عدد مثبت یا 0 وارد کنید:")
-        return
-    await set_setting("auto_approve_max", str(amount))
-    await state.clear()
-    symbol = await get_setting("currency_symbol") or "تومان"
-    if amount > 0:
-        text = f"Auto-approve set to **{amount:,.0f} {symbol}**"
-    else:
-        text = "Auto-approve **disabled**"
-    await message.answer(text, parse_mode="Markdown", reply_markup=await admin_settings_menu())
-
-
-@router.callback_query(F.data == "edit_premium_emojis")
-async def cb_edit_premium_emojis(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    from keyboards.admin import premium_emojis_menu
-    await callback.message.edit_text(
-        "**Premium Emojis**\n\n"
-        "Register premium emojis by sending them here.\n"
-        "Each emoji will be linked to a button name.\n\n"
-        "Bot sends messages with these emojis using Telegram's premium emoji system.",
-        parse_mode="Markdown",
-        reply_markup=await premium_emojis_menu(),
-    )
-
-
-@router.callback_query(F.data == "send_emoji_register")
-async def cb_send_emoji_register(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    from keyboards.admin import premium_emojis_menu
-    await callback.message.edit_text(
-        "**Register Premium Emoji**\n\n"
-        "First send the emoji name (e.g., `wallet`),\n"
-        "then send the premium emoji in the next message.",
-        parse_mode="Markdown",
-        reply_markup=await premium_emojis_menu(),
-    )
-    await state.set_state(AdminState.waiting_emoji_name)
-
-
-@router.message(F.text, F.text.contains(" "), AdminState.edit_welcome)
-async def process_emoji_register(message: Message, state: FSMContext):
-    pass
-
-
-@router.message(AdminState.waiting_emoji_name)
-async def process_emoji_name(message: Message, state: FSMContext):
-    if not await is_admin(message.from_user.id):
-        return
-    valid_names = [
-        "wallet", "free_test", "buy_config", "my_configs", "back", "admin",
-        "stats", "users", "settings", "plans", "receipts", "admins", "check", "cross",
-        "card", "owner", "star", "copy", "cancel", "success", "approve", "reject",
-        "ban", "unban", "plus", "minus", "list", "gear", "money", "calendar", "history", "menu",
-        "package", "link", "clock", "start", "copy_number", "copy_price",
-    ]
-    name = message.text.strip().lower()
-    if name not in valid_names:
-        await message.answer(
-            f"Invalid name. Use one of: {', '.join(valid_names)}",
-        )
-        return
-    await state.update_data(emoji_name=name)
-    await state.set_state(AdminState.waiting_emoji_id)
-    await message.answer(
-        f"Name: **{name}**\n\nNow send the premium emoji.",
-        parse_mode="Markdown",
-    )
-
-
-@router.message(AdminState.waiting_emoji_id)
-async def process_emoji_receive(message: Message, state: FSMContext):
-    if not await is_admin(message.from_user.id):
+        await message.answer("❌ عدد نامعتبر. یک عدد مثبت وارد کنید:")
         return
     data = await state.get_data()
-    emoji_name = data.get("emoji_name", "")
-    if not emoji_name:
-        await state.clear()
-        await message.answer("Something went wrong. Start again from Settings > Premium Emojis.")
-        return
-
-    for entity in (message.entities or []) + (message.caption_entities or []):
-        if entity.type == "custom_emoji" and entity.custom_emoji_id:
-            from utils.premium_emoji import register_premium_emoji
-            await register_premium_emoji(emoji_name, entity.custom_emoji_id)
-            await state.clear()
-            await message.answer(
-                f"Emoji registered: **{emoji_name}** -> `{entity.custom_emoji_id}`",
-                parse_mode="Markdown",
-            )
-            return
-
+    user_id = data.get("bal_user_id")
+    await update_balance(user_id, amount)
     await state.clear()
+    symbol = await get_setting("currency_symbol") or "تومان"
+    user = await get_user(user_id)
+    new_balance = user["balance"] if user else 0
     await message.answer(
-        "No premium emoji found. Send a message containing a premium emoji.",
+        f"✅ <b>{amount:,.0f} {symbol}</b> به کاربر <code>{user_id}</code> اضافه شد.\n"
+        f"موجودی جدید: <b>{new_balance:,.0f} {symbol}</b>",
+        parse_mode="HTML", reply_markup=await user_actions(user_id)
     )
 
 
-@router.callback_query(F.data == "view_emojis")
-async def cb_view_emojis(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("adm_rem_bal_"))
+async def cb_remove_balance(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
-    from utils.premium_emoji import load_emoji_ids
-    from keyboards.admin import premium_emojis_menu
-    mapping = await load_emoji_ids()
-    if not mapping:
-        text = "**Registered Emojis**\n\nNo premium emojis registered yet."
-    else:
-        text = "**Registered Emojis**\n\n"
-        for name, eid in mapping.items():
-            text += f"  {name}: `{eid}`\n"
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await premium_emojis_menu())
-
-
-@router.callback_query(F.data == "clear_emojis")
-async def cb_clear_emojis(callback: CallbackQuery):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-    from utils.premium_emoji import save_emoji_ids
-    from keyboards.admin import premium_emojis_menu
-    await save_emoji_ids({})
-    await callback.answer("همه ایموجی‌ها پاک شدند!", show_alert=True)
+    user_id = int(callback.data.split("_")[-1])
+    await state.update_data(bal_user_id=user_id)
+    await state.set_state(AdminState.remove_balance)
+    symbol = await get_setting("currency_symbol") or "تومان"
+    user = await get_user(user_id)
+    balance = user["balance"] if user else 0
     await callback.message.edit_text(
-        "**Premium Emojis**\n\nAll registered emojis have been cleared.",
-        parse_mode="Markdown",
-        reply_markup=await premium_emojis_menu(),
+        f"💸 <b>کسر موجودی</b>\n\nموجودی فعلی: <b>{balance:,.0f} {symbol}</b>\n\nمبلغ کسر را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
     )
 
 
-@router.callback_query(F.data == "admin_plans")
-async def cb_admin_plans(callback: CallbackQuery):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
+@router.message(AdminState.remove_balance)
+async def process_remove_balance(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
         return
-    await callback.message.edit_text("**Plans Management**", parse_mode="Markdown", reply_markup=await plans_management_menu())
+    try:
+        amount = float(message.text.strip())
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ عدد نامعتبر. یک عدد مثبت وارد کنید:")
+        return
+    data = await state.get_data()
+    user_id = data.get("bal_user_id")
+    user = await get_user(user_id)
+    if user and user["balance"] < amount:
+        await message.answer(f"❌ موجودی کافی نیست. موجودی فعلی: {user['balance']:,.0f}")
+        return
+    await update_balance(user_id, -amount)
+    await state.clear()
+    symbol = await get_setting("currency_symbol") or "تومان"
+    user = await get_user(user_id)
+    new_balance = user["balance"] if user else 0
+    await message.answer(
+        f"✅ <b>{amount:,.0f} {symbol}</b> از کاربر <code>{user_id}</code> کسر شد.\n"
+        f"موجودی جدید: <b>{new_balance:,.0f} {symbol}</b>",
+        parse_mode="HTML", reply_markup=await user_actions(user_id)
+    )
 
 
-@router.callback_query(F.data.startswith("plan_detail_"))
+@router.callback_query(F.data.startswith("adm_user_cfgs_"))
+async def cb_user_configs(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    user_id = int(callback.data.split("_")[-1])
+    configs = await get_user_configs(user_id)
+    user = await get_user(user_id)
+    uname = f"@{user.get('username', 'ندارد')}" if user else str(user_id)
+    if not configs:
+        await callback.message.edit_text(f"🔑 <b>کانفیگ‌های {uname}</b>\n\nهیچ کانفیگی یافت نشد.", parse_mode="HTML", reply_markup=await user_actions(user_id))
+        return
+    text = f"━━━━━━━━━━━━━━━━━━━━━━\n  🔑 <b>کانفیگ‌های {uname}</b>\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    for c in configs[:10]:
+        icon = "🟢" if c["is_active"] else "🔴"
+        text += f"  {icon} #{c['id']} — {c['email'][:30]} — انقضا: {c['expire_date'][:10]}\n"
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    buttons = []
+    for c in configs[:10]:
+        icon = "🟢" if c["is_active"] else "🔴"
+        buttons.append([InlineKeyboardButton(
+            text=f"{icon} #{c['id']} — {c['expire_date'][:10]}",
+            callback_data=f"adm_cfg_detail_{c['id']}",
+        )])
+    buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"adm_view_user_{user_id}")])
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION 3: Plans Management
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_plans")
+async def cb_plans(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    plans = await get_all_plans()
+    if not plans:
+        await callback.message.edit_text("📦 <b>مدیریت پلن‌ها</b>\n\nهیچ پلنی وجود ندارد.", parse_mode="HTML", reply_markup=await back_to_admin())
+        return
+    await callback.message.edit_text("📦 <b>مدیریت پلن‌ها</b>", parse_mode="HTML", reply_markup=await plans_menu(plans))
+
+
+@router.callback_query(F.data.startswith("adm_plan_detail_"))
 async def cb_plan_detail(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
     plan_id = int(callback.data.split("_")[-1])
     plan = await get_plan(plan_id)
     if not plan:
-        await callback.answer("پلن یافت نشد!", show_alert=True)
+        await callback.answer("❌ پلن یافت نشد!", show_alert=True)
         return
-
     symbol = await get_setting("currency_symbol") or "تومان"
-    status = "Active" if plan["is_active"] else "Deleted"
+    status = "✅ فعال" if plan["is_active"] else "❌ غیرفعال"
+    inbound_ids = plan.get("inbound_ids", "")
+    ib_text = inbound_ids if inbound_ids else "پیش‌فرض"
+    ip_limit = plan.get("ip_limit", 0)
+    ip_text = f"{ip_limit}" if ip_limit > 0 else "بدون محدودیت"
     text = (
-        f"**{plan['name']}**\n\n"
-        f"Volume: {plan['gb']}GB\n"
-        f"Duration: {plan['days']} days\n"
-        f"Price: {plan['price']:,} {symbol}\n"
-        f"Status: {status}"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"  📦 <b>{plan['name']}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  📊 حجم: <b>{plan['gb']} GB</b>\n"
+        f"  📅 مدت: <b>{plan['days']} روز</b>\n"
+        f"  💰 قیمت: <b>{plan['price']:,} {symbol}</b>\n"
+        f"  📡 اینباندها: <b>{ib_text}</b>\n"
+        f"  🔒 محدودیت IP: <b>{ip_text}</b>\n"
+        f"  📌 وضعیت: <b>{status}</b>"
     )
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await plan_actions(plan_id))
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await plan_actions(plan_id))
 
 
-@router.callback_query(F.data == "add_plan")
+@router.callback_query(F.data == "adm_add_plan")
 async def cb_add_plan(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
     await state.set_state(AdminState.add_plan_name)
-    await callback.message.edit_text("نام پلن را وارد کنید (مثال: 1 ماهه):", reply_markup=await back_to_admin())
+    await callback.message.edit_text("📦 <b>افزودن پلن جدید</b>\n\nنام پلن را وارد کنید (مثال: ۱ ماهه):", parse_mode="HTML", reply_markup=await back_to_admin())
 
 
 @router.message(AdminState.add_plan_name)
@@ -770,7 +541,7 @@ async def process_plan_name(message: Message, state: FSMContext):
         return
     await state.update_data(plan_name=message.text)
     await state.set_state(AdminState.add_plan_gb)
-    await message.answer("حجم را به گیگابایت وارد کنید (مثال: 50):")
+    await message.answer("📊 حجم را به گیگابایت وارد کنید (مثال: 50):")
 
 
 @router.message(AdminState.add_plan_gb)
@@ -782,11 +553,11 @@ async def process_plan_gb(message: Message, state: FSMContext):
         if gb <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("عدد نامعتبر. یک عدد مثبت وارد کنید:")
+        await message.answer("❌ عدد نامعتبر. یک عدد مثبت وارد کنید:")
         return
     await state.update_data(plan_gb=gb)
     await state.set_state(AdminState.add_plan_days)
-    await message.answer("مدت را به روز وارد کنید (مثال: 30):")
+    await message.answer("📅 مدت را به روز وارد کنید (مثال: 30):")
 
 
 @router.message(AdminState.add_plan_days)
@@ -798,12 +569,12 @@ async def process_plan_days(message: Message, state: FSMContext):
         if days <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("عدد نامعتبر. یک عدد مثبت وارد کنید:")
+        await message.answer("❌ عدد نامعتبر. یک عدد مثبت وارد کنید:")
         return
     await state.update_data(plan_days=days)
     symbol = await get_setting("currency_symbol") or "تومان"
     await state.set_state(AdminState.add_plan_price)
-    await message.answer(f"Enter price in {symbol} (e.g., 150000):")
+    await message.answer(f"💰 قیمت را به {symbol} وارد کنید (مثال: 150000):")
 
 
 @router.message(AdminState.add_plan_price)
@@ -815,40 +586,416 @@ async def process_plan_price(message: Message, state: FSMContext):
         if price <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("قیمت نامعتبر. یک عدد مثبت وارد کنید:")
+        await message.answer("❌ قیمت نامعتبر. یک عدد مثبت وارد کنید:")
         return
-    data = await state.get_data()
-    await add_plan(data["plan_name"], data["plan_gb"], data["plan_days"], price)
-    await state.clear()
-    symbol = await get_setting("currency_symbol") or "تومان"
+    await state.update_data(plan_price=price)
+    # Show panel selection
+    from api import panel_manager
+    await panel_manager.load_all()
+    panels = list(panel_manager._instances.values())
+    if not panels:
+        # No panels configured, use legacy panel_api
+        from api import panel_api
+        panel_api.reload_config()
+        await state.update_data(plan_panel_id=None)
+        try:
+            loop = asyncio.new_event_loop()
+            login_ok = loop.run_until_complete(panel_api.login())
+            if login_ok:
+                inbounds = loop.run_until_complete(panel_api.get_inbounds())
+            else:
+                inbounds = None
+            loop.close()
+        except Exception:
+            inbounds = None
+        if not inbounds:
+            await state.update_data(plan_inbound_ids="")
+            await state.set_state(AdminState.add_plan_ip_limit)
+            await message.answer(
+                "⚠️ پنلی متصل نیست. محدودیت IP را وارد کنید\n(۰ = بدون محدودیت):",
+            )
+            return
+        await state.update_data(plan_inbounds_available=[{"id": ib["id"], "tag": ib.get("tag", "?"), "proto": ib.get("protocol", "?")} for ib in inbounds])
+        await state.update_data(plan_selected_inbounds=[])
+        await _show_inbound_selection(message, state)
+        return
+    if len(panels) == 1:
+        # Only one panel, use it directly
+        p = panels[0]
+        await state.update_data(plan_panel_id=p.panel_id)
+        try:
+            loop = asyncio.new_event_loop()
+            login_ok = loop.run_until_complete(p.login())
+            if login_ok:
+                inbounds = loop.run_until_complete(p.get_inbounds())
+            else:
+                inbounds = None
+            loop.close()
+        except Exception:
+            inbounds = None
+        if not inbounds:
+            await state.update_data(plan_inbound_ids="")
+            await state.set_state(AdminState.add_plan_ip_limit)
+            await message.answer(
+                "⚠️ اینباندی یافت نشد. محدودیت IP را وارد کنید\n(۰ = بدون محدودیت):",
+            )
+            return
+        await state.update_data(plan_inbounds_available=[{"id": ib["id"], "tag": ib.get("tag", "?"), "proto": ib.get("protocol", "?")} for ib in inbounds])
+        await state.update_data(plan_selected_inbounds=[])
+        await _show_inbound_selection(message, state)
+        return
+    # Multiple panels, show selection
+    await state.set_state(AdminState.add_plan_panel)
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    buttons = []
+    for p in panels:
+        buttons.append([InlineKeyboardButton(
+            text=f"📡 {p.panel_url[:40]}",
+            callback_data=f"adm_select_plan_panel_{p.panel_id}",
+        )])
+    buttons.append([InlineKeyboardButton(text="⏭️ پنل پیش‌فرض", callback_data="adm_select_plan_panel_default")])
+    buttons.append([InlineKeyboardButton(text="❌ لغو", callback_data="adm_plans")])
     await message.answer(
-        f"Plan created: **{data['plan_name']}** | {data['plan_gb']}GB | {data['plan_days']}D | {price:,} {symbol}",
-        parse_mode="Markdown",
-        reply_markup=await plans_management_menu(),
+        "📡 <b>انتخاب پنل</b>\n\nپنل مورد نظر برای این پلن را انتخاب کنید:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
 
 
-@router.callback_query(F.data.startswith("edit_plan_"))
+@router.callback_query(F.data.startswith("adm_svc_"))
+async def cb_select_service_type(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    svc_type = callback.data.split("_")[-1]  # v2ray or wireguard
+    await state.update_data(plan_service_type=svc_type)
+    
+    if svc_type == "wireguard":
+        # Wireguard doesn't need inbound selection, go to IP limit
+        await state.update_data(plan_inbound_ids="")
+        await state.set_state(AdminState.add_plan_ip_limit)
+        await callback.message.edit_text(
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "  🔒 <b>محدودیت IP</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "  حداکثر تعداد IP همزمان:\n"
+            "  (۰ = بدون محدودیت)\n",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="0 — بدون محدودیت", callback_data="adm_ip_0"),
+                    InlineKeyboardButton(text="1", callback_data="adm_ip_1"),
+                ],
+                [
+                    InlineKeyboardButton(text="2", callback_data="adm_ip_2"),
+                    InlineKeyboardButton(text="3", callback_data="adm_ip_3"),
+                ],
+                [
+                    InlineKeyboardButton(text="5", callback_data="adm_ip_5"),
+                    InlineKeyboardButton(text="10", callback_data="adm_ip_10"),
+                ],
+                [InlineKeyboardButton(text="✏️ عدد دیگر", callback_data="adm_ip_custom")],
+            ])
+        )
+        await callback.answer()
+        return
+    
+    # V2Ray: show panel selection as before
+    await callback.answer()
+    # Continue with existing panel selection flow
+    from api import panel_manager
+    await panel_manager.load_all()
+    panels_list = list(panel_manager._instances.values())
+    if not panels_list:
+        from api import panel_api
+        panel_api.reload_config()
+        await state.update_data(plan_panel_id=None)
+        try:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            login_ok = loop.run_until_complete(panel_api.login())
+            if login_ok:
+                inbounds = loop.run_until_complete(panel_api.get_inbounds())
+            else:
+                inbounds = None
+            loop.close()
+        except Exception:
+            inbounds = None
+        if not inbounds:
+            await state.update_data(plan_inbound_ids="")
+            await state.set_state(AdminState.add_plan_ip_limit)
+            await callback.message.edit_text(
+                "⚠️ پنلی متصل نیست. محدودیت IP را وارد کنید\n(۰ = بدون محدودیت):",
+            )
+            return
+        await state.update_data(plan_inbounds_available=[{"id": ib["id"], "tag": ib.get("tag", "?"), "proto": ib.get("protocol", "?")} for ib in inbounds])
+        await state.update_data(plan_selected_inbounds=[])
+        await _show_inbound_selection(callback.message, state)
+        return
+    if len(panels_list) == 1:
+        p = panels_list[0]
+        await state.update_data(plan_panel_id=p.panel_id)
+        try:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            login_ok = loop.run_until_complete(p.login())
+            if login_ok:
+                inbounds = loop.run_until_complete(p.get_inbounds())
+            else:
+                inbounds = None
+            loop.close()
+        except Exception:
+            inbounds = None
+        if not inbounds:
+            await state.update_data(plan_inbound_ids="")
+            await state.set_state(AdminState.add_plan_ip_limit)
+            await callback.message.edit_text(
+                "⚠️ اینباندی یافت نشد. محدودیت IP را وارد کنید\n(۰ = بدون محدودیت):",
+            )
+            return
+        await state.update_data(plan_inbounds_available=[{"id": ib["id"], "tag": ib.get("tag", "?"), "proto": ib.get("protocol", "?")} for ib in inbounds])
+        await state.update_data(plan_selected_inbounds=[])
+        await _show_inbound_selection(callback.message, state)
+        return
+    # Multiple panels
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    buttons = []
+    for p in panels_list:
+        buttons.append([InlineKeyboardButton(
+            text=f"📡 {p.panel_url[:40]}",
+            callback_data=f"adm_select_plan_panel_{p.panel_id}",
+        )])
+    buttons.append([InlineKeyboardButton(text="⏭️ پنل پیش‌فرض", callback_data="adm_select_plan_panel_default")])
+    buttons.append([InlineKeyboardButton(text="❌ لغو", callback_data="adm_plans")])
+    await callback.message.edit_text(
+        "📡 <b>انتخاب پنل</b>\n\nپنل مورد نظر برای این پلن را انتخاب کنید:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+
+
+@router.callback_query(F.data.startswith("adm_select_plan_panel_"))
+async def cb_select_plan_panel(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    panel_id_str = callback.data.split("_")[-1]
+    if panel_id_str == "default":
+        from api import panel_manager
+        panel = panel_manager.get_default()
+        if not panel:
+            await callback.answer("پنل پیش‌فرض یافت نشد!", show_alert=True)
+            return
+        panel_id = panel.panel_id
+    else:
+        panel_id = int(panel_id_str)
+    await state.update_data(plan_panel_id=panel_id)
+    from api import panel_manager
+    panel = panel_manager.get(panel_id) or panel_manager.get_default()
+    if not panel:
+        await callback.answer("پنل یافت نشد!", show_alert=True)
+        return
+    try:
+        loop = asyncio.new_event_loop()
+        login_ok = loop.run_until_complete(panel.login())
+        if login_ok:
+            inbounds = loop.run_until_complete(panel.get_inbounds())
+        else:
+            inbounds = None
+        loop.close()
+    except Exception:
+        inbounds = None
+    if not inbounds:
+        await state.update_data(plan_inbound_ids="")
+        await state.set_state(AdminState.add_plan_ip_limit)
+        await callback.message.edit_text(
+            "⚠️ اینباندی یافت نشد. محدودیت IP را وارد کنید\n(۰ = بدون محدودیت):",
+            parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+    await state.update_data(plan_inbounds_available=[{"id": ib["id"], "tag": ib.get("tag", "?"), "proto": ib.get("protocol", "?")} for ib in inbounds])
+    await state.update_data(plan_selected_inbounds=[])
+    await _show_inbound_selection(callback.message, state)
+    await callback.answer()
+
+
+async def _show_inbound_selection(target, state: FSMContext):
+    """Show inbound multi-select keyboard."""
+    data = await state.get_data()
+    available = data.get("plan_inbounds_available", [])
+    selected = set(data.get("plan_selected_inbounds", []))
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    buttons = []
+    for ib in available:
+        icon = "✅" if ib["id"] in selected else "❌"
+        buttons.append([InlineKeyboardButton(
+            text=f"{icon} ID: {ib['id']} — {ib['tag']} ({ib['proto']})",
+            callback_data=f"adm_toggle_ib_{ib['id']}",
+        )])
+    buttons.append([InlineKeyboardButton(text="✅ تأیید انتخاب", callback_data="adm_confirm_inbounds")])
+    buttons.append([InlineKeyboardButton(text="⏭️ رد کردن (بدون اینباند)", callback_data="adm_skip_inbounds")])
+    text = (
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"  📡 <b>انتخاب اینباندها</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  اینباندهای مورد نظر را کلیک کنید:\n"
+        f"  ( روی هر کدام کلیک کنید تا فعال/غیرفعال شود )\n"
+    )
+    try:
+        await target.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    except Exception:
+        await target.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+@router.callback_query(F.data.startswith("adm_toggle_ib_"))
+async def cb_toggle_inbound(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    ib_id = int(callback.data.split("_")[-1])
+    data = await state.get_data()
+    selected = set(data.get("plan_selected_inbounds", []))
+    if ib_id in selected:
+        selected.discard(ib_id)
+    else:
+        selected.add(ib_id)
+    await state.update_data(plan_selected_inbounds=list(selected))
+    await _show_inbound_selection(callback.message, state)
+
+
+@router.callback_query(F.data == "adm_confirm_inbounds")
+async def cb_confirm_inbounds(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    data = await state.get_data()
+    selected = data.get("plan_selected_inbounds", [])
+    inbound_str = ",".join(str(x) for x in selected) if selected else ""
+    await state.update_data(plan_inbound_ids=inbound_str)
+    await state.set_state(AdminState.add_plan_ip_limit)
+    await callback.message.edit_text(
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "  🔒 <b>محدودیت IP</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "  حداکثر تعداد IP همزمان برای این پلن:\n"
+        "  (۰ = بدون محدودیت)\n",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="0 — بدون محدودیت", callback_data="adm_ip_0"),
+                InlineKeyboardButton(text="1", callback_data="adm_ip_1"),
+            ],
+            [
+                InlineKeyboardButton(text="2", callback_data="adm_ip_2"),
+                InlineKeyboardButton(text="3", callback_data="adm_ip_3"),
+            ],
+            [
+                InlineKeyboardButton(text="5", callback_data="adm_ip_5"),
+                InlineKeyboardButton(text="10", callback_data="adm_ip_10"),
+            ],
+            [InlineKeyboardButton(text="✏️ عدد دیگر", callback_data="adm_ip_custom")],
+        ])
+    )
+
+
+@router.callback_query(F.data == "adm_skip_inbounds")
+async def cb_skip_inbounds(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.update_data(plan_inbound_ids="")
+    await state.set_state(AdminState.add_plan_ip_limit)
+    await callback.message.edit_text(
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "  🔒 <b>محدودیت IP</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "  حداکثر تعداد IP همزمان:\n"
+        "  (۰ = بدون محدودیت)\n",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="0 — بدون محدودیت", callback_data="adm_ip_0"),
+                InlineKeyboardButton(text="1", callback_data="adm_ip_1"),
+            ],
+            [
+                InlineKeyboardButton(text="2", callback_data="adm_ip_2"),
+                InlineKeyboardButton(text="3", callback_data="adm_ip_3"),
+            ],
+            [
+                InlineKeyboardButton(text="5", callback_data="adm_ip_5"),
+                InlineKeyboardButton(text="10", callback_data="adm_ip_10"),
+            ],
+            [InlineKeyboardButton(text="✏️ عدد دیگر", callback_data="adm_ip_custom")],
+        ])
+    )
+
+
+@router.callback_query(F.data.startswith("adm_ip_"))
+async def cb_select_ip_limit(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    cb_data = callback.data
+    if cb_data == "adm_ip_custom":
+        await callback.message.edit_text("🔒 عدد محدودیت IP را وارد کنید (۰ = بدون محدودیت):")
+        return
+    ip_limit = int(cb_data.split("_")[-1])
+    await _finalize_plan(callback.message, state, ip_limit)
+
+
+@router.message(AdminState.add_plan_ip_limit)
+async def process_plan_ip_limit(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        ip_limit = int(message.text.strip())
+        if ip_limit < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ عدد نامعتبر. یک عدد غیرمنفی وارد کنید:")
+        return
+    await _finalize_plan(message, state, ip_limit)
+
+
+async def _finalize_plan(target, state: FSMContext, ip_limit: int):
+    data = await state.get_data()
+    inbound_str = data.get("plan_inbound_ids", "")
+    panel_id = data.get("plan_panel_id")
+    service_type = data.get("plan_service_type", "v2ray")
+    plan_id = await add_plan(
+        data["plan_name"], data["plan_gb"], data["plan_days"],
+        data["plan_price"], inbound_ids=inbound_str, ip_limit=ip_limit, panel_id=panel_id,
+        service_type=service_type,
+    )
+    await state.clear()
+    symbol = await get_setting("currency_symbol") or "تومان"
+    ib_text = inbound_str if inbound_str else "پیش‌فرض"
+    ip_text = f"{ip_limit}" if ip_limit > 0 else "بدون محدودیت"
+    plans = await get_all_plans()
+    await target.answer(
+        f"✅ پلن <b>{data['plan_name']}</b> ایجاد شد!\n\n"
+        f"📊 حجم: {data['plan_gb']} GB\n"
+        f"📅 مدت: {data['plan_days']} روز\n"
+        f"💰 قیمت: {data['plan_price']:,} {symbol}\n"
+        f"📡 اینباندها: {ib_text}\n"
+        f"🔒 محدودیت IP: {ip_text}",
+        parse_mode="HTML", reply_markup=await plans_menu(plans)
+    )
+
+
+@router.callback_query(F.data.startswith("adm_edit_plan_"))
 async def cb_edit_plan(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
     plan_id = int(callback.data.split("_")[-1])
     plan = await get_plan(plan_id)
     if not plan:
-        await callback.answer("پلن یافت نشد!", show_alert=True)
+        await callback.answer("❌ پلن یافت نشد!", show_alert=True)
         return
-    symbol = await get_setting("currency_symbol") or "تومان"
     await state.update_data(edit_plan_id=plan_id)
     await state.set_state(AdminState.edit_plan_field)
     await callback.message.edit_text(
-        f"**Editing: {plan['name']}**\n\n"
-        f"Reply with the new values in this format:\n"
-        f"`name | gb | days | price`\n\n"
-        f"Example: `1 Month | 50 | 30 | 150000`\n"
-        f"Current: `{plan['name']} | {plan['gb']} | {plan['days']} | {plan['price']}`",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
+        f"✏️ <b>ویرایش پلن: {plan['name']}</b>\n\n"
+        f"مقادیر جدید را به این فرمت وارد کنید:\n"
+        f"<code>نام | حجم | روز | قیمت</code>\n\n"
+        f"مثال: <code>۱ ماهه | 50 | 30 | 150000</code>\n"
+        f"فعلی: <code>{plan['name']} | {plan['gb']} | {plan['days']} | {plan['price']}</code>",
+        parse_mode="HTML", reply_markup=await back_to_admin()
     )
 
 
@@ -869,59 +1016,350 @@ async def process_edit_plan(message: Message, state: FSMContext):
         if gb <= 0 or days <= 0 or price <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("Invalid format. Use: `name | gb | days | price`", parse_mode="Markdown")
+        await message.answer("❌ فرمت نامعتبر. از فرمت <code>نام | حجم | روز | قیمت</code> استفاده کنید:", parse_mode="Markdown")
         return
-
     await update_plan(plan_id, name=name, gb=gb, days=days, price=price)
     await state.clear()
     symbol = await get_setting("currency_symbol") or "تومان"
+    plans = await get_all_plans()
     await message.answer(
-        f"Plan updated: **{name}** | {gb}GB | {days}D | {price:,} {symbol}",
-        parse_mode="Markdown",
-        reply_markup=await plans_management_menu(),
+        f"✅ پلن به‌روزرسانی شد: <b>{name}</b> | {gb}GB | {days} روز | {price:,} {symbol}",
+        parse_mode="HTML", reply_markup=await plans_menu(plans)
     )
 
 
-@router.callback_query(F.data.startswith("delete_plan_"))
+@router.callback_query(F.data.startswith("adm_delete_plan_"))
 async def cb_delete_plan(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
     plan_id = int(callback.data.split("_")[-1])
     await delete_plan(plan_id)
-    await callback.answer("Plan deleted!", show_alert=True)
-    await callback.message.edit_text("**Plans Management**", parse_mode="Markdown", reply_markup=await plans_management_menu())
+    await callback.answer("✅ پلن حذف شد!", show_alert=True)
+    plans = await get_all_plans()
+    await callback.message.edit_text("📦 <b>مدیریت پلن‌ها</b>", parse_mode="HTML", reply_markup=await plans_menu(plans))
 
 
-@router.callback_query(F.data == "manage_admins")
-async def cb_manage_admins(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("adm_toggle_plan_"))
+async def cb_toggle_plan(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
-    await callback.message.edit_text("**Admin Management**", parse_mode="Markdown", reply_markup=await manage_admins_menu())
+    plan_id = int(callback.data.split("_")[-1])
+    plan = await get_plan(plan_id)
+    if not plan:
+        await callback.answer("❌ پلن یافت نشد!", show_alert=True)
+        return
+    await update_plan(plan_id, is_active=not plan["is_active"])
+    status = "فعال ✅" if not plan["is_active"] else "غیرفعال ❌"
+    await callback.answer(f"وضعیت پلن: {status}", show_alert=True)
+    plans = await get_all_plans()
+    await callback.message.edit_text("📦 <b>مدیریت پلن‌ها</b>", parse_mode="HTML", reply_markup=await plans_menu(plans))
 
 
-@router.callback_query(F.data == "list_admins")
-async def cb_list_admins(callback: CallbackQuery):
+# ─── Plan Sections ───────────────────────────────────────────
+@router.callback_query(F.data == "adm_plan_sections")
+async def cb_plan_sections(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
+    sections = await get_plan_sections()
+    if not sections:
+        await callback.message.edit_text("📁 <b>بخش‌های پلن</b>\n\nهیچ بخشی وجود ندارد.", parse_mode="HTML", reply_markup=await back_to_admin())
+        return
+    await callback.message.edit_text("📁 <b>بخش‌های پلن</b>", parse_mode="HTML", reply_markup=await plan_sections_menu(sections))
 
+
+@router.callback_query(F.data == "adm_add_plan_section")
+async def cb_add_section(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.add_plan_section_name)
+    await callback.message.edit_text("📁 <b>افزودن بخش جدید</b>\n\nنام بخش را وارد کنید:", parse_mode="HTML", reply_markup=await back_to_admin())
+
+
+@router.message(AdminState.add_plan_section_name)
+async def process_add_section(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await add_plan_section(message.text.strip())
+    await state.clear()
+    sections = await get_plan_sections()
+    await message.answer(f"✅ بخش <b>{message.text.strip()}</b> ایجاد شد!", parse_mode="HTML", reply_markup=await plan_sections_menu(sections))
+
+
+@router.callback_query(F.data.startswith("adm_plan_section_"))
+async def cb_section_detail(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    section_id = int(callback.data.split("_")[-1])
+    section = await get_plan_section(section_id)
+    if not section:
+        await callback.answer("❌ بخش یافت نشد!", show_alert=True)
+        return
+    await callback.message.edit_text(
+        f"📁 <b>{section['name']}</b>\n\nترتیب نمایش: {section['display_order']}",
+        parse_mode="HTML", reply_markup=await plan_section_actions(section_id)
+    )
+
+
+@router.callback_query(F.data.startswith("adm_delete_section_"))
+async def cb_delete_section(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    section_id = int(callback.data.split("_")[-1])
+    await delete_plan_section(section_id)
+    await callback.answer("✅ بخش حذف شد!", show_alert=True)
+    sections = await get_plan_sections()
+    await callback.message.edit_text("📁 <b>بخش‌های پلن</b>", parse_mode="HTML", reply_markup=await plan_sections_menu(sections))
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION 4: Receipts Management
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_receipts_menu")
+async def cb_receipts_menu(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    pending = await get_pending_receipts()
+    await callback.message.edit_text("📋 <b>مدیریت رسیدها</b>", parse_mode="HTML", reply_markup=await receipts_menu(len(pending)))
+
+
+@router.callback_query(F.data.startswith("adm_receipts_"))
+async def cb_receipts_list(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    status = callback.data.replace("adm_receipts_", "")
+    from database import get_db
+    db = await get_db()
+    if status == "pending":
+        cursor = await db.execute("SELECT r.*, u.username FROM receipts r LEFT JOIN users u ON r.user_id = u.id WHERE r.status = 'pending' ORDER BY r.created_at DESC LIMIT 10")
+    elif status == "all":
+        cursor = await db.execute("SELECT r.*, u.username FROM receipts r LEFT JOIN users u ON r.user_id = u.id ORDER BY r.created_at DESC LIMIT 10")
+    elif status in ("approved", "rejected"):
+        cursor = await db.execute("SELECT r.*, u.username FROM receipts r LEFT JOIN users u ON r.user_id = u.id WHERE r.status = ? ORDER BY r.created_at DESC LIMIT 10", (status,))
+    else:
+        cursor = await db.execute("SELECT r.*, u.username FROM receipts r LEFT JOIN users u ON r.user_id = u.id ORDER BY r.created_at DESC LIMIT 10")
+    receipts = [dict(r) for r in await cursor.fetchall()]
+    await db.close()
+    if not receipts:
+        await callback.message.edit_text(f"📋 <b>رسیدهای {status}</b>\n\nهیچ رسیدی یافت نشد.", parse_mode="HTML", reply_markup=await receipts_menu(0))
+        return
+    await callback.message.edit_text(f"📋 <b>رسیدهای {status}</b>", parse_mode="HTML", reply_markup=await receipt_list_keyboard(receipts, status))
+
+
+@router.callback_query(F.data.startswith("adm_view_receipt_"))
+async def cb_view_receipt(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    receipt_id = int(callback.data.split("_")[-1])
+    receipt = await get_receipt(receipt_id)
+    if not receipt:
+        await callback.answer("❌ رسید یافت نشد!", show_alert=True)
+        return
+    symbol = await get_setting("currency_symbol") or "تومان"
+    status_icons = {"pending": "⏳ در انتظار", "approved": "✅ تایید شده", "rejected": "❌ رد شده"}
+    status_text = status_icons.get(receipt["status"], "نامشخص")
+    text = (
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"  📋 <b>رسید #{receipt['id']}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  👤 کاربر: <code>{receipt['user_id']}</code>\n"
+        f"  💰 مبلغ: <b>{receipt['amount']:,.0f} {symbol}</b>\n"
+        f"  📅 تاریخ: {receipt['created_at'][:16]}\n"
+        f"  📌 وضعیت: <b>{status_text}</b>"
+    )
+    kb = await receipt_actions(receipt_id) if receipt["status"] == "pending" else await back_to_admin()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.message.answer_photo(
+        photo=receipt["photo_file_id"],
+        caption=text, parse_mode="HTML", reply_markup=kb,
+    )
+
+
+@router.callback_query(F.data.startswith("adm_approve_"))
+async def cb_approve(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    receipt_id = int(callback.data.split("_")[-1])
+    receipt = await get_receipt(receipt_id)
+    if not receipt:
+        await callback.answer("❌ رسید یافت نشد!", show_alert=True)
+        return
+    await approve_receipt(receipt_id, callback.from_user.id)
+    symbol = await get_setting("currency_symbol") or "تومان"
+    try:
+        if receipt["plan_id"] and receipt["plan_id"] > 0:
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📦 ساخت کانفیگ من", callback_data=f"make_config_{receipt['plan_id']}")],
+            ])
+            await callback.bot.send_message(
+                chat_id=receipt["user_id"],
+                text=f"✅ رسید شما تایید شد! ({receipt['amount']:,.0f} {symbol})\n\nروی دکمه زیر کلیک کنید:",
+                reply_markup=kb,
+            )
+        else:
+            from utils.texts import receipt_approved
+            user = await get_user(receipt["user_id"])
+            new_balance = user["balance"] if user else 0
+            await callback.bot.send_message(
+                chat_id=receipt["user_id"],
+                text=await receipt_approved(receipt["amount"], new_balance, symbol),
+            )
+    except Exception:
+        pass
+    await callback.answer("✅ رسید تایید شد!", show_alert=True)
+    await callback.message.edit_caption(caption=f"✅ <b>رسید #{receipt_id} تایید شد</b>", parse_mode="HTML", reply_markup=await back_to_admin())
+
+
+@router.callback_query(F.data.startswith("adm_reject_"))
+async def cb_reject(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    receipt_id = int(callback.data.split("_")[-1])
+    receipt = await get_receipt(receipt_id)
+    if not receipt:
+        await callback.answer("❌ رسید یافت نشد!", show_alert=True)
+        return
+    await reject_receipt(receipt_id, callback.from_user.id)
+    symbol = await get_setting("currency_symbol") or "تومان"
+    try:
+        from utils.texts import receipt_rejected
+        await callback.bot.send_message(
+            chat_id=receipt["user_id"],
+            text=await receipt_rejected(receipt["amount"], symbol),
+        )
+    except Exception:
+        pass
+    await callback.answer("❌ رسید رد شد!", show_alert=True)
+    await callback.message.edit_caption(caption=f"❌ <b>رسید #{receipt_id} رد شد</b>", parse_mode="HTML", reply_markup=await back_to_admin())
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION 5: Config Management
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_configs")
+async def cb_configs(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("🔑 <b>مدیریت کانفیگ‌ها</b>", parse_mode="HTML", reply_markup=await configs_menu())
+
+
+@router.callback_query(F.data == "adm_all_configs_list")
+async def cb_all_configs_list(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    from database import get_db
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT c.*, u.username FROM configs c LEFT JOIN users u ON c.user_id = u.id "
+        "ORDER BY c.created_at DESC LIMIT 15"
+    )
+    configs = [dict(r) for r in await cursor.fetchall()]
+    await db.close()
+    if not configs:
+        await callback.message.edit_text("🔑 <b>لیست کانفیگ‌ها</b>\n\nهیچ کانفیگی وجود ندارد.", parse_mode="HTML", reply_markup=await back_to_admin())
+        return
+    await callback.message.edit_text("🔑 <b>لیست کانفیگ‌ها</b>", parse_mode="HTML", reply_markup=await config_list_keyboard(configs))
+
+
+@router.callback_query(F.data.startswith("adm_cfg_detail_"))
+async def cb_cfg_detail(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    config_id = int(callback.data.split("_")[-1])
+    from database import get_config_by_id
+    cfg = await get_config_by_id(config_id)
+    if not cfg:
+        await callback.answer("❌ کانفیگ یافت نشد!", show_alert=True)
+        return
+    status = "🟢 فعال" if cfg["is_active"] else "🔴 غیرفعال"
+    text = (
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"  🔑 <b>کانفیگ #{cfg['id']}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  📧 ایمیل: <code>{cfg['email']}</code>\n"
+        f"  📅 انقضا: <b>{cfg['expire_date'][:10]}</b>\n"
+        f"  📌 وضعیت: <b>{status}</b>\n"
+        f"  👤 کاربر: <code>{cfg['user_id']}</code>"
+    )
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await config_actions(config_id))
+
+
+@router.callback_query(F.data.startswith("adm_deactivate_cfg_"))
+async def cb_deactivate_cfg(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    config_id = int(callback.data.split("_")[-1])
+    from database import deactivate_config
+    await deactivate_config(config_id)
+    await callback.answer("🔴 کانفیگ غیرفعال شد!", show_alert=True)
+    await callback.message.edit_text("🔑 <b>مدیریت کانفیگ‌ها</b>", parse_mode="HTML", reply_markup=await configs_menu())
+
+
+@router.callback_query(F.data.startswith("adm_delete_cfg_"))
+async def cb_delete_cfg(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    config_id = int(callback.data.split("_")[-1])
+    from database import delete_config
+    await delete_config(config_id)
+    await callback.answer("🗑️ کانفیگ حذف شد!", show_alert=True)
+    await callback.message.edit_text("🔑 <b>مدیریت کانفیگ‌ها</b>", parse_mode="HTML", reply_markup=await configs_menu())
+
+
+@router.callback_query(F.data == "adm_search_config")
+async def cb_search_config(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.search_config)
+    await callback.message.edit_text(
+        "🔍 <b>جستجوی کانفیگ</b>\n\nآیدی کانفیگ یا ایمیل کاربر را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.search_config)
+async def process_search_config(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await state.clear()
+    from database import get_db
+    db = await get_db()
+    try:
+        config_id = int(message.text.strip())
+        cursor = await db.execute("SELECT c.*, u.username FROM configs c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ?", (config_id,))
+    except ValueError:
+        cursor = await db.execute("SELECT c.*, u.username FROM configs c LEFT JOIN users u ON c.user_id = u.id WHERE c.email LIKE ?", (f"%{message.text.strip()}%",))
+    configs = [dict(r) for r in await cursor.fetchall()]
+    await db.close()
+    if not configs:
+        await message.answer("❌ کانفیگی یافت نشد.", reply_markup=await back_to_admin())
+        return
+    await message.answer("🔑 <b>نتایج جستجو</b>", parse_mode="HTML", reply_markup=await config_list_keyboard(configs))
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION 6: Admin Management
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_admins")
+async def cb_admins(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
     admins = await get_admins()
-    text = "**Admins**\n\n"
-    for a in admins:
-        text += f"@{a.get('username', 'N/A')} (ID: {a['user_id']})\n"
-
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await manage_admins_menu())
+    await callback.message.edit_text("🛡️ <b>مدیریت ادمین‌ها</b>", parse_mode="HTML", reply_markup=await admins_menu(admins))
 
 
-@router.callback_query(F.data == "add_admin")
+@router.callback_query(F.data == "adm_add_admin")
 async def cb_add_admin(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
     await state.set_state(AdminState.add_admin_id)
-    await callback.message.edit_text("Enter the Telegram user ID to add as admin:", reply_markup=await back_to_admin())
+    await callback.message.edit_text(
+        "➕ <b>افزودن ادمین</b>\n\nآیدی عددی تلگرام کاربر را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
 
 
 @router.message(AdminState.add_admin_id)
@@ -931,302 +1369,1418 @@ async def process_add_admin(message: Message, state: FSMContext):
     try:
         user_id = int(message.text.strip())
     except ValueError:
-        await message.answer("آیدی نامعتبر. یک آیدی عددی تلگرام وارد کنید:")
+        await message.answer("❌ آیدی نامعتبر. یک عدد وارد کنید:")
         return
     await add_admin(user_id, None)
     await state.clear()
-    await message.answer(f"Admin {user_id} added!", reply_markup=await back_to_admin())
+    admins = await get_admins()
+    await message.answer(f"✅ کاربر <code>{user_id}</code> به عنوان ادمین اضافه شد!", parse_mode="HTML", reply_markup=await admins_menu(admins))
 
 
-@router.callback_query(F.data == "remove_admin")
-async def cb_remove_admin(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data.startswith("adm_admin_detail_"))
+async def cb_admin_detail(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
-    await state.set_state(AdminState.remove_admin_id)
-    await callback.message.edit_text("Enter the Telegram user ID to remove from admins:", reply_markup=await back_to_admin())
-
-
-@router.message(AdminState.remove_admin_id)
-async def process_remove_admin(message: Message, state: FSMContext):
-    if not await is_admin(message.from_user.id):
-        return
-    try:
-        user_id = int(message.text.strip())
-    except ValueError:
-        await message.answer("آیدی نامعتبر. یک آیدی عددی تلگرام وارد کنید:")
-        return
-
-    if user_id == message.from_user.id:
-        await message.answer("نتوانید خودتان را حذف کنید!", reply_markup=await back_to_admin())
-        return
-
-    await remove_admin(user_id)
-    await state.clear()
-    await message.answer(f"Admin {user_id} removed!", reply_markup=await back_to_admin())
-
-
-@router.callback_query(F.data.startswith("admin_cfgs_"))
-async def cb_user_configs_list(callback: CallbackQuery):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-
-    user_id = int(callback.data.split("_")[-1])
-    user = await get_user(user_id)
-    if not user:
-        await callback.answer("کاربر یافت نشد!", show_alert=True)
-        return
-
-    configs = await get_user_configs(user_id)
-    if not configs:
-        await callback.answer("No configs found for this user.", show_alert=True)
-        return
-
-    symbol = await get_setting("currency_symbol") or "تومان"
-    text = f"**Configs for @{user.get('username', 'N/A')}**\n\n"
-    for c in configs[:10]:
-        status = "\u2705" if c["is_active"] else "\u274c"
-        text += f"{status} #{c['id']} | {c['email']} | Exp: {c['expire_date'][:10]}\n"
-
+    admin_id = int(callback.data.split("_")[-1])
+    user = await get_user(admin_id)
+    uname = f"@{user.get('username', 'ندارد')}" if user else "نامشخص"
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ حذف ادمین", callback_data=f"adm_remove_admin_{admin_id}")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm_admins")],
+    ])
     await callback.message.edit_text(
-        text, parse_mode="Markdown",
-        reply_markup=await user_config_list(configs, user_id),
+        f"🛡️ <b>ادمین: {uname}</b>\n\nآیدی: <code>{admin_id}</code>",
+        parse_mode="HTML", reply_markup=kb
     )
 
 
-@router.callback_query(F.data.startswith("admin_cfg_"))
-async def cb_config_detail(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("adm_remove_admin_"))
+async def cb_remove_admin(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
+        return
+    admin_id = int(callback.data.split("_")[-1])
+    if admin_id == callback.from_user.id:
+        await callback.answer("❌ نمی‌توانید خودتان را حذف کنید!", show_alert=True)
+        return
+    await remove_admin(admin_id)
+    await callback.answer("✅ ادمین حذف شد!", show_alert=True)
+    admins = await get_admins()
+    await callback.message.edit_text("🛡️ <b>مدیریت ادمین‌ها</b>", parse_mode="HTML", reply_markup=await admins_menu(admins))
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION 7: Settings
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_settings")
+async def cb_settings(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("⚙️ <b>تنظیمات ربات</b>", parse_mode="HTML", reply_markup=await settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_welcome")
+async def cb_edit_welcome(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("welcome_text") or ""
+    await state.set_state(AdminState.edit_welcome)
+    await callback.message.edit_text(
+        f"📝 <b>متن خوش‌آمدگویی</b>\n\nمتن فعلی:\n<code>{current[:200]}</code>\n\nمتن جدید را ارسال کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_welcome)
+async def process_edit_welcome(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await set_setting("welcome_text", message.text)
+    await state.clear()
+    await message.answer("✅ متن خوش‌آمدگویی به‌روزرسانی شد!", reply_markup=await settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_welcome_emoji")
+async def cb_edit_welcome_emoji(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("welcome_emoji") or ""
+    await state.set_state(AdminState.edit_welcome_emoji)
+    await callback.message.edit_text(
+        f"🎯 <b>ایموجی خوش‌آمدگویی</b>\n\n"
+        f"فعلی: <code>{current if current else 'غیرفعال'}</code>\n\n"
+        f"ایموجی مورد نظر را ارسال کنید:\n"
+        f"(برای غیرفعال کردن `غیرفعال` تایپ کنید)",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_welcome_emoji)
+async def process_edit_welcome_emoji(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    value = message.text.strip()
+    if value == "غیرفعال":
+        await set_setting("welcome_emoji", "")
+        await message.answer("✅ ایموجی خوش‌آمدگویی غیرفعال شد!", reply_markup=await settings_menu())
+        await state.clear()
         return
 
-    parts = callback.data.split("_")
-    config_id = int(parts[2])
-    user_id = int(parts[3])
+    # Try to extract custom_emoji_id from message entities
+    emoji_id = None
+    if message.entities:
+        for ent in message.entities:
+            if ent.type == "custom_emoji":
+                emoji_id = str(ent.custom_emoji_id)
+                break
 
-    from database import get_db
-    db = await get_db()
-    cursor = await db.execute("SELECT * FROM configs WHERE id = ?", (config_id,))
-    cfg = await cursor.fetchone()
-    await db.close()
+    if emoji_id:
+        await set_setting("welcome_emoji", emoji_id)
+        await message.answer(f"✅ ایموجی پرمیوم ذخیره شد! (ID: <code>{emoji_id}</code>)", parse_mode="HTML", reply_markup=await settings_menu())
+    else:
+        await set_setting("welcome_emoji", value)
+        await message.answer(f"⚠️ ایموجی معمولی ذخیره شد (پشتیبانی نمی‌شود).\nلطفاً یک <b>ایموجی پرمیوم</b> ارسال کنید.", parse_mode="HTML", reply_markup=await settings_menu())
+    await state.clear()
 
-    if not cfg:
-        await callback.answer("کانفیگ یافت نشد!", show_alert=True)
+
+@router.callback_query(F.data == "adm_edit_payment")
+async def cb_edit_payment(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("💳 <b>اطلاعات پرداخت</b>", parse_mode="HTML", reply_markup=await payment_settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_card_number")
+async def cb_edit_card_number(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("card_number") or ""
+    await state.set_state(AdminState.edit_card_number)
+    await callback.message.edit_text(
+        f"💳 <b>شماره کارت</b>\n\nفعلی: <code>{current}</code>\n\nشماره جدید را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_card_number)
+async def process_edit_card_number(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await set_setting("card_number", message.text.strip())
+    await state.clear()
+    await message.answer("✅ شماره کارت به‌روزرسانی شد!", reply_markup=await payment_settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_card_owner")
+async def cb_edit_card_owner(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("card_owner") or ""
+    await state.set_state(AdminState.edit_card_owner)
+    await callback.message.edit_text(
+        f"👤 <b>نام صاحب کارت</b>\n\nفعلی: <b>{current}</b>\n\nنام جدید را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_card_owner)
+async def process_edit_card_owner(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await set_setting("card_owner", message.text.strip())
+    await state.clear()
+    await message.answer("✅ نام صاحب کارت به‌روزرسانی شد!", reply_markup=await payment_settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_c2c_title")
+async def cb_edit_c2c_title(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.edit_c2c_title)
+    await callback.message.edit_text("✏️ <b>عنوان کارت به کارت</b>\n\nعنوان جدید را وارد کنید:", parse_mode="HTML", reply_markup=await back_to_admin())
+
+
+@router.message(AdminState.edit_c2c_title)
+async def process_edit_c2c_title(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await set_setting("c2c_title", message.text.strip())
+    await state.clear()
+    await message.answer("✅ عنوان به‌روزرسانی شد!", reply_markup=await payment_settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_c2c_instruction")
+async def cb_edit_c2c_instruction(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.edit_c2c_instruction)
+    await callback.message.edit_text("✏️ <b>راهنمای کارت به کارت</b>\n\nمتن جدید را وارد کنید:", parse_mode="HTML", reply_markup=await back_to_admin())
+
+
+@router.message(AdminState.edit_c2c_instruction)
+async def process_edit_c2c_instruction(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await set_setting("c2c_instruction", message.text.strip())
+    await state.clear()
+    await message.answer("✅ راهنما به‌روزرسانی شد!", reply_markup=await payment_settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_free_test")
+async def cb_edit_free_test(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text(
+        "🧪 <b>مدیریت تست رایگان</b>\n\nتنظیمات کامل طرح تست رایگان را مدیریت کنید:",
+        parse_mode="HTML", reply_markup=await trial_management_menu()
+    )
+
+
+@router.callback_query(F.data == "adm_trial_toggle")
+async def cb_trial_toggle(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("free_test_enabled") or "1"
+    new_val = "0" if current == "1" else "1"
+    await set_setting("free_test_enabled", new_val)
+    status = "فعال شد ✅" if new_val == "1" else "غیرفعال شد ❌"
+    await callback.answer(f"تست رایگان {status}", show_alert=True)
+    await callback.message.edit_reply_markup(reply_markup=await trial_management_menu())
+
+
+@router.callback_query(F.data == "adm_trial_edit_mb")
+async def cb_trial_edit_mb(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("free_test_mb") or "102400"
+    await state.set_state(AdminState.edit_free_test_mb)
+    await callback.message.edit_text(
+        f"🧪 <b>حجم تست رایگان</b>\n\nفعلی: <b>{current} MB</b>\n\nحجم جدید (MB) را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_free_test_mb)
+async def process_edit_free_test_mb(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        mb = int(message.text.strip())
+        if mb <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ عدد نامعتر. یک عدد مسبب وارد کنید:")
+        return
+    await set_setting("free_test_mb", str(mb))
+    await state.clear()
+    await message.answer("✅ بروزرسانی شد!", reply_markup=await trial_management_menu())
+
+
+@router.callback_query(F.data == "adm_trial_edit_days")
+async def cb_trial_edit_days(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("free_test_days") or "1"
+    await state.set_state(AdminState.edit_trial_days)
+    await callback.message.edit_text(
+        f"📅 <b>مدت تست رایگان</b>\n\nفعلی: <b>{current} روز</b>\n\nمدت جدید (روز) را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_trial_days)
+async def process_edit_trial_days(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        days = int(message.text.strip())
+        if days <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ عدد نامعتر. یک عدد مسبب وارد کنید:")
+        return
+    await set_setting("free_test_days", str(days))
+    await state.clear()
+    await message.answer("✅ بروزرسانی شد!", reply_markup=await trial_management_menu())
+
+
+@router.callback_query(F.data == "adm_trial_edit_inbounds")
+async def cb_trial_edit_inbounds(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("free_test_inbound_ids") or ""
+    display = current if current else "پیشاًدفلت پنل (خالی)"
+    await state.set_state(AdminState.edit_trial_inbounds)
+    await callback.message.edit_text(
+        f"🔗 <b>ردیف‌های تست رایگان</b>\n\n"
+        f"فعلی: <code>{display}</code>\n\n"
+        f"ردیف‌های جدید را با کاما جدا کنید (مثال: <code>30,42</code>)\n"
+        f"برای استفاده از پیشاًدفلت پنل، بنویسید: <code>-</code>",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_trial_inbounds)
+async def process_edit_trial_inbounds(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    text = message.text.strip()
+    if text == "-":
+        await set_setting("free_test_inbound_ids", "")
+        await message.answer("✅ از پیشاًدفلت پنل استفاده میشود.", reply_markup=await trial_management_menu())
+    else:
+        parts = [x.strip() for x in text.split(",") if x.strip().isdigit()]
+        if not parts:
+            await message.answer("❌ فرمت نامعتر. ردیف‌ها را با کاما جدا کنید (مثال: <code>30,42</code>):", parse_mode="HTML")
+            return
+        await set_setting("free_test_inbound_ids", ",".join(parts))
+        await message.answer(f"✅ ردیف‌ها: <code>{','.join(parts)}</code>", parse_mode="HTML", reply_markup=await trial_management_menu())
+    await state.clear()
+
+
+@router.callback_query(F.data == "adm_trial_users")
+async def cb_trial_users(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    users = await get_free_test_users()
+    if not users:
+        await callback.answer("هیچ کاربری تست رایگان نگرفته است.", show_alert=True)
         return
 
-    cfg = dict(cfg)
-    status = "Active" if cfg["is_active"] else "Expired"
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    buttons = []
+    for u in users[:20]:
+        uid = u["user_id"]
+        uname = u.get("username") or u.get("first_name") or str(uid)
+        ts = u.get("created_at", "")[:10] if u.get("created_at") else ""
+        btn_text = f"@{uname} — {ts}"
+        buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"adm_trial_user_{uid}")])
+    buttons.append([await _btn("🔄 ریست همه کاربران", "adm_trial_reset_all", "gear")])
+    buttons.append([await _btn("🔙 بازگشت", "adm_edit_free_test", btn_id="back")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await callback.message.edit_text(f"👥 <b>کاربران تست رایگان</b> ({len(users)} نفر)", parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("adm_trial_user_"))
+async def cb_trial_user_detail(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    uid = int(callback.data.split("_")[-1])
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [await _btn(f"🔄 ریست تست کاربر {uid}", f"adm_trial_reset_user_{uid}", "gear")],
+        [await _btn("🔙 بازگشت", "adm_trial_users", btn_id="back")],
+    ])
+    await callback.message.edit_text(f"👤 <b>کاربر {uid}</b>\n\nبرای ریست تست رایگان این کاربر، روی دکمه زیر کلیک کنید:", parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("adm_trial_reset_user_"))
+async def cb_trial_reset_user(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    uid = int(callback.data.split("_")[-1])
+    await reset_free_test(uid)
+    await callback.answer(f"✅ تست کاربر {uid} ریست شد.", show_alert=True)
+    await cb_trial_user_detail(callback)
+
+
+@router.callback_query(F.data == "adm_trial_reset_all")
+async def cb_trial_reset_all(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text(
+        "⚠️ <b>آیا مطمئن هستید؟</b>\n\nتمام کانفیگ‌های تست رایگان حذف خواهند شد و همه کاربران می‌توانند دوباره تست بگیرند.",
+        parse_mode="HTML",
+        reply_markup=await confirm_action("adm_trial_reset_all_confirm", "آیا مطمئن هستید؟")
+    )
+
+
+@router.callback_query(F.data == "adm_trial_reset_all_confirm")
+async def cb_trial_reset_all_confirm(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    count = await reset_all_free_tests()
+    await callback.answer(f"✅ {count} کانفیگ تست حذف شد.", show_alert=True)
+    await callback.message.edit_text("<b>✅ همه تست‌های رایگان ریست شدند.</b>", parse_mode="HTML", reply_markup=await trial_management_menu())
+
+
+
+async def cb_edit_auto_approve(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("auto_approve_max") or "0"
+    symbol = await get_setting("currency_symbol") or "تومان"
+    status = f"{float(current):,.0f} {symbol}" if float(current) > 0 else "غیرفعال"
+    await state.set_state(AdminState.edit_auto_approve)
+    await callback.message.edit_text(
+        f"✅ <b>تایید خودکار</b>\n\nحد فعلی: <b>{status}</b>\n\nرسیدهای تا این مبلغ خودکار تایید می‌شوند.\n۰ = غیرفعال\n\nمبلغ جدید را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_auto_approve)
+async def process_edit_auto_approve(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        amount = float(message.text.strip())
+        if amount < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ عدد نامعتبر. یک عدد مثبت یا ۰ وارد کنید:")
+        return
+    await set_setting("auto_approve_max", str(amount))
+    await state.clear()
+    symbol = await get_setting("currency_symbol") or "تومان"
+    if amount > 0:
+        await message.answer(f"✅ تایید خودکار: <b>{amount:,.0f} {symbol}</b>", parse_mode="HTML", reply_markup=await settings_menu())
+    else:
+        await message.answer("✅ تایید خودکار غیرفعال شد.", reply_markup=await settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_buttons")
+async def cb_edit_buttons(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("🎨 <b>ویرایش دکمه‌ها</b>\n\nدکمه مورد نظر را انتخاب کنید:", parse_mode="HTML", reply_markup=await buttons_editor_menu())
+
+
+BUTTON_SETTINGS = {
+    "adm_edit_btn_start": "btn_start",
+    "adm_edit_btn_wallet": "btn_wallet",
+    "adm_edit_btn_free_test": "btn_free_test",
+    "adm_edit_btn_buy_config": "btn_buy_config",
+    "adm_edit_btn_my_configs": "btn_my_configs",
+    "adm_edit_btn_topup": "btn_topup",
+    "adm_edit_btn_tx_history": "btn_tx_history",
+    "adm_edit_btn_back": "btn_back",
+    "adm_edit_btn_back_to_menu": "btn_back_to_menu",
+}
+
+
+@router.callback_query(F.data.startswith("adm_edit_btn_"))
+async def cb_edit_button(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    setting_key = BUTTON_SETTINGS.get(callback.data)
+    if not setting_key:
+        await callback.answer("ناشناخته!", show_alert=True)
+        return
+    current = await get_setting(setting_key) or ""
+    await state.update_data(button_key=setting_key)
+    await state.set_state(AdminState.edit_button_name)
+    await callback.message.edit_text(
+        f"🎨 <b>ویرایش دکمه</b>\n\nمتن فعلی: <b>{current}</b>\n\nمتن جدید را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_button_name)
+async def process_edit_button(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    key = data.get("button_key")
+    if key:
+        await set_setting(key, message.text)
+    await state.clear()
+    await message.answer(f"✅ دکمه به‌روزرسانی شد: <b>{message.text}</b>", parse_mode="HTML", reply_markup=await buttons_editor_menu())
+
+
+@router.callback_query(F.data == "adm_edit_bot_texts")
+async def cb_edit_bot_texts(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("📝 <b>متن‌های ربات</b>\n\nمتن مورد نظر را انتخاب کنید:", parse_mode="HTML", reply_markup=await bot_texts_menu())
+
+
+BOT_TEXT_KEYS = {
+    "adm_text_welcome": ("welcome_text", "متن خوش‌آمدگویی"),
+    "adm_text_wallet": ("text_wallet", "متن کیف پول"),
+    "adm_text_receipt_approved": ("text_receipt_approved", "متن تایید رسید"),
+    "adm_text_receipt_rejected": ("text_receipt_rejected", "متن رد رسید"),
+    "adm_text_config_created": ("text_config_created", "متن ساخت کانفیگ"),
+    "adm_text_free_test": ("text_free_test", "متن تست رایگان"),
+    "adm_text_new_user": ("text_new_user_notification", "متن کاربر جدید"),
+}
+
+
+@router.callback_query(F.data.startswith("adm_text_"))
+async def cb_edit_bot_text(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    info = BOT_TEXT_KEYS.get(callback.data)
+    if not info:
+        return
+    key, label = info
+    current = await get_setting(key) or "(پیش‌فرض)"
+    await state.update_data(bot_text_key=key)
+    await state.set_state(AdminState.edit_bot_text_key)
+    await callback.message.edit_text(
+        f"📝 <b>{label}</b>\n\nمتن فعلی:\n<code>{current[:300]}</code>\n\nمتن جدید را ارسال کنید.\nبرای بازگشت به متن پیش‌فرض، بنویسید: <code>پیش‌فرض</code>",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_bot_text_key)
+async def process_edit_bot_text(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    key = data.get("bot_text_key")
+    if key:
+        value = "" if message.text.strip() == "پیش‌فرض" else message.text
+        await set_setting(key, value)
+    await state.clear()
+    await message.answer("✅ متن به‌روزرسانی شد!", reply_markup=await bot_texts_menu())
+
+
+@router.callback_query(F.data == "adm_edit_premium_emojis")
+async def cb_edit_premium_emojis(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("🎭 <b>ایموجی‌های پرمیوم</b>", parse_mode="HTML", reply_markup=await premium_emojis_menu())
+
+
+@router.callback_query(F.data == "adm_send_emoji_register")
+async def cb_send_emoji_register(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.waiting_emoji_name)
+    await callback.message.edit_text(
+        "⭐ <b>ثبت ایموجی پرمیوم</b>\n\nنام ایموجی را وارد کنید (مثال: wallet):",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.waiting_emoji_name)
+async def process_emoji_name(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    valid_names = [
+        "wallet", "free_test", "buy_config", "my_configs", "back", "admin",
+        "stats", "users", "settings", "plans", "receipts", "admins", "check", "cross",
+        "card", "owner", "star", "copy", "cancel", "success", "approve", "reject",
+        "ban", "unban", "plus", "minus", "list", "gear", "money", "calendar", "history",
+        "menu", "package", "link", "clock", "start", "copy_number", "copy_price",
+    ]
+    name = message.text.strip().lower()
+    if name not in valid_names:
+        await message.answer(f"❌ نام نامعتبر. یکی از این‌ها را استفاده کنید:\n<code>{', '.join(valid_names[:20])}</code>", parse_mode="HTML")
+        return
+    await state.update_data(emoji_name=name)
+    await state.set_state(AdminState.waiting_emoji_id)
+    await message.answer(f"⭐ نام: <b>{name}</b>\n\nحالا ایموجی پرمیوم را ارسال کنید.", parse_mode="HTML")
+
+
+@router.message(AdminState.waiting_emoji_id)
+async def process_emoji_receive(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    emoji_name = data.get("emoji_name", "")
+    if not emoji_name:
+        await state.clear()
+        await message.answer("❌ مشکلی پیش آمد. دوباره شروع کنید.")
+        return
+    for entity in (message.entities or []) + (message.caption_entities or []):
+        if entity.type == "custom_emoji" and entity.custom_emoji_id:
+            from utils.premium_emoji import register_premium_emoji
+            await register_premium_emoji(emoji_name, entity.custom_emoji_id)
+            await state.clear()
+            await message.answer(
+                f"✅ ایموجی ثبت شد: <b>{emoji_name}</b> → <code>{entity.custom_emoji_id}</code>",
+                parse_mode="HTML", reply_markup=await premium_emojis_menu()
+            )
+            return
+    await state.clear()
+    await message.answer("❌ ایموجی پرمیوم یافت نشد. یک پیام با ایموجی پرمیوم ارسال کنید.")
+
+
+@router.callback_query(F.data == "adm_view_emojis")
+async def cb_view_emojis(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    from utils.premium_emoji import load_emoji_ids
+    mapping = await load_emoji_ids()
+    if not mapping:
+        text = "📋 <b>ایموجی‌های ثبت شده</b>\n\nهیچ ایموجی ثبت نشده."
+    else:
+        text = "📋 <b>ایموجی‌های ثبت شده</b>\n\n"
+        for name, eid in mapping.items():
+            text += f"  {name}: <code>{eid}</code>\n"
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await premium_emojis_menu())
+
+
+@router.callback_query(F.data == "adm_clear_emojis")
+async def cb_clear_emojis(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    from utils.premium_emoji import save_emoji_ids
+    await save_emoji_ids({})
+    await callback.answer("✅ همه ایموجی‌ها پاک شدند!", show_alert=True)
+    await callback.message.edit_text("🎭 <b>ایموجی‌های پرمیوم</b>\n\nهمه ایموجی‌ها پاک شدند.", parse_mode="HTML", reply_markup=await premium_emojis_menu())
+
+
+@router.callback_query(F.data == "adm_edit_force_join")
+async def cb_edit_force_join(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("🔗 <b>عضویت اجباری در کانال</b>", parse_mode="HTML", reply_markup=await force_join_settings_menu())
+
+
+@router.callback_query(F.data == "adm_toggle_force_join")
+async def cb_toggle_force_join(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("force_join_enabled") or "0"
+    new_val = "0" if current == "1" else "1"
+    await set_setting("force_join_enabled", new_val)
+    status = "فعال شد ✅" if new_val == "1" else "غیرفعال شد ❌"
+    await callback.answer(f"عضویت اجباری {status}", show_alert=True)
+    await cb_edit_force_join(callback)
+
+
+@router.callback_query(F.data == "adm_edit_required_channel")
+async def cb_edit_required_channel(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("required_channel_id") or ""
+    await state.set_state(AdminState.edit_required_channel)
+    await callback.message.edit_text(
+        f"🔗 <b>شناسه کانال</b>\n\nفعلی: <code>{current}</code>\n\nشناسه جدید را وارد کنید (مثلاً @mychannel یا -1001234567890):",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_required_channel)
+async def process_edit_required_channel(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await set_setting("required_channel_id", message.text.strip())
+    await state.clear()
+    await message.answer("✅ شناسه کانال به‌روزرسانی شد!", reply_markup=await force_join_settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_force_join_text")
+async def cb_edit_force_join_text(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.edit_force_join_text)
+    await callback.message.edit_text("✏️ <b>متن عضویت اجباری</b>\n\nمتن جدید را وارد کنید:", parse_mode="HTML", reply_markup=await back_to_admin())
+
+
+@router.message(AdminState.edit_force_join_text)
+async def process_edit_force_join_text(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await set_setting("force_join_text", message.text)
+    await state.clear()
+    await message.answer("✅ متن به‌روزرسانی شد!", reply_markup=await force_join_settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_force_join_fail_text")
+async def cb_edit_force_join_fail_text(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.edit_force_join_fail_text)
+    await callback.message.edit_text("✏️ <b>متن عدم عضویت</b>\n\nمتن جدید را وارد کنید:", parse_mode="HTML", reply_markup=await back_to_admin())
+
+
+@router.message(AdminState.edit_force_join_fail_text)
+async def process_edit_force_join_fail_text(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await set_setting("force_join_fail_text", message.text)
+    await state.clear()
+    await message.answer("✅ متن به‌روزرسانی شد!", reply_markup=await force_join_settings_menu())
+
+
+
+
+# ═══════════════════════════════════════════════════════════════
+# Invite/Referral Settings
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_edit_invite")
+async def cb_edit_invite(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("👥 <b>تنظیمات زیرمجموعه گیری</b>", parse_mode="HTML", reply_markup=await invite_settings_menu())
+
+
+@router.callback_query(F.data == "adm_toggle_invite")
+async def cb_toggle_invite(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("invite_enabled") or "0"
+    new_val = "0" if current == "1" else "1"
+    await set_setting("invite_enabled", new_val)
+    status = "فعال شد ✅" if new_val == "1" else "غیرفعال شد ❌"
+    await callback.answer(f"زیرمجموعه گیری {status}", show_alert=True)
+    await callback.message.edit_text("👥 <b>تنظیمات زیرمجموعه گیری</b>", parse_mode="HTML", reply_markup=await invite_settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_invite_reward")
+async def cb_edit_invite_reward(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("invite_reward_amount") or "5000"
+    symbol = await get_setting("currency_symbol") or "تومان"
+    await state.set_state(AdminState.edit_invite_reward)
     text = (
-        f"**Config #{cfg['id']}** ({status})\n\n"
-        f"Email: `{cfg['email']}`\n"
-        f"Link: `{cfg['sub_link']}`\n"
-        f"Expires: {cfg['expire_date'][:10]}"
+        f"💰 <b>مبلغ پاداش زیرمجموعه</b>\n\n"
+        f"فعلی: <b>{current} {symbol}</b>\n\n"
+        f"مبلغ جدید را وارد کنید:"
     )
     await callback.message.edit_text(
-        text, parse_mode="Markdown",
-        reply_markup=await config_detail_actions(config_id, user_id),
+        text,
+        parse_mode="HTML", reply_markup=await back_to_admin()
     )
 
 
-@router.callback_query(F.data.startswith("admin_del_cfg_"))
-async def cb_delete_config(callback: CallbackQuery):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-
-    parts = callback.data.split("_")
-    config_id = int(parts[3])
-    user_id = int(parts[4])
-
-    await delete_config(config_id)
-    await callback.answer("Config deleted!", show_alert=True)
-
-    configs = await get_user_configs(user_id)
-    if not configs:
-        user = await get_user(user_id)
-        symbol = await get_setting("currency_symbol") or "تومان"
-        text = f"**Configs for @{user.get('username', 'N/A')}**\n\nNo configs left."
-        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await back_to_admin())
-        return
-
-    user = await get_user(user_id)
-    symbol = await get_setting("currency_symbol") or "تومان"
-    text = f"**Configs for @{user.get('username', 'N/A')}**\n\n"
-    for c in configs[:10]:
-        status = "\u2705" if c["is_active"] else "\u274c"
-        text += f"{status} #{c['id']} | {c['email']} | Exp: {c['expire_date'][:10]}\n"
-
-    await callback.message.edit_text(
-        text, parse_mode="Markdown",
-        reply_markup=await user_config_list(configs, user_id),
-    )
-
-
-@router.callback_query(F.data.startswith("add_bal_"))
-async def cb_add_balance(callback: CallbackQuery, state: FSMContext):
-    if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
-        return
-
-    user_id = int(callback.data.split("_")[-1])
-    await state.update_data(bal_user_id=user_id)
-    await state.set_state(AdminState.add_balance)
-    symbol = await get_setting("currency_symbol") or "تومان"
-    await callback.message.edit_text(
-        f"**Add Balance**\n\nEnter amount in {symbol}:",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
-    )
-
-
-@router.message(AdminState.add_balance)
-async def process_add_balance(message: Message, state: FSMContext):
+@router.message(AdminState.edit_invite_reward)
+async def process_edit_invite_reward(message: Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
         return
-
     try:
         amount = float(message.text.strip())
-        if amount <= 0:
+        if amount < 0:
             raise ValueError
     except ValueError:
-        await message.answer("Invalid amount. Enter a positive number:")
+        await message.answer("❌ عدد نامعتبر. یک عدد مثبت یا ۰ وارد کنید:")
         return
-
-    data = await state.get_data()
-    user_id = data.get("bal_user_id")
-    await update_balance(user_id, amount)
+    await set_setting("invite_reward_amount", str(amount))
     await state.clear()
-
     symbol = await get_setting("currency_symbol") or "تومان"
-    user = await get_user(user_id)
-    new_balance = user["balance"] if user else 0
-    await message.answer(
-        f"\u2705 Added **{amount:,.0f} {symbol}** to user `{user_id}`\n"
-        f"New balance: **{new_balance:,.0f} {symbol}**",
-        parse_mode="Markdown",
-        reply_markup=await user_actions(user_id),
-    )
+    if amount > 0:
+        await message.answer(f"✅ مبلغ پاداش: <b>{amount:,.0f} {symbol}</b>", parse_mode="HTML", reply_markup=await invite_settings_menu())
+    else:
+        await message.answer("✅ پاداش زیرمجموعه غیرفعال شد (مبلغ ۰).", reply_markup=await invite_settings_menu())
 
 
-@router.callback_query(F.data.startswith("rem_bal_"))
-async def cb_remove_balance(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "adm_edit_invite_text")
+async def cb_edit_invite_text(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
-
-    user_id = int(callback.data.split("_")[-1])
-    await state.update_data(bal_user_id=user_id)
-    await state.set_state(AdminState.remove_balance)
-    symbol = await get_setting("currency_symbol") or "تومان"
-    user = await get_user(user_id)
-    balance = user["balance"] if user else 0
+    current = await get_setting("text_invite") or ""
+    await state.set_state(AdminState.edit_invite_text)
+    text = (
+        "📝 <b>متن زیرمجموعه گیری</b>\n\n"
+        "م فعلی:\n"
+    )
+    if current:
+        text += f"<code>{current[:500]}</code>\n\n"
+    else:
+        text += "(متن پیش‌فرض)\n\n"
+    text += (
+        "متن جدید را ارسال کنید.\n"
+        "متغیرها: <code>{link}</code> <code>{count}</code> <code>{reward}</code> <code>{symbol}</code>\n\n"
+        "برای بازگشت به متن پیش‌فرض، بنویسید: <code>پیش‌فرض</code>"
+    )
     await callback.message.edit_text(
-        f"**Remove Balance**\n\nCurrent balance: **{balance:,.0f} {symbol}**\n\nEnter amount to remove:",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
+        text,
+        parse_mode="HTML", reply_markup=await back_to_admin()
     )
 
 
-@router.message(AdminState.remove_balance)
-async def process_remove_balance(message: Message, state: FSMContext):
+@router.message(AdminState.edit_invite_text)
+async def process_edit_invite_text(message: Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
         return
-
-    try:
-        amount = float(message.text.strip())
-        if amount <= 0:
-            raise ValueError
-    except ValueError:
-        await message.answer("Invalid amount. Enter a positive number:")
-        return
-
-    data = await state.get_data()
-    user_id = data.get("bal_user_id")
-    user = await get_user(user_id)
-    current = user["balance"] if user else 0
-
-    if amount > current:
-        await message.answer(
-            f"Cannot remove {amount:,.0f} — user only has {current:,.0f}. Enter a smaller amount:"
-        )
-        return
-
-    await update_balance(user_id, -amount)
+    value = "" if message.text.strip() == "پیش‌فرض" else message.text
+    await set_setting("text_invite", value)
     await state.clear()
+    await message.answer("✅ متن زیرمجموعه گیری به‌روزرسانی شد!", reply_markup=await invite_settings_menu())
 
-    symbol = await get_setting("currency_symbol") or "تومان"
-    user = await get_user(user_id)
-    new_balance = user["balance"] if user else 0
-    await message.answer(
-        f"\u2705 Removed **{amount:,.0f} {symbol}** from user `{user_id}`\n"
-        f"New balance: **{new_balance:,.0f} {symbol}**",
-        parse_mode="Markdown",
-        reply_markup=await user_actions(user_id),
-    )
-
-
-@router.callback_query(F.data == "admin_broadcast")
-async def cb_broadcast(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "adm_edit_currency")
+async def cb_edit_currency(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
         return
-    await state.set_state(AdminState.broadcast)
+    current = await get_setting("currency_symbol") or "تومان"
+    await state.set_state(AdminState.edit_currency)
     await callback.message.edit_text(
-        "**Broadcast Message**\n\nSend the message you want to broadcast to all users. "
-        "Supports HTML formatting.",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
+        f"💱 <b>نماد ارز</b>\n\nفعلی: <b>{current}</b>\n\nنماد جدید را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
     )
 
 
-@router.callback_query(F.data == "panel_info")
-async def cb_panel_info(callback: CallbackQuery):
+@router.message(AdminState.edit_currency)
+async def process_edit_currency(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await set_setting("currency_symbol", message.text.strip())
+    await state.clear()
+    await message.answer("✅ نماد ارز به‌روزرسانی شد!", reply_markup=await settings_menu())
+
+
+@router.callback_query(F.data == "adm_toggle_expiry_reminder")
+async def cb_toggle_expiry_reminder(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
-        await callback.answer("دسترسی غیرمجاز!", show_alert=True)
+        return
+    current = await get_setting("expiry_reminder_enabled") or "1"
+    new_val = "0" if current == "1" else "1"
+    await set_setting("expiry_reminder_enabled", new_val)
+    status = "فعال شد ✅" if new_val == "1" else "غیرفعال شد ❌"
+    await callback.answer(f"یادآوری انقضا {status}", show_alert=True)
+
+
+@router.callback_query(F.data == "adm_qr_bg_info")
+async def cb_qr_bg_info(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
         return
     import os
-    web_port = os.getenv("WEB_PORT", "5000")
-    admin_user = os.getenv("ADMIN_WEB_USER", "admin")
-    text = (
-        f"**Dashboard Info**\n\n"
-        f"URL: `http://YOUR_IP:{web_port}`\n"
-        f"Username: `{admin_user}`\n"
-        f"Password: See .env file (ADMIN_WEB_PASS)\n\n"
-        f"Replace YOUR_IP with your server IP."
+    bg_exists = os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "utils", "qr_bg.png"))
+    status = "✅ تصویر فعلی وجود دارد" if bg_exists else "❌ تصویری آپلود نشده"
+    await callback.message.edit_text(
+        f"📷 <b>پس‌زمینه QR Code</b>\n\n{status}\n\nبرای تغییر پس‌زمینه QR، از پنل وب استفاده کنید:\n"
+        f"<code>http://212.87.199.33:5000/settings</code>",
+        parse_mode="HTML", reply_markup=await back_to_admin()
     )
-    await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=await back_to_admin())
 
 
-@router.message(AdminState.broadcast)
-async def process_broadcast(message: Message, state: FSMContext):
+@router.callback_query(F.data == "adm_control")
+async def cb_control(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("🎛️ <b>کنترل‌پنل</b>", parse_mode="HTML", reply_markup=await control_panel_menu())
+
+
+@router.callback_query(F.data == "adm_test_connection_ctrl")
+async def cb_test_connection_ctrl(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await cb_test_panel(callback)
+
+
+@router.callback_query(F.data == "adm_restart_bot")
+async def cb_restart_bot(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ بله، ری‌استارت", callback_data="adm_confirm_restart"),
+            InlineKeyboardButton(text="❌ انصراف", callback_data="adm_control"),
+        ],
+    ])
+    await callback.message.edit_text("🔄 <b>ری‌استارت ربات</b>\n\nآیا مطمئن هستید؟", parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data == "adm_confirm_restart")
+async def cb_confirm_restart(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.answer("🔄 ربات در حال ری‌استارت...", show_alert=True)
+    import subprocess
+    try:
+        subprocess.Popen(
+            ["pm2", "restart", "nikeli-api"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "adm_create_backup")
+async def cb_create_backup(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    import tarfile, io, json, os
+    from datetime import datetime
+    from aiogram.types import FSInputFile
+
+    backup_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archive_path = os.path.join(backup_dir, f"backup_{ts}.tar.gz")
+    db_path = os.getenv("DB_PATH", "bot_database.db")
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+
+    manifest = {"created_at": datetime.now().isoformat(), "version": "1.0"}
+    with tarfile.open(archive_path, "w:gz") as tar:
+        if os.path.exists(db_path):
+            tar.add(db_path, arcname="bot_database.db")
+        if os.path.exists(env_path):
+            tar.add(env_path, arcname=".env")
+        info = tarfile.TarInfo(name="backup_manifest.json")
+        data = json.dumps(manifest, indent=2).encode()
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+
+    try:
+        await callback.message.answer_document(
+            document=FSInputFile(archive_path, filename=f"backup_{ts}.tar.gz"),
+            caption=f"💾 <b>بکاپ ایجاد شد</b>\n\n📅 {ts}\n📦 {os.path.getsize(archive_path) / 1024:.1f} KB",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        await callback.answer(f"❌ خطا: {str(e)[:100]}", show_alert=True)
+
+
+@router.callback_query(F.data == "adm_backups_list")
+async def cb_backups_list(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    import os
+    from datetime import datetime
+    backup_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
+    backups = []
+    if os.path.exists(backup_dir):
+        for fname in sorted(os.listdir(backup_dir), reverse=True):
+            if fname.endswith(".tar.gz"):
+                fpath = os.path.join(backup_dir, fname)
+                stat = os.stat(fpath)
+                size = stat.st_size
+                if size < 1024:
+                    size_str = f"{size} B"
+                else:
+                    size_str = f"{size / 1024:.1f} KB"
+                backups.append({"name": fname, "size": size_str, "date": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")})
+    if not backups:
+        await callback.message.edit_text("📥 <b>بکاپ‌های موجود</b>\n\nهیچ بکاپی وجود ندارد.", parse_mode="HTML", reply_markup=await back_to_admin())
+        return
+    await callback.message.edit_text("📥 <b>بکاپ‌های موجود</b>", parse_mode="HTML", reply_markup=await backup_list_keyboard(backups))
+
+
+# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# SECTION 9: Broadcast
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_broadcast")
+async def cb_broadcast(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.broadcast_destination)
+    await callback.message.edit_text(
+        "📢 <b>ارسال همگانی</b>\n\n"
+        "پیام را به کجا ارسال کنید؟",
+        parse_mode="HTML", reply_markup=await broadcast_destination_keyboard()
+    )
+
+
+@router.callback_query(F.data.startswith("broadcast_dest_"))
+async def cb_broadcast_destination(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    dest = callback.data.replace("broadcast_dest_", "")
+    await state.update_data(broadcast_dest=dest)
+    await state.set_state(AdminState.broadcast_text)
+    user_count = await get_user_count()
+    dest_labels = {"users": "کاربران", "channel": "کانال", "both": "کاربران و کانال"}
+    await callback.message.edit_text(
+        f"📢 <b>ارسال به {dest_labels.get(dest, dest)}</b>\n\n"
+        f"👥 تعداد کل کاربران: <b>{user_count}</b>\n\n"
+        f"پیام خود را ارسال کنید.\nاز HTML استفاده کنید: <b>بولد</b> — <i>ایتالیک</i> — <code>کد</code>",
+        parse_mode="HTML", reply_markup=await broadcast_menu()
+    )
+
+
+@router.message(AdminState.broadcast_text)
+async def process_broadcast_text(message: Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
         return
+    await state.update_data(broadcast_text=message.html_text or message.text)
+    await state.set_state(AdminState.broadcast_button)
+    await message.answer(
+        "🔘 <b>انتخاب دکمه</b>\n\n"
+        "دکمه مورد نظر را برای پیام انتخاب کنید:",
+        parse_mode="HTML", reply_markup=await broadcast_button_keyboard()
+    )
 
-    await state.clear()
+
+BROADCAST_BUTTON_MAP = {
+    "broadcast_send_none": None,
+    "broadcast_send_buy_config": {"text": "خرید کانفیگ", "callback": "buy_config", "emoji": "package", "btn_id": "buy_config"},
+    "broadcast_send_wallet": {"text": "کیف پول", "callback": "wallet", "emoji": "wallet", "btn_id": "wallet"},
+    "broadcast_send_free_test": {"text": "تست رایگان", "callback": "free_test", "emoji": "free_test", "btn_id": "free_test"},
+    "broadcast_send_channel": {"text": "کانال ما", "url_setting": "channel_url", "emoji": "link", "btn_id": "channel"},
+    "broadcast_send_support": {"text": "پشتیبانی", "url_setting": "support_url", "emoji": "owner", "btn_id": "support"},
+}
+
+
+
+# ─── Broadcast button with premium emoji support ──────────────
+async def _broadcast_btn(text, callback_data, emoji_name, btn_id=None):
+    from keyboards.user import _btn
+    return await _btn(text, callback_data, emoji_name, btn_id=btn_id)
+
+
+async def _broadcast_url_btn(text, url, emoji_name, btn_id=None):
+    from aiogram.types import InlineKeyboardButton
+    kwargs = {"text": text, "url": url}
+    if btn_id:
+        from database import get_setting
+        db_emoji = await get_setting(f"btn_emoji_{btn_id}")
+        if db_emoji:
+            kwargs["icon_custom_emoji_id"] = db_emoji
+        elif emoji_name:
+            from utils.premium_emoji import get_button_emoji_id
+            eid = await get_button_emoji_id(emoji_name)
+            if eid:
+                kwargs["icon_custom_emoji_id"] = eid
+        db_style = await get_setting(f"btn_style_{btn_id}")
+        if db_style:
+            kwargs["style"] = db_style
+    elif emoji_name:
+        from utils.premium_emoji import get_button_emoji_id
+        eid = await get_button_emoji_id(emoji_name)
+        if eid:
+            kwargs["icon_custom_emoji_id"] = eid
+    return InlineKeyboardButton(**kwargs)
+
+async def _do_broadcast(message: Message, bot, button_config=None, for_channel=False):
     users = await get_all_users()
     total = len(users)
     sent = 0
     failed = 0
 
-    await message.answer(f"Broadcasting to {total} users...")
+    text = message.html_text if message.html_text else message.text
 
+    reply_markup = None
+    if button_config:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        btn_text = button_config["text"]
+        emoji_name = button_config.get("emoji", None)
+        btn_id = button_config.get("btn_id", None)
+        if for_channel and "callback" in button_config:
+            bot_username = (await bot.get_me()).username
+            deep_link = f"https://t.me/{bot_username}?start={button_config['callback']}"
+            btn = await _broadcast_url_btn(btn_text, deep_link, emoji_name, btn_id)
+        elif "callback" in button_config:
+            btn = await _broadcast_btn(btn_text, button_config["callback"], emoji_name, btn_id)
+        elif "url_setting" in button_config:
+            url = await get_setting(button_config["url_setting"]) or ""
+            if not url:
+                btn = None
+            else:
+                btn = await _broadcast_url_btn(btn_text, url, emoji_name, btn_id)
+        else:
+            btn = None
+        if btn:
+            reply_markup = InlineKeyboardMarkup(inline_keyboard=[[btn]])
+
+    if not for_channel:
+        await message.answer(f"📢 در حال ارسال به {total} کاربر...")
     for user in users:
         try:
-            await message.bot.send_message(
+            await bot.send_message(
                 chat_id=user["id"],
-                text=message.html_text if message.html_text else message.text,
+                text=text,
                 parse_mode="HTML",
+                reply_markup=reply_markup,
             )
             sent += 1
         except Exception:
             failed += 1
+    return sent, failed, total
 
-    await message.answer(
-        f"**Broadcast Complete**\n\n"
-        f"\u2705 Sent: {sent}\n"
-        f"\u274c Failed: {failed}\n"
-        f"\U0001f465 Total: {total}",
-        parse_mode="Markdown",
-        reply_markup=await back_to_admin(),
+
+
+@router.callback_query(F.data.startswith("broadcast_pin_"))
+async def cb_broadcast_pin(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    data = await state.get_data()
+    broadcast_text = data.get("broadcast_text", "")
+    broadcast_dest = data.get("broadcast_dest", "users")
+    button_data = data.get("broadcast_button_config", "")
+    if not broadcast_text:
+        await callback.answer("خطا: متن پیام یافت نشد!", show_alert=True)
+        await state.clear()
+        return
+
+    pin_msg = callback.data == "broadcast_pin_yes"
+    button_config = BROADCAST_BUTTON_MAP.get(button_data)
+    await state.clear()
+
+    class FakeMessage:
+        def __init__(self, text, bot):
+            self.html_text = text
+            self.text = text
+            self.bot = bot
+            self._answer_text = None
+        async def answer(self, text, **kwargs):
+            self._answer_text = text
+            return self
+
+    fake_msg = FakeMessage(broadcast_text, callback.bot)
+
+    sent_users = 0
+    failed_users = 0
+    total_users = 0
+    sent_channel = 0
+
+    if broadcast_dest in ("users", "both"):
+        sent_users, failed_users, total_users = await _do_broadcast(fake_msg, callback.bot, button_config, for_channel=False)
+
+    if broadcast_dest in ("channel", "both"):
+        channel_id = await get_setting("required_channel_id") or ""
+        if channel_id:
+            text = broadcast_text
+            reply_markup = None
+            if button_config:
+                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                btn_text = button_config["text"]
+                emoji_name = button_config.get("emoji", None)
+                btn_id_val = button_config.get("btn_id", None)
+                if "callback" in button_config:
+                    bot_username = (await callback.bot.get_me()).username
+                    deep_link = f"https://t.me/{bot_username}?start={button_config['callback']}"
+                    btn = await _broadcast_url_btn(btn_text, deep_link, emoji_name, btn_id_val)
+                elif "url_setting" in button_config:
+                    url = await get_setting(button_config["url_setting"]) or ""
+                    if url:
+                        btn = await _broadcast_url_btn(btn_text, url, emoji_name, btn_id_val)
+                    else:
+                        btn = None
+                else:
+                    btn = None
+                if btn:
+                    reply_markup = InlineKeyboardMarkup(inline_keyboard=[[btn]])
+            try:
+                sent_msg = await callback.bot.send_message(
+                    chat_id=channel_id,
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=reply_markup,
+                )
+                if pin_msg:
+                    try:
+                        await callback.bot.pin_chat_message(
+                            chat_id=channel_id,
+                            message_id=sent_msg.message_id,
+                            disable_notification=False,
+                        )
+                    except Exception:
+                        pass
+                sent_channel = 1
+            except Exception:
+                sent_channel = 0
+
+    btn_name = "ندارد"
+    if button_config:
+        btn_name = button_config["text"]
+
+    dest_text = "کاربران"
+    if broadcast_dest == "channel":
+        dest_text = "کانال"
+    elif broadcast_dest == "both":
+        dest_text = "کاربران و کانال"
+
+    result_text = f"📢 <b>ارسال همگانی تمام شد</b>\n\n"
+    result_text += f"📍 مقصد: <b>{dest_text}</b>\n"
+    result_text += f"🔘 دکمه: <b>{btn_name}</b>\n"
+    result_text += f"📌 پین: <b>{'بله' if pin_msg else 'خیر'}</b>\n\n"
+    if broadcast_dest in ("users", "both"):
+        result_text += f"👥 کاربران: ✅ {sent_users} / ❌ {failed_users} / Σ {total_users}\n"
+    if broadcast_dest in ("channel", "both"):
+        result_text += f"📢 کانال: {'✅ ارسال شد' if sent_channel else '❌ خطا'}\n"
+    result_text += "\n✅ <b>ارسال با موفقیت انجام شد!</b>"
+
+    await callback.message.edit_text(result_text, parse_mode="HTML", reply_markup=await back_to_admin())
+
+
+@router.callback_query(F.data.startswith("broadcast_send_"))
+async def cb_broadcast_button(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    data = await state.get_data()
+    broadcast_text = data.get("broadcast_text", "")
+    broadcast_dest = data.get("broadcast_dest", "users")
+    if not broadcast_text:
+        await callback.answer("خطا: متن پیام یافت نشد!", show_alert=True)
+        await state.clear()
+        return
+
+    button_config = BROADCAST_BUTTON_MAP.get(callback.data)
+    await state.update_data(broadcast_button_config=callback.data)
+    await state.set_state(AdminState.broadcast_pin)
+    await callback.message.edit_text(
+        "📌 <b>گزینه پین</b>\n\nآیا پیام در کانال پین شود؟",
+        parse_mode="HTML", reply_markup=await broadcast_pin_keyboard()
     )
+
+
+
+# SECTION 10: Menu Editor
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_menu_editor")
+async def cb_menu_editor(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    import json
+    raw = await get_setting("menu_layout") or "[]"
+    try:
+        layout = json.loads(raw)
+    except Exception:
+        layout = []
+    LABELS = {
+        "wallet": "💰 کیف پول", "free_test": "🧪 تست رایگان", "buy_config": "🛒 خرید کانفیگ",
+        "my_configs": "📋 سرویس‌ها", "channel": "📢 کانال", "support": "💬 پشتیبانی",
+        "admin": "⚙️ ادمین", "invite": "👥 زیرمجموعه",
+    }
+    summary = []
+    for item in layout:
+        if item.get("type") == "row_break":
+            summary.append({"label": "── ردیف جدید ──", "enabled": True})
+        elif item.get("type") == "custom":
+            summary.append({"label": f"🔗 {item.get('text', 'سفارشی')}", "enabled": True})
+        elif item.get("type") == "builtin":
+            bid = item.get("id", "")
+            summary.append({"label": LABELS.get(bid, bid), "enabled": item.get("enabled", True)})
+    await callback.message.edit_text("📱 <b>ویرایش منوی اصلی</b>", parse_mode="HTML", reply_markup=await menu_editor_menu(summary))
+
+
+# ─── Discount Codes Management ─────────────────────────────────
+@router.callback_query(F.data == "adm_discounts")
+async def cb_adm_discounts(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    if not await is_admin(callback.from_user.id):
+        return
+    codes = await get_all_discount_codes()
+    if not codes:
+        text = "🏷️ <b>کدهای تخفیف</b>\n\nهنوز کد تخفیفی ایجاد نشده است."
+    else:
+        text = f"🏷️ <b>کدهای تخفیف</b> ({len(codes)})\n\nلیست کدهای تخفیف شما:"
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await discount_codes_menu(codes))
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=await discount_codes_menu(codes))
+
+
+@router.callback_query(F.data == "adm_add_discount")
+async def cb_adm_add_discount_start(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.add_discount_code)
+    text = "🏷️ <b>ایجاد کد تخفیف جدید</b>\n\nکد تخفیف را وارد کنید (مثال: SUMMER30):"
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML")
+
+
+@router.message(AdminState.add_discount_code)
+async def cb_adm_add_discount_code(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    code = (message.text or "").strip().upper()
+    if not code or len(code) < 3:
+        await message.answer("کد نامعتبر است. حداقل ۳ کاراکتر وارد کنید:")
+        return
+    existing = await get_discount_code(code)
+    if existing:
+        await message.answer("این کد قبلاً استفاده شده است. کد دیگری وارد کنید:")
+        return
+    await state.update_data(discount_code=code)
+    await state.set_state(AdminState.add_discount_type)
+    from keyboards.admin import _btn
+    from aiogram.types import InlineKeyboardMarkup
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [await _btn("📊 درصدی", "adm_dtype_percent", "link", btn_id="dtype_percent"),
+         await _btn("💰 مبلغی", "adm_dtype_fixed", "link", btn_id="dtype_fixed")],
+        [await _btn("لغو", "adm_discounts", btn_id="cancel")],
+    ])
+    await message.answer("نوع تخفیف را انتخاب کنید:", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("adm_dtype_"))
+async def cb_adm_discount_type(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    dtype = "percent" if callback.data == "adm_dtype_percent" else "fixed"
+    await state.update_data(discount_type=dtype)
+    await state.set_state(AdminState.add_discount_value)
+    label = "درصد" if dtype == "percent" else "مبلغ (تومان)"
+    try:
+        await callback.message.edit_text(f"مقدار تخفیف ({label}) را وارد کنید:")
+    except Exception:
+        await callback.message.answer(f"مقدار تخفیف ({label}) را وارد کنید:")
+
+
+@router.message(AdminState.add_discount_value)
+async def cb_adm_add_discount_value(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        value = float((message.text or "").strip())
+        if value <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("لطفاً یک عدد معتبر وارد کنید:")
+        return
+    data = await state.get_data()
+    if data.get("discount_type") == "percent" and value > 100:
+        await message.answer("درصد نمی‌تواند بیشتر از ۱۰۰ باشد:")
+        return
+    await state.update_data(discount_value=value)
+    await state.set_state(AdminState.add_discount_max)
+    await message.answer("حداکثر تعداد استفاده را وارد کنید (۰ = نامحدود):")
+
+
+@router.message(AdminState.add_discount_max)
+async def cb_adm_add_discount_max(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        max_uses = int((message.text or "").strip())
+        if max_uses < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("لطفاً یک عدد صحیح وارد کنید:")
+        return
+    await state.update_data(discount_max_uses=max_uses)
+    await state.set_state(AdminState.add_discount_expiry)
+    await message.answer("مدت اعتبار (ساعت) را وارد کنید (۰ = بدون محدودیت زمانی):")
+
+
+@router.message(AdminState.add_discount_expiry)
+async def cb_adm_add_discount_expiry(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        hours = int((message.text or "").strip())
+        if hours < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("لطفاً یک عدد صحیح وارد کنید:")
+        return
+    expires_at = None
+    if hours > 0:
+        from datetime import datetime, timedelta
+        expires_at = (datetime.utcnow() + timedelta(hours=hours)).isoformat()
+    await state.update_data(discount_expires_at=expires_at)
+    await state.set_state(AdminState.add_discount_plan)
+    from keyboards.admin import _btn
+    from aiogram.types import InlineKeyboardMarkup
+    plans = await get_all_plans()
+    buttons = []
+    buttons.append([await _btn("همه پلن‌ها", "adm_dplan_0", "link", btn_id="dplan_all")])
+    for p in plans[:10]:
+        buttons.append([await _btn(p["name"], f"adm_dplan_{p['id']}", "link", btn_id="dplan_item")])
+    buttons.append([await _btn("لغو", "adm_discounts", btn_id="cancel")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await message.answer("پلن مورد نظر را انتخاب کنید (یا همه پلن‌ها):", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("adm_dplan_"))
+async def cb_adm_discount_plan(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    plan_id = int(callback.data.split("_")[-1])
+    data = await state.get_data()
+    code = data.get("discount_code", "")
+    dtype = data.get("discount_type", "percent")
+    value = data.get("discount_value", 0)
+    max_uses = data.get("discount_max_uses", 0)
+    expires_at = data.get("discount_expires_at")
+
+    code_id = await add_discount_code(code, dtype, value, max_uses, expires_at, plan_id)
+    await state.clear()
+
+    type_label = "درصد" if dtype == "percent" else "تومان"
+    plan_label = "همه پلن‌ها" if plan_id == 0 else f"پلن #{plan_id}"
+    expiry_label = expires_at[:16] if expires_at else "نامحدود"
+    max_label = str(max_uses) if max_uses > 0 else "نامحدود"
+
+    text = (
+        f"✅ <b>کد تخفیف ایجاد شد!</b>\n\n"
+        f"  🏷️ کد: <code>{code}</code>\n"
+        f"  📊 نوع: {type_label}\n"
+        f"  💰 مقدار: {value}{type_label}\n"
+        f"  🔢 حداکثر استفاده: {max_label}\n"
+        f"  📅 انقضا: {expiry_label}\n"
+        f"  📦 پلن: {plan_label}"
+    )
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await back_to_admin())
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=await back_to_admin())
+
+
+@router.callback_query(F.data.startswith("adm_discount_detail_"))
+async def cb_adm_discount_detail(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    if not await is_admin(callback.from_user.id):
+        return
+    code_id = int(callback.data.split("_")[-1])
+    code = await get_discount_code_by_id(code_id)
+    if not code:
+        await callback.answer("کد یافت نشد!", show_alert=True)
+        return
+    type_label = "درصد" if code["discount_type"] == "percent" else "تومان"
+    plan_label = "همه پلن‌ها" if code["plan_id"] == 0 else f"پلن #{code['plan_id']}"
+    expiry_label = code["expires_at"][:16] if code["expires_at"] else "نامحدود"
+    max_label = str(code["max_uses"]) if code["max_uses"] > 0 else "نامحدود"
+    status = "🟢 فعال" if code["is_active"] else "🔴 غیرفعال"
+
+    text = (
+        f"🏷️ <b>جزئیات کد تخفیف</b>\n\n"
+        f"  🏷️ کد: <code>{code['code']}</code>\n"
+        f"  📊 وضعیت: {status}\n"
+        f"  📊 نوع: {type_label}\n"
+        f"  💰 مقدار: {code['discount_value']}{type_label}\n"
+        f"  🔢 استفاده شده: {code['used_count']}/{max_label}\n"
+        f"  📅 انقضا: {expiry_label}\n"
+        f"  📦 پلن: {plan_label}"
+    )
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await discount_code_detail_menu(code_id, code["is_active"]))
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=await discount_code_detail_menu(code_id, code["is_active"]))
+
+
+@router.callback_query(F.data.startswith("adm_delete_discount_"))
+async def cb_adm_delete_discount(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    code_id = int(callback.data.split("_")[-1])
+    await delete_discount_code(code_id)
+    await callback.answer("کد حذف شد!", show_alert=True)
+    codes = await get_all_discount_codes()
+    text = "🏷️ <b>کدهای تخفیف</b>\n\nکد با موفقیت حذف شد."
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await discount_codes_menu(codes))
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=await discount_codes_menu(codes))
+

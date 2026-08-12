@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from database import get_setting, is_admin
 from utils.premium_emoji import get_button_emoji_id
 
@@ -57,8 +57,20 @@ async def main_menu(user_id: int = 0) -> InlineKeyboardMarkup:
         layout = []
 
     if not layout:
-        default_order = ["wallet", "free_test", "buy_config", "my_configs", "invite", "channel", "support", "admin"]
-        layout = [{"type": "builtin", "id": bid, "enabled": True} for bid in default_order]
+        default_order = [
+            {"type": "builtin", "id": "wallet", "enabled": True},
+            {"type": "row_break"},
+            {"type": "builtin", "id": "free_test", "enabled": True},
+            {"type": "builtin", "id": "buy_config", "enabled": True},
+            {"type": "row_break"},
+            {"type": "builtin", "id": "my_configs", "enabled": True},
+            {"type": "builtin", "id": "invite", "enabled": True},
+            {"type": "builtin", "id": "collab", "enabled": True},
+            {"type": "row_break"},
+            {"type": "builtin", "id": "webapp", "enabled": True},
+            {"type": "builtin", "id": "admin", "enabled": True},
+        ]
+        layout = default_order
 
     async def make_builtin_btn(bid):
         if bid == "wallet":
@@ -80,12 +92,24 @@ async def main_menu(user_id: int = 0) -> InlineKeyboardMarkup:
                 return None
             return await _url_btn("support", url, "owner", "")
         elif bid == "admin":
-            return await _btn(await get_setting("btn_admin_settings") or "Admin", "admin_menu", "settings", "", "admin_settings")
+            return await _btn(await get_setting("btn_admin_settings") or "Admin", "adm_menu", "settings", "", "admin_settings")
         elif bid == "invite":
             enabled = await get_setting("invite_enabled")
             if enabled != "1":
                 return None
             return await _btn(await get_setting("btn_invite") or "زیر مجموعه گیری", "invite", "link", "success", "invite")
+        elif bid == "collab":
+            enabled = await get_setting("collab_enabled")
+            if enabled != "1":
+                return None
+            from database import get_user
+            user = await get_user(user_id) if user_id else None
+            if user and user.get("is_collaborator"):
+                return None
+            return await _btn(await get_setting("btn_collab_request") or "🤝 درخواست همکاری", "collab_request", "link", "primary", "collab_request")
+        elif bid == "webapp":
+            url = "https://nigcity.ir/app"
+            return InlineKeyboardButton(text="🌐 Open Panel", web_app=WebAppInfo(url=url))
         return None
 
     current_row = []
@@ -145,7 +169,7 @@ async def wallet_menu() -> InlineKeyboardMarkup:
     )
 
 
-async def payment_method_menu(plan_id: int) -> InlineKeyboardMarkup:
+async def payment_method_menu(plan_id: int, discounted_price: float = None, discount_label: str = None) -> InlineKeyboardMarkup:
     wallet_btn = await get_setting("btn_wallet_payment") or "Pay with Wallet"
     c2c_btn = await get_setting("btn_c2c_payment") or "Card to Card"
     back = await get_setting("btn_back")
@@ -153,17 +177,37 @@ async def payment_method_menu(plan_id: int) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [await _btn(wallet_btn, f"pay_wallet_{plan_id}", "card", btn_id="wallet_payment")],
             [await _btn(c2c_btn, f"pay_c2c_{plan_id}", "card", btn_id="c2c_payment")],
+            [await _btn("🏷️ اعمال کد تخفیف", f"apply_discount_{plan_id}", "link", btn_id="apply_discount")],
+            [await _btn(back, "buy_config", "back", btn_id="back2")],
+        ]
+    )
+
+
+async def name_selection_menu(plan_id: int) -> InlineKeyboardMarkup:
+    back = await get_setting("btn_back")
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [await _btn("✏️ نام دلخواه", f"name_custom_{plan_id}", "link", btn_id="name_custom")],
+            [await _btn("🎲 نام تصادفی", f"name_random_{plan_id}", "link", btn_id="name_random")],
             [await _btn(back, "buy_config", "back", btn_id="back2")],
         ]
     )
 
 
 async def sections_menu() -> InlineKeyboardMarkup:
-    from database import get_plan_sections
+    from database import get_plan_sections, get_panel
     sections = await get_plan_sections()
     buttons = []
+    _panel_cache = {}
     for s in sections:
         btn = await _btn(s["name"], f"select_section_{s['id']}", "link", btn_id="plan_name")
+        panel_id = s.get("panel_id")
+        if panel_id:
+            if panel_id not in _panel_cache:
+                _panel_cache[panel_id] = await get_panel(panel_id)
+            panel = _panel_cache[panel_id]
+            if panel and panel.get("emoji_id"):
+                btn.icon_custom_emoji_id = panel["emoji_id"]
         buttons.append([btn])
     back = await get_setting("btn_back")
     buttons.append([await _btn(back, "main_menu", "back", btn_id="back3")])
@@ -171,16 +215,24 @@ async def sections_menu() -> InlineKeyboardMarkup:
 
 
 async def plans_menu(section_id: int = None) -> InlineKeyboardMarkup:
-    from database import get_plans
+    from database import get_plans, get_panel
     plans = await get_plans()
     if section_id:
         plans = [p for p in plans if p.get("section_id") == section_id]
     symbol = await get_setting("currency_symbol") or "تومان"
     buttons = []
+    _panel_cache = {}
     for p in plans:
         name_text = f"{p['name']} | {p['gb']}GB" if not p.get('is_ultimate') else p['name']
         price_text = f"{p['price']:,} {symbol}"
         name_btn = await _btn(name_text, f"select_plan_{p['id']}", "package", btn_id="plan_name")
+        panel_id = p.get("panel_id")
+        if panel_id:
+            if panel_id not in _panel_cache:
+                _panel_cache[panel_id] = await get_panel(panel_id)
+            panel = _panel_cache[panel_id]
+            if panel and panel.get("emoji_id"):
+                name_btn.icon_custom_emoji_id = panel["emoji_id"]
         price_btn = await _btn(price_text, f"select_plan_{p['id']}", "money", btn_id="plan_price")
         buttons.append([name_btn, price_btn])
     back = await get_setting("btn_back")
@@ -289,10 +341,13 @@ async def back_to_menu() -> InlineKeyboardMarkup:
 
 
 BUTTON_CONFIGS = {
+    "start": {"label": "Start", "default_style": "", "default_emoji": "start"},
     "wallet": {"label": "Wallet", "default_style": "primary", "default_emoji": "wallet"},
     "free_test": {"label": "Free Test", "default_style": "primary", "default_emoji": "free_test"},
     "buy_config": {"label": "Buy Config", "default_style": "primary", "default_emoji": "buy_config"},
     "my_configs": {"label": "My Configs", "default_style": "success", "default_emoji": "my_configs"},
+    "invite": {"label": "Referral", "default_style": "success", "default_emoji": "link"},
+    "invite_copy": {"label": "Copy Invite Link", "default_style": "", "default_emoji": "copy"},
     "topup": {"label": "Top Up", "default_style": "", "default_emoji": "money"},
     "tx_history": {"label": "Transaction History", "default_style": "", "default_emoji": "history"},
     "back": {"label": "Back", "default_style": "", "default_emoji": "back"},
@@ -352,4 +407,84 @@ BUTTON_CONFIGS = {
     "service_confirm_extra": {"label": "Confirm Purchase", "default_style": "success", "default_emoji": "approve"},
     "service_confirm_regenerate": {"label": "Confirm", "default_style": "success", "default_emoji": "approve"},
     "service_extract": {"label": "Extract Configs", "default_style": "", "default_emoji": "link"},
+    "view_user_details": {"label": "View User Details", "default_style": "", "default_emoji": "owner"},
 }
+
+
+
+
+async def my_services_panel_menu(user_id: int) -> InlineKeyboardMarkup:
+    """Show panels that have user's active configs."""
+    from database import get_user_configs, get_panel
+    configs = await get_user_configs(user_id)
+    active_configs = [c for c in configs if c.get("is_active")]
+    
+    # Group configs by panel_id
+    panel_configs = {}
+    for cfg in active_configs:
+        panel_id = cfg.get("panel_id")
+        if panel_id is None:
+            # Fallback: get panel_id from plan
+            from database import get_plan
+            plan = await get_plan(cfg.get("plan_id"))
+            panel_id = plan.get("panel_id") if plan else None
+        if panel_id:
+            panel_configs.setdefault(panel_id, []).append(cfg)
+    
+    buttons = []
+    _panel_cache = {}
+    for panel_id, cfgs in panel_configs.items():
+        if panel_id not in _panel_cache:
+            _panel_cache[panel_id] = await get_panel(panel_id)
+        panel = _panel_cache[panel_id]
+        if panel:
+            panel_name = panel["name"]
+            count = len(cfgs)
+            btn = await _btn(f"{panel_name} ({count})", f"my_services_panel_{panel_id}", "package", btn_id="plan_name")
+            if panel.get("emoji_id"):
+                btn.icon_custom_emoji_id = panel["emoji_id"]
+            buttons.append([btn])
+    
+    if not buttons:
+        buttons.append([await _btn("سرویسی یافت نشد", "noop", "package", btn_id="plan_name")])
+    
+    back = await get_setting("btn_back")
+    buttons.append([await _btn(back, "main_menu", "back", btn_id="back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def my_services_configs_menu(user_id: int, panel_id: int) -> InlineKeyboardMarkup:
+    """Show configs for a specific panel."""
+    from database import get_user_configs, get_panel
+    configs = await get_user_configs(user_id)
+    active_configs = [c for c in configs if c.get("is_active") and c.get("panel_id") == panel_id]
+
+    if not active_configs:
+        from database import get_plan
+        for c in [c for c in configs if c.get("is_active")]:
+            plan = await get_plan(c.get("plan_id"))
+            if plan and plan.get("panel_id") == panel_id:
+                active_configs.append(c)
+
+    buttons = []
+    for cfg in active_configs[:10]:
+        svc_name = cfg.get("config_name") or f"سرویس #{cfg['id']}"
+        from utils.texts import to_jalali
+        expire = to_jalali(cfg.get("expire_date", ""))
+        buttons.append([InlineKeyboardButton(
+            text=f"🟢 {svc_name} — انقضا: {expire}",
+            callback_data=f"config_detail_{cfg['id']}",
+        )])
+
+    buttons.append([await _btn("🔍 کانفیگم رو پیدا نمی‌کنم!", f"recover_config_{panel_id}", "link", btn_id="back")])
+
+    back = await get_setting("btn_back")
+    buttons.append([await _btn(back, "my_configs", "back", btn_id="back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def view_user_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👤 مشاهده پروفایل کاربر", url=f"https://t.me/NigVpnBot?start=view_user_{user_id}")],
+    ])

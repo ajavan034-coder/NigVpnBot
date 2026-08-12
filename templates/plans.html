@@ -60,7 +60,7 @@
                         </a>
                         <form method="POST" action="{{ url_for('plan_delete', plan_id=plan.id) }}" class="d-inline"
                               onsubmit="return confirm('آیا این پلن را حذف می‌کنید؟')">
-                            {{ csrf_field() }}
+            {{ csrf_field() }}
                             <button type="submit" class="btn btn-sm btn-outline-danger">
                                 <i class="bi bi-trash"></i>
                             </button>

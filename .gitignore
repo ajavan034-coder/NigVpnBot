@@ -1,23 +1,45 @@
+# Environment & secrets
 .env
-bot_database.db
-bot_database.db.bak
+*.env
+.env.*
+!.env.example
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+*.db.bak
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
-bot.log
-deploy.py
-_deploy.tar.gz
-screenshots/
-*.bak
+venv/
+
+# Logs
+*.log
+bot.log*
+
+# Temporary / helper scripts
+_eff*.py
+see.txt
+config.txt
+settings_dump.txt
+
+# Backup folder
+backups/
+backup/
+
+# MiMoCode
 .mimocode/
 
-# Test/debug scripts
-_check_*.py
-_resolve.py
-_try_url.py
-check_*.py
-debug_*.py
-fix_*.py
-patch_*.py
-test_*.py
-user_keyboards.py
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thbs.db
+
+# Misc
+frp.tar.gz

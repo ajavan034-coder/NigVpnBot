@@ -54,13 +54,13 @@
                     <td>
                         {% if r.status == 'pending' %}
                         <form method="POST" action="{{ url_for('receipt_approve', receipt_id=r.id) }}" class="d-inline">
-                            {{ csrf_field() }}
+            {{ csrf_field() }}
                             <button type="submit" class="btn btn-sm btn-outline-success">
                                 <i class="bi bi-check-lg"></i>
                             </button>
                         </form>
                         <form method="POST" action="{{ url_for('receipt_reject', receipt_id=r.id) }}" class="d-inline">
-                            {{ csrf_field() }}
+            {{ csrf_field() }}
                             <button type="submit" class="btn btn-sm btn-outline-danger"
                                     onclick="return confirm('آیا این رسید را رد می‌کنید؟')">
                                 <i class="bi bi-x-lg"></i>

@@ -1,245 +1,157 @@
 #!/bin/bash
-set -euo pipefail
 
-# ============================================================
-# VPN Bot — Interactive Install (Ubuntu/Debian)
-# Usage: sudo bash install.sh
-# ============================================================
+REPO="https://github.com/Smertam/3-xui-telbot.git"
+INSTALL_DIR="/root/robot"
+BRANCH="master"
 
-BOT_DIR="/opt/vpnbot"
-SERVICE_NAME="vpnbot"
-BOT_USER="vpnbot"
-REPO_URL="https://github.com/Smertam/3-xui-telbot.git"
+echo ""
+echo "========================================="
+echo "       Robot Installer"
+echo "========================================="
+echo ""
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-log()  { echo -e "${GREEN}[+]${NC} $*"; }
-warn() { echo -e "${YELLOW}[!]${NC} $*"; }
-err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
-ask()  { echo -ne "${CYAN}?${NC} $1: "; }
-
-# ---- preflight ------------------------------------------------
-if [[ $EUID -ne 0 ]]; then
-    err "Run as root: sudo bash install.sh"
+# Check root
+if [ "$EUID" -ne 0 ]; then
+    echo "Please run as root: sudo bash setup.sh"
     exit 1
 fi
 
-echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}     VPN Bot Setup — Interactive${NC}"
-echo -e "${GREEN}========================================${NC}"
-echo ""
+# Install system dependencies
+echo "[1/6] Installing system dependencies..."
+apt-get update -qq > /dev/null 2>&1
+apt-get install -y -qq git python3 python3-venv python3-pip > /dev/null 2>&1
 
-# ---- install system packages -----------------------------------
-log "Installing system packages..."
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq python3 python3-venv python3-pip git curl >/dev/null 2>&1
-log "Python: $(python3 --version)"
-
-# ---- create bot user -------------------------------------------
-if ! id "$BOT_USER" &>/dev/null; then
-    log "Creating user: $BOT_USER"
-    useradd --system --shell /usr/sbin/nologin --home-dir "$BOT_DIR" --create-home "$BOT_USER"
-fi
-
-# ---- clone repo ------------------------------------------------
-if [[ -d "$BOT_DIR/.git" ]]; then
-    log "Repo exists, updating..."
-    cd "$BOT_DIR"
-    chown -R "$BOT_USER":"$BOT_USER" "$BOT_DIR"
-    sudo -u "$BOT_USER" git pull --ff-only 2>/dev/null || warn "Pull failed, keeping current"
+# Setup directory
+echo "[2/6] Downloading files..."
+if [ -d "$INSTALL_DIR/.git" ]; then
+    cd "$INSTALL_DIR"
+    git checkout $BRANCH -q 2>/dev/null
+    git pull -q
+    echo "Updated existing installation."
+elif [ -d "$INSTALL_DIR" ]; then
+    cd "$INSTALL_DIR"
+    git init -q
+    git remote add origin "$REPO" 2>/dev/null || git remote set-url origin "$REPO"
+    git fetch origin $BRANCH -q
+    git checkout $BRANCH -q
+    echo "Converted to git repository."
 else
-    log "Cloning repo..."
-    rm -rf "$BOT_DIR"
-    git clone "$REPO_URL" "$BOT_DIR"
+    git clone -b $BRANCH "$REPO" "$INSTALL_DIR" -q
+    cd "$INSTALL_DIR"
 fi
 
-chown -R "$BOT_USER":"$BOT_USER" "$BOT_DIR"
-cd "$BOT_DIR"
-
-# ---- venv & deps -----------------------------------------------
-if [[ ! -d venv ]]; then
-    log "Creating venv..."
-    sudo -u "$BOT_USER" python3 -m venv venv
+# Setup venv
+echo "[3/6] Installing Python packages..."
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
 fi
+source venv/bin/activate
+pip install --upgrade pip -q 2>/dev/null
+pip install -r requirements.txt -q
 
-log "Installing dependencies..."
-sudo -u "$BOT_USER" "$BOT_DIR/venv/bin/pip" install -q --upgrade pip 2>/dev/null
-sudo -u "$BOT_USER" "$BOT_DIR/venv/bin/pip" install -q -r requirements.txt
-
-# ---- interactive prompts ---------------------------------------
-echo ""
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${CYAN}  Enter your configuration values below${NC}"
-echo -e "${CYAN}  (Press Enter to use default where shown)${NC}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+# Interactive .env setup
+echo "[4/6] Configuring..."
 echo ""
 
-ask "1. Telegram Bot Token (from @BotFather)"
-read -r BOT_TOKEN
-if [[ -z "$BOT_TOKEN" ]]; then
-    err "Bot token is required!"
-    exit 1
+OLD_TOKEN=""
+OLD_ADMIN=""
+OLD_PANEL_URL=""
+OLD_PANEL_USER=""
+OLD_PANEL_PASS=""
+
+if [ -f .env ]; then
+    OLD_TOKEN=$(grep BOT_TOKEN .env 2>/dev/null | cut -d= -f2)
+    OLD_ADMIN=$(grep ADMIN_IDS .env 2>/dev/null | cut -d= -f2)
+    OLD_PANEL_URL=$(grep PANEL_URL .env 2>/dev/null | cut -d= -f2)
+    OLD_PANEL_USER=$(grep PANEL_USER .env 2>/dev/null | cut -d= -f2)
+    OLD_PANEL_PASS=$(grep PANEL_PASS .env 2>/dev/null | cut -d= -f2)
+    echo "Existing .env found. Press Enter to keep current value."
+    echo ""
 fi
 
-ask "2. 3x-ui Panel URL (full URL with path)"
-read -r PANEL_URL
-if [[ -z "$PANEL_URL" ]]; then
-    err "Panel URL is required!"
-    exit 1
-fi
+echo "--- Bot Settings ---"
+read -p "Bot Token [$OLD_TOKEN]: " BOT_TOKEN
+BOT_TOKEN=${BOT_TOKEN:-$OLD_TOKEN}
+read -p "Admin Telegram IDs [$OLD_ADMIN]: " ADMIN_IDS
+ADMIN_IDS=${ADMIN_IDS:-$OLD_ADMIN}
+read -p "Notification Channel ID (leave empty to skip): " CHANNEL_ID
 
-ask "3. Subscription link pattern (leave empty for auto)"
-read -r SUB_LINK
+echo ""
+echo "--- Panel Settings ---"
+read -p "Panel URL [$OLD_PANEL_URL]: " PANEL_URL
+PANEL_URL=${PANEL_URL:-$OLD_PANEL_URL}
+read -p "Panel Username [$OLD_PANEL_USER]: " PANEL_USER
+PANEL_USER=${PANEL_USER:-$OLD_PANEL_USER}
+read -p "Panel Password [$OLD_PANEL_PASS]: " PANEL_PASS
+PANEL_PASS=${PANEL_PASS:-$OLD_PANEL_PASS}
 
-ask "4. 3x-ui Panel Password"
-read -r PANEL_PASS
-if [[ -z "$PANEL_PASS" ]]; then
-    err "Panel password is required!"
-    exit 1
-fi
+echo ""
+echo "--- Config Defaults ---"
+read -p "Config Price (default 5): " CONFIG_PRICE
+CONFIG_PRICE=${CONFIG_PRICE:-5}
+read -p "Free Test Days (default 1): " FREE_TEST_DAYS
+FREE_TEST_DAYS=${FREE_TEST_DAYS:-1}
+read -p "Config Duration in Months (default 1): " CONFIG_MONTHS
+CONFIG_MONTHS=${CONFIG_MONTHS:-1}
 
-ask "5. 3x-ui Panel Username [admin]"
-read -r PANEL_USER
-PANEL_USER="${PANEL_USER:-admin}"
+echo ""
+echo "--- Web Admin Panel ---"
+read -p "Web Panel Username (default admin): " ADMIN_WEB_USER
+ADMIN_WEB_USER=${ADMIN_WEB_USER:-admin}
+read -p "Web Panel Password (default admin): " ADMIN_WEB_PASS
+ADMIN_WEB_PASS=${ADMIN_WEB_PASS:-admin}
+read -p "Web Panel Port (default 5000): " WEB_PORT
+WEB_PORT=${WEB_PORT:-5000}
+SECRET_KEY=$(openssl rand -hex 16 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | head -c 32)
 
-ask "6. Admin Panel Port [5000]"
-read -r WEB_PORT
-WEB_PORT="${WEB_PORT:-5000}"
+# Write .env
+cat > .env <<EOF
+BOT_TOKEN=$BOT_TOKEN
+ADMIN_IDS=$ADMIN_IDS
+CHANNEL_ID=$CHANNEL_ID
 
-ask "7. Admin Panel Username [admin]"
-read -r ADMIN_WEB_USER
-ADMIN_WEB_USER="${ADMIN_WEB_USER:-admin}"
+PANEL_URL=$PANEL_URL
+PANEL_USER=$PANEL_USER
+PANEL_PASS=$PANEL_PASS
 
-ask "8. Admin Panel Password"
-read -r ADMIN_WEB_PASS
-if [[ -z "$ADMIN_WEB_PASS" ]]; then
-    err "Admin password is required!"
-    exit 1
-fi
+CONFIG_PRICE=$CONFIG_PRICE
+FREE_TEST_DAYS=$FREE_TEST_DAYS
+CONFIG_MONTHS=$CONFIG_MONTHS
 
-ask "9. Your Telegram User ID (bot admin)"
-read -r ADMIN_IDS
-if [[ -z "$ADMIN_IDS" ]]; then
-    err "Admin Telegram ID is required!"
-    exit 1
-fi
-
-# ---- generate secret key ---------------------------------------
-SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-
-# ---- write .env ------------------------------------------------
-log "Writing .env..."
-cat > .env << ENVEOF
-BOT_TOKEN=${BOT_TOKEN}
-ADMIN_IDS=${ADMIN_IDS}
-PANEL_URL=${PANEL_URL}
-PANEL_USER=${PANEL_USER}
-PANEL_PASS=${PANEL_PASS}
-ADMIN_WEB_USER=${ADMIN_WEB_USER}
-ADMIN_WEB_PASS=${ADMIN_WEB_PASS}
-SECRET_KEY=${SECRET_KEY}
-WEB_PORT=${WEB_PORT}
 DB_PATH=bot_database.db
-ENVEOF
 
-chown "$BOT_USER":"$BOT_USER" .env
-chmod 600 .env
+ADMIN_WEB_USER=$ADMIN_WEB_USER
+ADMIN_WEB_PASS=$ADMIN_WEB_PASS
+SECRET_KEY=$SECRET_KEY
+WEB_PORT=$WEB_PORT
+EOF
 
-# ---- save sub link to DB if provided ---------------------------
-if [[ -n "$SUB_LINK" ]]; then
-    sudo -u "$BOT_USER" "$BOT_DIR/venv/bin/python3" -c "
-import sqlite3, sys
-db = sqlite3.connect('bot_database.db', timeout=5)
-db.execute(\"INSERT OR REPLACE INTO settings (key, value) VALUES ('sub_link_template', ?)\", (sys.argv[1],))
-db.commit()
-db.close()
-" "$SUB_LINK" 2>/dev/null || true
+echo ""
+echo "[5/6] Starting robot..."
+
+# Kill old process
+OLD_PID=$(lsof -ti:$WEB_PORT 2>/dev/null)
+if [ -n "$OLD_PID" ]; then
+    kill -9 $OLD_PID 2>/dev/null
 fi
+sleep 1
 
-# ---- systemd service -------------------------------------------
-log "Creating systemd service..."
-cat > "/etc/systemd/system/${SERVICE_NAME}.service" << SERVICEEOF
-[Unit]
-Description=VPN Telegram Bot
-After=network-online.target
-Wants=network-online.target
+# Start bot
+nohup ./venv/bin/python run.py > bot.log 2>&1 &
+sleep 3
 
-[Service]
-Type=simple
-User=${BOT_USER}
-Group=${BOT_USER}
-WorkingDirectory=${BOT_DIR}
-ExecStart=${BOT_DIR}/venv/bin/python3 run.py
-Restart=always
-RestartSec=5
-StartLimitBurst=5
-StartLimitIntervalSec=300
-TimeoutStopSec=30
-Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=${BOT_DIR}
-NoNewPrivileges=true
-ProtectSystem=strict
-ReadWritePaths=${BOT_DIR}
-PrivateTmp=true
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=${SERVICE_NAME}
-
-[Install]
-WantedBy=multi-user.target
-SERVICEEOF
-
-# ---- start -----------------------------------------------------
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME" >/dev/null 2>&1
-systemctl restart "$SERVICE_NAME"
-
-sleep 2
-
-# ---- auto-update cron job (every 24h) -------------------------
-log "Setting up auto-update cron job (every 24 hours)..."
-(crontab -l 2>/dev/null | grep -v "vpnbot" ; echo "47 3 * * * cd $BOT_DIR && git pull -q && sudo systemctl restart $SERVICE_NAME >> /var/log/vpnbot-update.log 2>&1") | crontab -
-log "Auto-update cron job installed (runs daily at 3:47 AM)"
-
-# ---- manual update script --------------------------------------
-log "Creating update script..."
-cat > "$BOT_DIR/update.sh" << 'UPDATEEOF'
-#!/bin/bash
-echo "Updating bot from GitHub..."
-cd /opt/vpnbot
-git pull
-pip install -q -r requirements.txt
-sudo systemctl restart vpnbot
-echo "Done! Bot updated and restarted."
-UPDATEEOF
-chmod +x "$BOT_DIR/update.sh"
-chown "$BOT_USER":"$BOT_USER" "$BOT_DIR/update.sh"
-log "Update script created: $BOT_DIR/update.sh"
-
-# ---- summary ---------------------------------------------------
-IP=$(hostname -I | awk '{print $1}')
+echo "[6/6] Done!"
 echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  Bot installed successfully!${NC}"
-echo -e "${GREEN}========================================${NC}"
-echo ""
-echo -e "  Dashboard:  ${CYAN}http://${IP}:${WEB_PORT}${NC}"
-echo -e "  Login:      ${CYAN}${ADMIN_WEB_USER}${NC}"
-echo ""
-echo "  Manage:"
-echo "    systemctl status vpnbot     # check status"
-echo "    systemctl restart vpnbot    # restart"
-echo "    journalctl -u vpnbot -f     # live logs"
-echo "    nano /opt/vpnbot/.env       # edit config"
-echo "    bash /opt/vpnbot/update.sh  # manual update"
-echo ""
-echo "  Auto-update:  Daily at 3:47 AM from GitHub"
-echo "  Manual update: bash /opt/vpnbot/update.sh"
-echo "  Update log:   /var/log/vpnbot-update.log"
-echo ""
+if lsof -ti:$WEB_PORT >/dev/null 2>&1; then
+    echo "========================================="
+    echo "  Robot is running!"
+    echo "  Web Panel: http://YOUR_IP:$WEB_PORT"
+    echo "  Login: $ADMIN_WEB_USER / $ADMIN_WEB_PASS"
+    echo "  Bot Log: tail -f $INSTALL_DIR/bot.log"
+    echo "========================================="
+else
+    echo "========================================="
+    echo "  Something went wrong."
+    echo "  Check: tail -50 $INSTALL_DIR/bot.log"
+    echo "========================================="
+fi

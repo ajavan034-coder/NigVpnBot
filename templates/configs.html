@@ -36,14 +36,14 @@
                     <td>
                         {% if c.is_active %}
                         <form method="POST" action="{{ url_for('config_deactivate', config_id=c.id) }}" class="d-inline">
-                            {{ csrf_field() }}
+            {{ csrf_field() }}
                             <button type="submit" class="btn btn-sm btn-outline-warning">
                                 <i class="bi bi-pause"></i>
                             </button>
                         </form>
                         {% endif %}
                         <form method="POST" action="{{ url_for('config_delete', config_id=c.id) }}" class="d-inline">
-                            {{ csrf_field() }}
+            {{ csrf_field() }}
                             <button type="submit" class="btn btn-sm btn-outline-danger"
                                     onclick="return confirm('آیا این کانفیگ را حذف می‌کنید؟')">
                                 <i class="bi bi-trash"></i>

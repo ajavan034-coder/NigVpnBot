@@ -11,19 +11,23 @@ logger = logging.getLogger(__name__)
 
 
 class PanelAPI:
-    def __init__(self):
-        self.panel_url = ""
-        self.panel_user = ""
-        self.panel_pass = ""
-        self.sub_link_template = ""
-        self.inbound_ids = []
+    def __init__(self, panel_url="", panel_user="", panel_pass="", sub_link_template="", inbound_ids=None, panel_id=None):
+        self.panel_id = panel_id
+        self.panel_url = panel_url.rstrip("/") if panel_url else ""
+        self.panel_user = panel_user or ""
+        self.panel_pass = panel_pass or ""
+        self.sub_link_template = sub_link_template or ""
+        self.inbound_ids = inbound_ids if inbound_ids is not None else []
         self.base_path = ""
         self.session: aiohttp.ClientSession | None = None
         self.csrf_token: str = ""
-        try:
-            self.reload_config()
-        except Exception:
-            pass
+        if not panel_url:
+            try:
+                self.reload_config()
+            except Exception:
+                pass
+        else:
+            self._extract_base_path()
 
     def reload_config(self):
         self.panel_url = (web_db.get_setting("panel_url") or "").rstrip("/")
@@ -186,7 +190,7 @@ class PanelAPI:
                 return inbound.get("id")
         return None
 
-    async def add_client(self, inbound_ids: list[int], email: str, total_gb: float = 0, days: int = 0) -> dict | None:
+    async def add_client(self, inbound_ids: list[int], email: str, total_gb: float = 0, days: int = 0, ip_limit: int = 0) -> dict | None:
         user_uuid = str(uuid.uuid4())
         sub_id = uuid.uuid4().hex[:16]
 
@@ -209,7 +213,7 @@ class PanelAPI:
                     "totalGB": total_bytes,
                     "expiryTime": expiry_time,
                     "reset": 0,
-                    "limitIp": 0,
+                    "limitIp": ip_limit,
                     "tgId": 0,
                     "group": "",
                     "comment": "",
@@ -232,13 +236,16 @@ class PanelAPI:
 
     def get_sub_link(self, email: str, sub_id: str) -> str:
         if self.sub_link_template:
-            return self.sub_link_template.replace("{sub_id}", sub_id).replace("{id}", sub_id)
+            tmpl = self.sub_link_template
+            if "{sub_id}" in tmpl or "{id}" in tmpl:
+                return tmpl.replace("{sub_id}", sub_id).replace("{id}", sub_id)
+            return tmpl.rstrip("/") + "/" + sub_id
         import re
         match = re.search(r"https?://([^:/]+)", self.panel_url)
         host = match.group(1) if match else "localhost"
         return f"https://{host}:2096/sub/{sub_id}"
 
-    async def create_config(self, email: str, days: int = 30, total_gb: int = 0, inbound_ids: list[int] | None = None) -> dict | None:
+    async def create_config(self, email: str, days: int = 30, total_gb: int = 0, inbound_ids: list[int] | None = None, ip_limit: int = 0) -> dict | None:
         if inbound_ids is None:
             inbound_ids = self.inbound_ids if self.inbound_ids else []
         if not inbound_ids:
@@ -246,11 +253,27 @@ class PanelAPI:
             if vid is not None:
                 inbound_ids = [vid]
 
+        # Validate inbound_ids against current panel inbounds
+        if inbound_ids:
+            try:
+                current_inbounds = await self.get_inbounds()
+                current_ids = {ib["id"] for ib in current_inbounds}
+                valid_ids = [iid for iid in inbound_ids if iid in current_ids]
+                if not valid_ids and current_inbounds:
+                    valid_ids = [current_inbounds[0]["id"]]
+                    logger.warning(f"All specified inbound_ids {inbound_ids} not found on panel. Falling back to first available inbound {valid_ids[0]}.")
+                elif len(valid_ids) < len(inbound_ids):
+                    missing = set(inbound_ids) - set(valid_ids)
+                    logger.warning(f"Some inbound_ids {missing} not found on panel. Using only valid ones: {valid_ids}")
+                inbound_ids = valid_ids
+            except Exception as e:
+                logger.error(f"Failed to validate inbound_ids: {e}")
+
         if not inbound_ids:
             logger.error("No inbounds configured")
             return None
 
-        result = await self.add_client(inbound_ids, email, total_gb=total_gb, days=days)
+        result = await self.add_client(inbound_ids, email, total_gb=total_gb, days=days, ip_limit=ip_limit)
         if result:
             sub_link = self.get_sub_link(email, result["sub_id"])
             expire_date = (datetime.utcnow() + timedelta(days=days)).isoformat()
@@ -264,22 +287,37 @@ class PanelAPI:
         logger.error("Failed to add client to panel")
         return None
 
-    async def create_test_config(self, email: str, total_mb: int = 102400) -> dict | None:
-        inbound_ids = self.inbound_ids if self.inbound_ids else []
+    async def create_test_config(self, email: str, total_mb: int = 102400, days: int = 1, custom_inbound_ids: list = None) -> dict | None:
+        if custom_inbound_ids:
+            inbound_ids = custom_inbound_ids
+        else:
+            inbound_ids = self.inbound_ids if self.inbound_ids else []
         if not inbound_ids:
             vid = await self.get_vless_inbound_id()
             if vid is not None:
                 inbound_ids = [vid]
+
+        # Validate inbound_ids against current panel inbounds
+        if inbound_ids:
+            try:
+                current_inbounds = await self.get_inbounds()
+                current_ids = {ib["id"] for ib in current_inbounds}
+                valid_ids = [iid for iid in inbound_ids if iid in current_ids]
+                if not valid_ids and current_inbounds:
+                    valid_ids = [current_inbounds[0]["id"]]
+                inbound_ids = valid_ids
+            except Exception:
+                pass
 
         if not inbound_ids:
             logger.error("No inbounds configured")
             return None
 
         total_gb = total_mb / 1024
-        result = await self.add_client(inbound_ids, email, total_gb=total_gb, days=1)
+        result = await self.add_client(inbound_ids, email, total_gb=total_gb, days=days)
         if result:
             sub_link = self.get_sub_link(email, result["sub_id"])
-            expire_date = (datetime.utcnow() + timedelta(days=1)).isoformat()
+            expire_date = (datetime.utcnow() + timedelta(days=days)).isoformat()
             return {
                 "uuid": result["uuid"],
                 "email": result["email"],
@@ -386,61 +424,61 @@ class PanelAPI:
         return configs
 
     async def get_client_traffic(self, email: str) -> dict | None:
-        inbound_ids = self.inbound_ids if self.inbound_ids else []
-        if not inbound_ids:
-            vid = await self.get_vless_inbound_id()
-            if vid is not None:
-                inbound_ids = [vid]
-
-        for inbound_id in inbound_ids:
-            data = await self._get(f"/panel/api/inbounds/get/{inbound_id}")
-            if not data or not data.get("success"):
-                continue
-            obj = data.get("obj", {})
-
-            client_stats = obj.get("clientStats", [])
-            traffic = None
-            for stat in client_stats:
-                if stat.get("email") == email:
-                    traffic = stat
-                    break
-
-            settings = obj.get("settings", {})
+        inbounds = await self.get_inbounds()
+        target_inbound_id = None
+        target_clients = []
+        for inbound in inbounds:
+            settings = inbound.get("settings", {})
             if isinstance(settings, str):
                 import json
                 settings = json.loads(settings)
             clients = settings.get("clients", [])
-            total_bytes = 0
-            expiry_time = 0
-            for client in clients:
-                if client.get("email") == email:
-                    total_bytes = client.get("totalGB", 0)
-                    expiry_time = client.get("expiryTime", 0)
-                    break
+            if any(c.get("email") == email for c in clients):
+                target_inbound_id = inbound.get("id")
+                target_clients = clients
+                break
 
-            if not traffic and total_bytes == 0:
-                continue
+        if target_inbound_id is None:
+            return None
 
-            up_bytes = traffic.get("up", 0) if traffic else 0
-            down_bytes = traffic.get("down", 0) if traffic else 0
-            if traffic and traffic.get("total", 0) > 0:
-                total_bytes = traffic["total"]
+        data = await self._get(f"/panel/api/inbounds/get/{target_inbound_id}")
+        if not data or not data.get("success"):
+            return None
+        obj = data.get("obj", {})
 
-            used_bytes = up_bytes + down_bytes
-            remaining_bytes = max(0, total_bytes - used_bytes) if total_bytes > 0 else 0
-            return {
-                "total_bytes": total_bytes,
-                "total_gb": round(total_bytes / (1024 * 1024 * 1024), 2) if total_bytes > 0 else 0,
-                "up_bytes": up_bytes,
-                "down_bytes": down_bytes,
-                "used_bytes": used_bytes,
-                "used_gb": round(used_bytes / (1024 * 1024 * 1024), 2),
-                "remaining_bytes": remaining_bytes,
-                "remaining_gb": round(remaining_bytes / (1024 * 1024 * 1024), 2) if total_bytes > 0 else 0,
-                "expiry_time": expiry_time,
-            }
+        client_stats = obj.get("clientStats", [])
+        traffic = None
+        for stat in client_stats:
+            if stat.get("email") == email:
+                traffic = stat
+                break
 
-        return None
+        total_bytes = 0
+        expiry_time = 0
+        for client in target_clients:
+            if client.get("email") == email:
+                total_bytes = client.get("totalGB", 0)
+                expiry_time = client.get("expiryTime", 0)
+                break
+
+        up_bytes = traffic.get("up", 0) if traffic else 0
+        down_bytes = traffic.get("down", 0) if traffic else 0
+        if traffic and traffic.get("total", 0) > 0:
+            total_bytes = traffic["total"]
+
+        used_bytes = up_bytes + down_bytes
+        remaining_bytes = max(0, total_bytes - used_bytes) if total_bytes > 0 else 0
+        return {
+            "total_bytes": total_bytes,
+            "total_gb": round(total_bytes / (1024 * 1024 * 1024), 2) if total_bytes > 0 else 0,
+            "up_bytes": up_bytes,
+            "down_bytes": down_bytes,
+            "used_bytes": used_bytes,
+            "used_gb": round(used_bytes / (1024 * 1024 * 1024), 2),
+            "remaining_bytes": remaining_bytes,
+            "remaining_gb": round(remaining_bytes / (1024 * 1024 * 1024), 2) if total_bytes > 0 else 0,
+            "expiry_time": expiry_time,
+        }
 
     async def _update_client(self, email: str, updates: dict) -> bool:
         inbounds = await self.get_inbounds()
@@ -493,4 +531,284 @@ class PanelAPI:
             await self.session.close()
 
 
+class PanelManager:
+    def __init__(self):
+        self._instances: dict[int, PanelAPI] = {}
+        self._default: PanelAPI | None = None
+
+    async def load_all(self):
+        import database as db
+        panels = await db.get_active_panels()
+        self._instances.clear()
+        for p in panels:
+            inbound_ids = [int(x.strip()) for x in (p.get("inbound_ids") or "").split(",") if x.strip().isdigit()]
+            instance = PanelAPI(
+                panel_url=p["url"],
+                panel_user=p["username"],
+                panel_pass=p["password"],
+                sub_link_template=p.get("sub_link_template", ""),
+                inbound_ids=inbound_ids,
+                panel_id=p["id"],
+            )
+            self._instances[p["id"]] = instance
+            if p.get("is_default"):
+                self._default = instance
+        if not self._default and self._instances:
+            self._default = next(iter(self._instances.values()))
+        if not self._default:
+            self._default = panel_api
+
+    def get(self, panel_id: int) -> PanelAPI | None:
+        return self._instances.get(panel_id)
+
+    def get_default(self) -> PanelAPI | None:
+        return self._default or panel_api
+
+    async def add(self, panel_data: dict) -> PanelAPI:
+        import database as db
+        inbound_ids_str = panel_data.get("inbound_ids", "")
+        panel_id = await db.add_panel(
+            name=panel_data["name"],
+            url=panel_data["url"],
+            username=panel_data.get("username", ""),
+            password=panel_data.get("password", ""),
+            sub_link_template=panel_data.get("sub_link_template", ""),
+            inbound_ids=inbound_ids_str,
+            is_default=panel_data.get("is_default", False),
+            volume_gb=panel_data.get("volume_gb", 0),
+            panel_type=panel_data.get("panel_type", "v2ray"),
+        )
+        inbound_ids = [int(x.strip()) for x in inbound_ids_str.split(",") if x.strip().isdigit()]
+        instance = PanelAPI(
+            panel_url=panel_data["url"],
+            panel_user=panel_data["username"],
+            panel_pass=panel_data["password"],
+            sub_link_template=panel_data.get("sub_link_template", ""),
+            inbound_ids=inbound_ids,
+            panel_id=panel_id,
+        )
+        self._instances[panel_id] = instance
+        if panel_data.get("is_default") or not self._default:
+            self._default = instance
+        return instance
+
+    async def remove(self, panel_id: int):
+        import database as db
+        await db.delete_panel(panel_id)
+        instance = self._instances.pop(panel_id, None)
+        if instance:
+            await instance.close()
+        if self._default and self._default.panel_id == panel_id:
+            self._default = next(iter(self._instances.values()), None) or panel_api
+
+    async def update(self, panel_id: int, **kwargs):
+        import database as db
+        await db.update_panel(panel_id, **kwargs)
+        if "url" in kwargs or "username" in kwargs or "password" in kwargs or "sub_link_template" in kwargs or "inbound_ids" in kwargs:
+            panel = await db.get_panel(panel_id)
+            if panel:
+                inbound_ids = [int(x.strip()) for x in (panel.get("inbound_ids") or "").split(",") if x.strip().isdigit()]
+                self._instances[panel_id] = PanelAPI(
+                    panel_url=panel["url"],
+                    panel_user=panel["username"],
+                    panel_pass=panel["password"],
+                    sub_link_template=panel.get("sub_link_template", ""),
+                    inbound_ids=inbound_ids,
+                    panel_id=panel_id,
+                )
+
+    async def set_default(self, panel_id: int):
+        import database as db
+        await db.set_default_panel(panel_id)
+        self._default = self._instances.get(panel_id)
+
+    async def test_connection(self, panel_id: int) -> dict:
+        panel = self.get(panel_id)
+        if not panel:
+            return {"success": False, "error": "Panel not found"}
+        ok = await panel.login()
+        if not ok:
+            return {"success": False, "error": "Login failed - check username/password"}
+        inbounds = await panel.get_inbounds()
+        total_clients = 0
+        for ib in inbounds:
+            total_clients += len(ib.get("settings", {}).get("clients", []))
+        return {
+            "success": True,
+            "inbounds_count": len(inbounds),
+            "total_clients": total_clients,
+        }
+
+    async def test_connection_detailed(self, panel_id: int) -> dict:
+        panel = self.get(panel_id)
+        if not panel:
+            return {"success": False, "error": "Panel not found", "login_ok": False, "url_reachable": False}
+
+        import time
+        result = {
+            "success": False,
+            "login_ok": False,
+            "url_reachable": False,
+            "response_time_ms": 0,
+            "inbounds_count": 0,
+            "inbounds_by_protocol": {},
+            "total_clients": 0,
+            "error": None,
+            "inbounds": [],
+            "sub_template": panel.sub_link_template or "خودکار",
+        }
+
+        # Test URL reachability
+        try:
+            session = await panel._get_session()
+            start = time.time()
+            async with session.get(panel.panel_url, ssl=False, timeout=__import__("aiohttp").ClientTimeout(total=10)) as resp:
+                result["response_time_ms"] = int((time.time() - start) * 1000)
+                result["url_reachable"] = resp.status < 400
+        except Exception as e:
+            result["error"] = f"URL unreachable: {e}"
+            return result
+
+        # Test login
+        ok = await panel.login()
+        result["login_ok"] = ok
+        if not ok:
+            result["error"] = "Login failed - check username/password"
+            return result
+
+        # Get inbounds
+        try:
+            inbounds = await panel.get_inbounds()
+            result["inbounds_count"] = len(inbounds)
+            protocol_counts = {}
+            for ib in inbounds:
+                proto = ib.get("protocol", "unknown")
+                protocol_counts[proto] = protocol_counts.get(proto, 0) + 1
+                client_count = len(ib.get("settings", {}).get("clients", []))
+                result["total_clients"] += client_count
+                result["inbounds"].append({
+                    "id": ib.get("id"),
+                    "tag": ib.get("tag"),
+                    "protocol": proto,
+                    "enabled": ib.get("enable", False),
+                    "clients": client_count,
+                })
+            result["inbounds_by_protocol"] = protocol_counts
+        except Exception as e:
+            result["error"] = f"Failed to fetch inbounds: {e}"
+
+        result["success"] = True
+        return result
+
+    async def test_connection_with_creds(self, url: str, username: str, password: str) -> dict:
+        temp = PanelAPI(panel_url=url, panel_user=username, panel_pass=password)
+        try:
+            ok = await temp.login()
+            if not ok:
+                return {"success": False, "error": "Login failed - check username/password"}
+            inbounds = await temp.get_inbounds()
+            total_clients = 0
+            for ib in inbounds:
+                total_clients += len(ib.get("settings", {}).get("clients", []))
+            return {
+                "success": True,
+                "inbounds_count": len(inbounds),
+                "total_clients": total_clients,
+                "inbounds": [
+                    {"id": ib.get("id"), "tag": ib.get("tag"), "protocol": ib.get("protocol"),
+                     "enable": ib.get("enable"), "client_count": len(ib.get("settings", {}).get("clients", []))}
+                    for ib in inbounds
+                ],
+            }
+        finally:
+            await temp.close()
+
+    async def get_inbounds_summary(self, panel_id: int) -> list[dict]:
+        panel = self.get(panel_id)
+        if not panel:
+            return []
+        inbounds = await panel.get_inbounds()
+        return [
+            {"id": ib.get("id"), "tag": ib.get("tag"), "protocol": ib.get("protocol"),
+             "enable": ib.get("enable"), "client_count": len(ib.get("settings", {}).get("clients", []))}
+            for ib in inbounds
+        ]
+
+    async def get_all_clients(self, panel_id: int) -> list[dict]:
+        panel = self.get(panel_id)
+        if not panel:
+            return []
+        inbounds = await panel.get_inbounds()
+        clients = []
+        for ib in inbounds:
+            for client in ib.get("settings", {}).get("clients", []):
+                clients.append({
+                    "email": client.get("email"),
+                    "uuid": client.get("id"),
+                    "inbound_id": ib.get("id"),
+                    "inbound_tag": ib.get("tag"),
+                    "total_gb": client.get("totalGB", 0),
+                    "expiry_time": client.get("expiryTime", 0),
+                    "enable": client.get("enable", True),
+                })
+        return clients
+
+    async def get_client_configs(self, panel_id: int, email: str) -> list:
+        panel = self.get(panel_id)
+        if not panel:
+            panel = self.get_default()
+        if not panel:
+            return []
+        return await panel.get_client_configs(email)
+
+    async def create_config(self, panel_id: int, email: str, days: int, total_gb: int, inbound_ids: list[int], ip_limit: int = 0) -> dict | None:
+        panel = self.get(panel_id)
+        if not panel:
+            panel = self.get_default()
+        if not panel:
+            return None
+        return await panel.create_config(email, days, total_gb, inbound_ids, ip_limit)
+
+    async def get_client_traffic(self, panel_id: int, email: str) -> dict | None:
+        panel = self.get(panel_id)
+        if not panel:
+            panel = self.get_default()
+        if not panel:
+            return None
+        return await panel.get_client_traffic(email)
+
+    async def update_client_total_gb(self, panel_id: int, email: str, extra_gb: float) -> bool:
+        panel = self.get(panel_id)
+        if not panel:
+            panel = self.get_default()
+        if not panel:
+            return False
+        return await panel.update_client_total_gb(email, extra_gb)
+
+    async def regenerate_sub_link(self, panel_id: int, email: str) -> str | None:
+        panel = self.get(panel_id)
+        if not panel:
+            panel = self.get_default()
+        if not panel:
+            return None
+        return await panel.regenerate_sub_link(email)
+
+    async def close_all(self):
+        for panel in self._instances.values():
+            await panel.close()
+
+
 panel_api = PanelAPI()
+panel_manager = PanelManager()
+
+# Wireguard panel integration
+try:
+    from wireguard_api import wireguard_api, WireguardAPI
+except ImportError:
+    wireguard_api = None
+    WireguardAPI = None
+
+try:
+    panel_api
+except NameError:
+    panel_api = PanelAPI()

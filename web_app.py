@@ -8,6 +8,7 @@ from flask import (
 )
 from dotenv import load_dotenv
 import web_db
+from webapp_api import webapp_bp
 
 load_dotenv()
 
@@ -15,6 +16,10 @@ app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", secrets.token_hex(32))
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+# Telegram Mini Web App
+app.config["BOT_TOKEN"] = os.getenv("BOT_TOKEN", "")
+app.register_blueprint(webapp_bp)
 
 ADMIN_USER = os.getenv("ADMIN_WEB_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_WEB_PASS", "changeme")
@@ -248,7 +253,47 @@ def settings():
                 flash("Bot token changed! Bot will restart to apply.", "success")
         return redirect(url_for("settings"))
     all_settings = web_db.get_all_settings()
-    return render_template("settings.html", settings=all_settings)
+    qr_bg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "utils", "qr_bg.png")
+    return render_template("settings.html", settings=all_settings, qr_bg_exists=os.path.exists(qr_bg_path))
+
+
+@app.route("/settings/upload-qr-bg", methods=["POST"])
+@login_required
+def upload_qr_bg():
+    uploaded = request.files.get("qr_bg")
+    if not uploaded or not uploaded.filename:
+        flash("فایلی انتخاب نشد", "danger")
+        return redirect(url_for("settings"))
+    allowed = {"png", "jpg", "jpeg", "webp"}
+    ext = uploaded.filename.rsplit(".", 1)[-1].lower() if "." in uploaded.filename else ""
+    if ext not in allowed:
+        flash("فرمت فایل مجاز نیست (PNG, JPG, WEBP)", "danger")
+        return redirect(url_for("settings"))
+    qr_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "utils")
+    os.makedirs(qr_dir, exist_ok=True)
+    save_path = os.path.join(qr_dir, "qr_bg.png")
+    uploaded.save(save_path)
+    flash("پس‌زمینه QR با موفقیت آپلود شد!", "success")
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/delete-qr-bg", methods=["POST"])
+@login_required
+def delete_qr_bg():
+    qr_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "utils", "qr_bg.png")
+    if os.path.exists(qr_path):
+        os.remove(qr_path)
+        flash("پس‌زمینه QR حذف شد!", "success")
+    return redirect(url_for("settings"))
+
+
+@app.route("/qr-bg")
+def serve_qr_bg():
+    from flask import send_file
+    qr_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "utils", "qr_bg.png")
+    if os.path.exists(qr_path):
+        return send_file(qr_path, mimetype="image/png")
+    return "", 404
 
 
 @app.route("/api/test-connection")
@@ -618,7 +663,7 @@ def buttons():
     buttons_data = {}
     for btn_id, cfg in BUTTON_CONFIGS.items():
         buttons_data[btn_id] = {
-            "label": cfg["label"],
+            "label": all_settings.get(f"btn_{btn_id}", cfg["label"]),
             "emoji": all_settings.get(f"btn_emoji_{btn_id}", ""),
             "style": all_settings.get(f"btn_style_{btn_id}", cfg["default_style"]),
             "current_emoji_name": cfg["default_emoji"],
@@ -635,7 +680,7 @@ def menu_layout():
     BUILTIN_LABELS = {
         "wallet": "Wallet", "free_test": "Free Test", "buy_config": "Buy Config",
         "my_configs": "My Configs", "channel": "Channel", "support": "Support",
-        "admin": "Admin Panel",
+        "admin": "Admin Panel", "invite": "Referral",
     }
 
     if request.method == "POST":
@@ -703,7 +748,7 @@ def menu_layout():
                 "enabled": item.get("enabled", True),
             })
 
-    default_order = ["wallet", "free_test", "buy_config", "my_configs", "channel", "support", "admin"]
+    default_order = ["wallet", "free_test", "buy_config", "my_configs", "invite", "channel", "support", "admin"]
     for bid in default_order:
         if bid not in existing_ids:
             buttons.append({
@@ -714,6 +759,163 @@ def menu_layout():
             })
 
     return render_template("menu_layout.html", buttons=buttons)
+
+
+# ─── Backup & Restore ───────────────────────────────────────────────
+BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
+
+
+def _format_size(size_bytes):
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
+def _list_backups():
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    backups = []
+    for fname in sorted(os.listdir(BACKUP_DIR), reverse=True):
+        if fname.endswith(".tar.gz"):
+            fpath = os.path.join(BACKUP_DIR, fname)
+            stat = os.stat(fpath)
+            from datetime import datetime
+            backups.append({
+                "name": fname,
+                "size": _format_size(stat.st_size),
+                "date": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+            })
+    return backups
+
+
+@app.route("/backups")
+@login_required
+def backups():
+    return render_template("backups.html", backups=_list_backups())
+
+
+@app.route("/backups/create", methods=["POST"])
+@login_required
+def backup_create():
+    import tarfile
+    import io
+    import json
+    from datetime import datetime
+
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archive_path = os.path.join(BACKUP_DIR, f"backup_{ts}.tar.gz")
+
+    db_path = os.getenv("DB_PATH", "bot_database.db")
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+
+    manifest = {
+        "created_at": datetime.now().isoformat(),
+        "version": "1.0",
+        "files": [],
+    }
+
+    with tarfile.open(archive_path, "w:gz") as tar:
+        if os.path.exists(db_path):
+            tar.add(db_path, arcname="bot_database.db")
+            manifest["files"].append("bot_database.db")
+        if os.path.exists(env_path):
+            tar.add(env_path, arcname=".env")
+            manifest["files"].append(".env")
+
+        info = tarfile.TarInfo(name="backup_manifest.json")
+        data = json.dumps(manifest, indent=2).encode()
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+
+    flash(f"بکاپ با موفقیت ایجاد شد: backup_{ts}.tar.gz", "success")
+    return redirect(url_for("backups"))
+
+
+@app.route("/backups/<filename>/download")
+@login_required
+def backup_download(filename):
+    import re
+    if not re.match(r'^backup_\d{8}_\d{6}\.tar\.gz$', filename):
+        flash("نام فایل نامعتبر است", "danger")
+        return redirect(url_for("backups"))
+    fpath = os.path.join(BACKUP_DIR, filename)
+    if not os.path.exists(fpath):
+        flash("فایل بکاپ یافت نشد", "danger")
+        return redirect(url_for("backups"))
+    from flask import send_file
+    return send_file(fpath, as_attachment=True)
+
+
+@app.route("/backups/<filename>/delete", methods=["POST"])
+@login_required
+def backup_delete(filename):
+    import re
+    if not re.match(r'^backup_\d{8}_\d{6}\.tar\.gz$', filename):
+        flash("نام فایل نامعتبر است", "danger")
+        return redirect(url_for("backups"))
+    fpath = os.path.join(BACKUP_DIR, filename)
+    if os.path.exists(fpath):
+        os.remove(fpath)
+        flash("بکاپ حذف شد", "success")
+    return redirect(url_for("backups"))
+
+
+@app.route("/backups/restore", methods=["POST"])
+@login_required
+def backup_restore():
+    import tarfile
+    import shutil
+    import tempfile
+
+    uploaded = request.files.get("backup_file")
+    if not uploaded or not uploaded.filename:
+        flash("فایل بکاپ را انتخاب کنید", "danger")
+        return redirect(url_for("backups"))
+
+    if not (uploaded.filename.endswith(".tar.gz") or uploaded.filename.endswith(".gz")):
+        flash("فرمت فایل نامعتبر است (فایل .tar.gz)", "danger")
+        return redirect(url_for("backups"))
+
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        tmp_path = os.path.join(tmp_dir, "backup.tar.gz")
+        uploaded.save(tmp_path)
+
+        with tarfile.open(tmp_path, "r:gz") as tar:
+            tar.extractall(tmp_dir)
+
+        db_path = os.getenv("DB_PATH", "bot_database.db")
+        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+
+        extracted_db = os.path.join(tmp_dir, "bot_database.db")
+        extracted_env = os.path.join(tmp_dir, ".env")
+
+        if os.path.exists(extracted_db):
+            shutil.copy2(extracted_db, db_path)
+        if os.path.exists(extracted_env):
+            shutil.copy2(extracted_env, env_path)
+
+        flash("بکاپ با موفقیت بازیابی شد! ربات در حال ری‌استارت...", "success")
+
+        import subprocess
+        try:
+            subprocess.Popen(
+                ["systemctl", "restart", "vpnbot"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+    except Exception as e:
+        flash(f"خطا در بازیابی بکاپ: {str(e)}", "danger")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return redirect(url_for("backups"))
 
 
 if __name__ == "__main__":

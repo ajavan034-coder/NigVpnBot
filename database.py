@@ -80,6 +80,19 @@ async def init_db():
             key TEXT PRIMARY KEY,
             value TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS panels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            url TEXT NOT NULL,
+            username TEXT NOT NULL,
+            password TEXT NOT NULL,
+            sub_link_template TEXT DEFAULT '',
+            inbound_ids TEXT DEFAULT '',
+            is_active INTEGER DEFAULT 1,
+            is_default INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
 
     for col in ["invite_code", "referred_by"]:
@@ -97,6 +110,83 @@ async def init_db():
         pass
     try:
         await db.execute("ALTER TABLE plans ADD COLUMN section_id INTEGER")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE plans ADD COLUMN ip_limit INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE plans ADD COLUMN panel_id INTEGER")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE configs ADD COLUMN panel_id INTEGER")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE panels ADD COLUMN volume_gb INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE configs ADD COLUMN config_name TEXT")
+
+        try:
+            await db.execute("ALTER TABLE receipts ADD COLUMN channel_sent INTEGER DEFAULT 0")
+        except Exception:
+            pass
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE receipts ADD COLUMN config_name TEXT")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE receipts ADD COLUMN discount_code TEXT")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE receipts ADD COLUMN discount_amount REAL DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE plan_sections ADD COLUMN panel_id INTEGER")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE plans ADD COLUMN service_type TEXT DEFAULT 'v2ray'")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE panels ADD COLUMN panel_type TEXT DEFAULT 'v2ray'")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE panels ADD COLUMN free_test_enabled INTEGER DEFAULT 0")
+        await db.execute("ALTER TABLE panels ADD COLUMN free_test_mb INTEGER DEFAULT 102400")
+        await db.execute("ALTER TABLE panels ADD COLUMN free_test_days INTEGER DEFAULT 1")
+        await db.execute("ALTER TABLE panels ADD COLUMN free_test_inbound_ids TEXT DEFAULT ''")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE panels ADD COLUMN emoji_id TEXT DEFAULT ''")
+    except Exception:
+        pass
+    try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS discount_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                discount_type TEXT NOT NULL DEFAULT 'percent',
+                discount_value REAL NOT NULL,
+                max_uses INTEGER DEFAULT 0,
+                used_count INTEGER DEFAULT 0,
+                expires_at TIMESTAMP,
+                plan_id INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
     except Exception:
         pass
     await db.commit()
@@ -133,8 +223,13 @@ async def init_db():
         "c2c_instruction": "Send the exact amount to the card below, then upload your payment receipt.",
         "free_test_mb": "102400",
         "free_test_enabled": "1",
+        "free_test_days": "1",
+        "free_test_inbound_ids": "",
         "auto_approve_max": "0",
         "expiry_reminder_enabled": "1",
+        "invite_enabled": "0",
+        "invite_reward_amount": "5000",
+        "text_invite": "",
         "force_join_enabled": "0",
         "required_channel_id": "",
         "force_join_text": "⚠️ برای استفاده از ربات، ابتدا باید در کانال ما عضو شوید!",
@@ -148,6 +243,10 @@ async def init_db():
         "inbound_id": "",
         "extra_volume_price_per_gb": "6000",
         "notification_channel_id": "",
+        "text_new_user_notification": "",
+        "text_free_test_notification": "",
+        "text_new_config_notification": "",
+        "text_receipt_notification": "",
     }
     for key, value in defaults.items():
         existing = await db.execute("SELECT key FROM settings WHERE key = ?", (key,))
@@ -324,11 +423,63 @@ async def has_free_test(user_id: int) -> bool:
     return row["cnt"] > 0
 
 
-async def add_config(user_id: int, plan_id: int, sub_link: str, uuid: str, email: str, expire_date: str):
+async def reset_free_test(user_id: int) -> None:
     db = await get_db()
     await db.execute(
-        "INSERT INTO configs (user_id, plan_id, sub_link, uuid, email, expire_date) VALUES (?, ?, ?, ?, ?, ?)",
-        (user_id, plan_id, sub_link, uuid, email, expire_date),
+        "DELETE FROM configs WHERE user_id = ? AND email LIKE '%free%'",
+        (user_id,),
+    )
+    await db.commit()
+    await db.close()
+
+
+async def get_free_test_users() -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute(
+        """SELECT DISTINCT c.user_id, u.username, u.first_name, c.created_at, c.email
+           FROM configs c
+           LEFT JOIN users u ON c.user_id = u.id
+           WHERE c.email LIKE '%free%'
+           ORDER BY c.created_at DESC"""
+    )
+    rows = [dict(r) for r in await cursor.fetchall()]
+    await db.close()
+    return rows
+
+
+async def get_unsent_receipts() -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT * FROM receipts WHERE channel_sent = 0 AND photo_file_id IS NOT NULL ORDER BY created_at ASC"
+    )
+    rows = [dict(r) for r in await cursor.fetchall()]
+    await db.close()
+    return rows
+
+
+async def mark_receipt_sent(receipt_id: int):
+    db = await get_db()
+    await db.execute("UPDATE receipts SET channel_sent = 1 WHERE id = ?", (receipt_id,))
+    await db.commit()
+    await db.close()
+
+
+async def reset_all_free_tests() -> int:
+    db = await get_db()
+    cursor = await db.execute(
+        "DELETE FROM configs WHERE email LIKE '%free%'"
+    )
+    count = cursor.rowcount
+    await db.commit()
+    await db.close()
+    return count
+
+
+async def add_config(user_id: int, plan_id: int, sub_link: str, uuid: str, email: str, expire_date: str, panel_id: int = None, config_name: str = None):
+    db = await get_db()
+    await db.execute(
+        "INSERT INTO configs (user_id, plan_id, sub_link, uuid, email, expire_date, panel_id, config_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (user_id, plan_id, sub_link, uuid, email, expire_date, panel_id, config_name),
     )
     await db.commit()
     await db.close()
@@ -396,11 +547,11 @@ async def get_configs_expiring_soon() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-async def add_receipt(user_id: int, amount: float, photo_file_id: str, plan_id: int = 0) -> int:
+async def add_receipt(user_id: int, amount: float, photo_file_id: str, plan_id: int = 0, config_name: str = "") -> int:
     db = await get_db()
     cursor = await db.execute(
-        "INSERT INTO receipts (user_id, plan_id, amount, photo_file_id) VALUES (?, ?, ?, ?)",
-        (user_id, plan_id, amount, photo_file_id),
+        "INSERT INTO receipts (user_id, plan_id, amount, photo_file_id, config_name) VALUES (?, ?, ?, ?, ?)",
+        (user_id, plan_id, amount, photo_file_id, config_name),
     )
     receipt_id = cursor.lastrowid
     await db.commit()
@@ -506,11 +657,11 @@ async def get_plan(plan_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-async def add_plan(name: str, gb: int, days: int, price: int, inbound_ids: str = "", is_ultimate: bool = False) -> int:
+async def add_plan(name: str, gb: int, days: int, price: int, inbound_ids: str = "", is_ultimate: bool = False, ip_limit: int = 0, panel_id: int = None, service_type: str = "v2ray") -> int:
     db = await get_db()
     cursor = await db.execute(
-        "INSERT INTO plans (name, gb, days, price, inbound_ids, is_ultimate) VALUES (?, ?, ?, ?, ?, ?)",
-        (name, gb, days, price, inbound_ids, 1 if is_ultimate else 0),
+        "INSERT INTO plans (name, gb, days, price, inbound_ids, is_ultimate, ip_limit, panel_id, service_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (name, gb, days, price, inbound_ids, 1 if is_ultimate else 0, ip_limit, panel_id, service_type),
     )
     plan_id = cursor.lastrowid
     await db.commit()
@@ -518,7 +669,7 @@ async def add_plan(name: str, gb: int, days: int, price: int, inbound_ids: str =
     return plan_id
 
 
-async def update_plan(plan_id: int, name: str = None, gb: int = None, days: int = None, price: int = None, is_active: bool = None, inbound_ids: str = None, is_ultimate: bool = None, section_id: int = None):
+async def update_plan(plan_id: int, name: str = None, gb: int = None, days: int = None, price: int = None, is_active: bool = None, inbound_ids: str = None, is_ultimate: bool = None, section_id: int = None, ip_limit: int = None, panel_id: int = None, service_type: str = None):
     db = await get_db()
     updates = []
     values = []
@@ -546,6 +697,15 @@ async def update_plan(plan_id: int, name: str = None, gb: int = None, days: int 
     if section_id is not None:
         updates.append("section_id = ?")
         values.append(section_id)
+    if ip_limit is not None:
+        updates.append("ip_limit = ?")
+        values.append(ip_limit)
+    if panel_id is not None:
+        updates.append("panel_id = ?")
+        values.append(panel_id)
+    if service_type is not None:
+        updates.append("service_type = ?")
+        values.append(service_type)
     if updates:
         values.append(plan_id)
         await db.execute(f"UPDATE plans SET {', '.join(updates)} WHERE id = ?", values)
@@ -590,6 +750,14 @@ async def get_plan_sections() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+async def get_plan_sections_by_panel(panel_id: int) -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM plan_sections WHERE panel_id = ? ORDER BY display_order, id", (panel_id,))
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
 async def get_plan_section(section_id: int) -> dict | None:
     db = await get_db()
     cursor = await db.execute("SELECT * FROM plan_sections WHERE id = ?", (section_id,))
@@ -598,9 +766,9 @@ async def get_plan_section(section_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-async def add_plan_section(name: str, display_order: int = 0) -> int:
+async def add_plan_section(name: str, display_order: int = 0, panel_id: int = None) -> int:
     db = await get_db()
-    cursor = await db.execute("INSERT INTO plan_sections (name, display_order) VALUES (?, ?)", (name, display_order))
+    cursor = await db.execute("INSERT INTO plan_sections (name, display_order, panel_id) VALUES (?, ?, ?)", (name, display_order, panel_id))
     section_id = cursor.lastrowid
     await db.commit()
     await db.close()
@@ -629,3 +797,164 @@ async def delete_plan_section(section_id: int):
     await db.execute("DELETE FROM plan_sections WHERE id = ?", (section_id,))
     await db.commit()
     await db.close()
+
+
+# ==================== Panel CRUD ====================
+
+async def add_panel(name: str, url: str, username: str, password: str, sub_link_template: str = "", inbound_ids: str = "", is_default: bool = False, volume_gb: int = 0, panel_type: str = "v2ray", free_test_enabled: int = 0, free_test_mb: int = 102400, free_test_days: int = 1, free_test_inbound_ids: str = "", emoji_id: str = "") -> int:
+    db = await get_db()
+    if is_default:
+        await db.execute("UPDATE panels SET is_default = 0")
+    cursor = await db.execute(
+        "INSERT INTO panels (name, url, username, password, sub_link_template, inbound_ids, is_default, volume_gb, panel_type, free_test_enabled, free_test_mb, free_test_days, free_test_inbound_ids, emoji_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (name, url, username, password, sub_link_template, inbound_ids, 1 if is_default else 0, volume_gb, panel_type, free_test_enabled, free_test_mb, free_test_days, free_test_inbound_ids, emoji_id),
+    )
+    panel_id = cursor.lastrowid
+    await db.commit()
+    await db.close()
+    return panel_id
+
+
+async def get_panel(panel_id: int) -> dict | None:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM panels WHERE id = ?", (panel_id,))
+    row = await cursor.fetchone()
+    await db.close()
+    return dict(row) if row else None
+
+
+async def get_all_panels() -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM panels ORDER BY is_default DESC, name")
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def get_active_panels() -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM panels WHERE is_active = 1 ORDER BY is_default DESC, name")
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def update_panel(panel_id: int, **kwargs):
+    db = await get_db()
+    updates, values = [], []
+    for key, value in kwargs.items():
+        if key in ("name", "url", "username", "password", "sub_link_template", "inbound_ids", "is_active", "is_default", "panel_type", "free_test_enabled", "free_test_mb", "free_test_days", "free_test_inbound_ids", "emoji_id"):
+            updates.append(f"{key} = ?")
+            values.append(value)
+    if updates:
+        values.append(panel_id)
+        await db.execute(f"UPDATE panels SET {', '.join(updates)} WHERE id = ?", values)
+        await db.commit()
+    await db.close()
+
+
+async def delete_panel(panel_id: int):
+    db = await get_db()
+    await db.execute("DELETE FROM panels WHERE id = ?", (panel_id,))
+    await db.commit()
+    await db.close()
+
+
+async def set_default_panel(panel_id: int):
+    db = await get_db()
+    await db.execute("UPDATE panels SET is_default = 0")
+    await db.execute("UPDATE panels SET is_default = 1 WHERE id = ?", (panel_id,))
+    await db.commit()
+    await db.close()
+
+
+async def get_default_panel() -> dict | None:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM panels WHERE is_default = 1 AND is_active = 1 LIMIT 1")
+    row = await cursor.fetchone()
+    await db.close()
+    return dict(row) if row else None
+
+
+async def get_configs_by_panel(panel_id: int) -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM configs WHERE panel_id = ? ORDER BY created_at DESC", (panel_id,))
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def get_plans_by_panel(panel_id: int) -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM plans WHERE panel_id = ? ORDER BY price", (panel_id,))
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def get_configs_count_by_panel(panel_id: int) -> int:
+    db = await get_db()
+    cursor = await db.execute("SELECT COUNT(*) as cnt FROM configs WHERE panel_id = ?", (panel_id,))
+    row = await cursor.fetchone()
+    await db.close()
+    return row["cnt"] if row else 0
+
+
+async def get_plans_count_by_panel(panel_id: int) -> int:
+    db = await get_db()
+    cursor = await db.execute("SELECT COUNT(*) as cnt FROM plans WHERE panel_id = ?", (panel_id,))
+    row = await cursor.fetchone()
+    await db.close()
+    return row["cnt"] if row else 0
+
+
+# ── Discount Codes ─────────────────────────────────────────────
+async def add_discount_code(code: str, discount_type: str, discount_value: float,
+                            max_uses: int = 0, expires_at: str = None, plan_id: int = 0) -> int:
+    db = await get_db()
+    cursor = await db.execute(
+        "INSERT INTO discount_codes (code, discount_type, discount_value, max_uses, expires_at, plan_id) VALUES (?, ?, ?, ?, ?, ?)",
+        (code.upper(), discount_type, discount_value, max_uses, expires_at, plan_id),
+    )
+    row_id = cursor.lastrowid
+    await db.commit()
+    await db.close()
+    return row_id
+
+
+async def get_discount_code(code: str) -> dict | None:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM discount_codes WHERE code = ?", (code.upper(),))
+    row = await cursor.fetchone()
+    await db.close()
+    return dict(row) if row else None
+
+
+async def get_discount_code_by_id(code_id: int) -> dict | None:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM discount_codes WHERE id = ?", (code_id,))
+    row = await cursor.fetchone()
+    await db.close()
+    return dict(row) if row else None
+
+
+async def use_discount_code(code_id: int):
+    db = await get_db()
+    await db.execute("UPDATE discount_codes SET used_count = used_count + 1 WHERE id = ?", (code_id,))
+    await db.commit()
+    await db.close()
+
+
+async def delete_discount_code(code_id: int):
+    db = await get_db()
+    await db.execute("DELETE FROM discount_codes WHERE id = ?", (code_id,))
+    await db.commit()
+    await db.close()
+
+
+async def get_all_discount_codes() -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM discount_codes ORDER BY created_at DESC")
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]

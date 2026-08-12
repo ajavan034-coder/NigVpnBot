@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 """Environment validation — run before bot startup to catch config errors."""
 
 import os
@@ -21,7 +24,7 @@ def validate_env() -> bool:
     token = os.getenv("BOT_TOKEN", "")
     all_ok &= _check(
         "BOT_TOKEN",
-        bool(token) and re.match(r"^\d+:[A-Za-z0-9_-]+$", token),
+        bool(token) and bool(re.match(r"^\d+:[A-Za-z0-9_-]+$", token)),
         "Must look like 123456789:ABCdef..." if not token else "",
     )
 

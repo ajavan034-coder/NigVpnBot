@@ -9,7 +9,7 @@
 </div>
 
 <form id="settingsForm" method="POST">
-{{ csrf_field() }}
+            {{ csrf_field() }}
 <div class="row g-4">
     <div class="col-lg-6">
         <div class="card card-dark">
@@ -106,6 +106,75 @@
                     <label class="form-label">قیمت هر گیگابایت حجم اضافی</label>
                     <input type="number" name="extra_volume_price_per_gb" class="form-control" value="{{ settings.get('extra_volume_price_per_gb', '6000') }}">
                     <div class="form-text">قیمت به تومان برای هر گیگابایت</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-people"></i> زیرمجموعه گیری</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">فعال‌سازی زیرمجموعه گیری</label>
+                        <select name="invite_enabled" class="form-select">
+                            <option value="1" {{ 'selected' if settings.get('invite_enabled') == '1' }}>فعال</option>
+                            <option value="0" {{ 'selected' if settings.get('invite_enabled') == '0' }}>غیرفعال</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">مبلغ پاداش هر زیرمجموعه</label>
+                        <input type="number" name="invite_reward_amount" class="form-control" value="{{ settings.get('invite_reward_amount', '5000') }}">
+                        <div class="form-text">مبلغ پاداش به تومان برای هر دعوت موفق</div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">متن دعوت (خالی = پیش‌فرض)</label>
+                    <textarea name="text_invite" class="form-control" rows="3" placeholder="متن پیش‌فرض نمایش داده می‌شود">{{ settings.get('text_invite', '') }}</textarea>
+                    <div class="form-text">متغیرها: <code>{link}</code> <code>{count}</code> <code>{reward}</code> <code>{symbol}</code></div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">متن دکمه زیرمجموعه</label>
+                        <input type="text" name="btn_invite" class="form-control" value="{{ settings.get('btn_invite', 'زیر مجموعه گیری') }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">متن دکمه کپی لینک</label>
+                        <input type="text" name="btn_invite_copy" class="form-control" value="{{ settings.get('btn_invite_copy', '📋 کپی لینک دعوت') }}">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-dark mt-4">
+            <div class="card-header"><i class="bi bi-qr-code"></i> پس‌زمینه QR Code</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">تصویر پس‌زمینه QR</label>
+                    <div class="d-flex align-items-center gap-3">
+                        <div id="qrPreview" style="width:120px;height:120px;border-radius:12px;border:1px solid #334155;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#1e293b;">
+                            {% if qr_bg_exists %}
+                            <img src="/qr-bg?t=1" style="width:100%;height:100%;object-fit:cover;" id="qrPreviewImg">
+                            {% else %}
+                            <span class="text-muted" style="font-size:12px;">بدون پس‌زمینه</span>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <input type="file" name="qr_bg" accept="image/*" id="qrBgInput" style="display:none" onchange="previewQrBg(this)">
+                            <button type="button" class="btn btn-outline-primary btn-sm mb-2" onclick="document.getElementById('qrBgInput').click()">
+                                <i class="bi bi-upload"></i> آپلود تصویر
+                            </button>
+                            <button type="button" class="btn btn-success btn-sm mb-2" id="qrBgSubmit" style="display:none" onclick="uploadQrBg()">
+                                <i class="bi bi-check-lg"></i> ذخیره
+                            </button>
+                            {% if qr_bg_exists %}
+                            <br>
+                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteQrBg()">
+                                <i class="bi bi-trash"></i> حذف پس‌زمینه
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="form-text mt-2">تصویر مربعی (ترجیحاً 600x600) آپلود کنید. QR کد روی این تصویر قرار می‌گیرد.</div>
                 </div>
             </div>
         </div>
@@ -338,6 +407,36 @@ function testConnection() {
         .catch(() => {
             result.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle"></i> اتصال ناموفق</span>';
         });
+}
+function previewQrBg(input) {
+    if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var preview = document.getElementById('qrPreview');
+            preview.innerHTML = '<img src="' + e.target.result + '" style="width:100%;height:100%;object-fit:cover;">';
+            document.getElementById('qrBgSubmit').style.display = 'inline-block';
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+function uploadQrBg() {
+    var input = document.getElementById('qrBgInput');
+    if (!input.files || !input.files[0]) return;
+    var formData = new FormData();
+    formData.append('qr_bg', input.files[0]);
+    formData.append('_csrf_token', '{{ csrf_token() }}');
+    var btn = document.getElementById('qrBgSubmit');
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> در حال آپلود...';
+    btn.disabled = true;
+    fetch('/settings/upload-qr-bg', {method: 'POST', body: formData})
+        .then(function() { location.reload(); })
+        .catch(function() { alert('Upload failed'); btn.disabled = false; });
+}
+function deleteQrBg() {
+    if (confirm('پس‌زمینه QR حذف شود؟')) {
+        fetch('/settings/delete-qr-bg', {method: 'POST', headers: {'X-CSRF-Token': '{{ csrf_token() }}'}})
+        .then(function() { location.reload(); });
+    }
 }
 </script>
 {% endblock %}

@@ -1,4 +1,25 @@
+import jdatetime
+import re
+from datetime import datetime
+
 from utils.premium_emoji import pe
+
+
+def to_jalali(date_str: str) -> str:
+    """Convert Gregorian date string to Jalali."""
+    try:
+        if not date_str:
+            return date_str
+        date_str = str(date_str).strip()
+        # Parse the date part (first 10 chars: YYYY-MM-DD)
+        match = re.match(r"(\d{4})-(\d{2})-(\d{2})", date_str)
+        if not match:
+            return date_str
+        y, m, d = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        jdt = jdatetime.datetime.fromgregorian(year=y, month=m, day=d)
+        return jdt.strftime("%Y/%m/%d")
+    except Exception:
+        return date_str
 
 
 async def _get_text(key, default):
@@ -84,7 +105,7 @@ async def config_created(sub_link: str, expire_date: str, price: int, plan_name:
         .replace("{gb}", str(gb))
         .replace("{days}", str(days))
         .replace("{price}", f"{price:,}")
-        .replace("{expire_date}", expire_date)
+        .replace("{expire_date}", to_jalali(expire_date))
         .replace("{sub_link}", sub_link)
     )
 
@@ -295,7 +316,7 @@ BOT_TEXTS = {
 }
 
 
-async def c2c_payment_text(plan, symbol, card_number, card_owner):
+async def c2c_payment_text(plan, symbol, card_number, card_owner, pay_price=None):
     e = await pe("card")
     tpl = await _get_text("text_c2c_payment",
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -315,7 +336,7 @@ async def c2c_payment_text(plan, symbol, card_number, card_owner):
         .replace("{plan_name}", plan['name'])
         .replace("{gb}", str(plan['gb']))
         .replace("{days}", str(plan['days']))
-        .replace("{amount}", f"{plan['price']:,}")
+        .replace("{amount}", f"{(pay_price if pay_price is not None else plan['price']):,.0f}")
         .replace("{card_number}", card_number)
         .replace("{card_owner}", card_owner)
     )
@@ -328,7 +349,7 @@ async def c2c_upload_photo_text():
     )
 
 
-async def c2c_receipt_submitted_text(plan, symbol):
+async def c2c_receipt_submitted_text(plan, symbol, pay_price=None):
     e = await pe("success")
     tpl = await _get_text("text_c2c_receipt_submitted",
         f"{e} <b>رسید با موفقیت ارسال شد!</b>\n\n"
@@ -341,7 +362,7 @@ async def c2c_receipt_submitted_text(plan, symbol):
         .replace("{plan_name}", plan['name'])
         .replace("{gb}", str(plan['gb']))
         .replace("{days}", str(plan['days']))
-        .replace("{amount}", f"{plan['price']:,}")
+        .replace("{amount}", f"{(pay_price if pay_price is not None else plan['price']):,.0f}")
     )
 
 
@@ -366,17 +387,18 @@ async def service_list_text(configs: list[dict]) -> str:
     text = tpl.replace("{count}", str(len(configs)))
     for cfg in configs:
         status = ec if cfg["is_active"] else er
-        text += f"  {status} سرویس #{cfg['id']} — انقضا: {cfg['expire_date'][:10]}\n"
+        svc_name = cfg.get("config_name") or f"سرویس #{cfg['id']}"
+        text += f"  {status} {svc_name} — انقضا: {to_jalali(cfg['expire_date'])}\n"
     return text
 
 
-async def service_detail_text(config_id: int, plan_name: str, expire_date: str, sub_link: str, traffic_info: dict | None = None) -> str:
+async def service_detail_text(config_id: int, plan_name: str, expire_date: str, sub_link: str, traffic_info: dict | None = None, config_name: str = "") -> str:
     ep = await pe("package")
     eh = await pe("calendar")
     el = await pe("link")
     tpl = await _get_text("text_service_detail",
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"  {ep} <b>سرویس #{config_id}</b>\n"
+        f"  {ep} <b>{config_name}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"  📦 پلن: <b>{{plan_name}}</b>\n"
         f"  {eh} انقضا: <b>{{expire_date}}</b>\n\n"
@@ -399,10 +421,14 @@ async def service_detail_text(config_id: int, plan_name: str, expire_date: str, 
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"QR کد را اسکن کنید یا لینک بالا را کپی نمایید."
     )
+    display_name = config_name if config_name else f"سرویس #{config_id}"
     return (tpl
         .replace("{plan_name}", plan_name)
         .replace("{expire_date}", expire_date)
+        .replace("{expire_date_jalali}", to_jalali(expire_date))
         .replace("{sub_link}", sub_link)
+        .replace("{config_id}", str(config_id))
+        .replace("{config_name}", display_name)
     )
 
 

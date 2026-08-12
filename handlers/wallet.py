@@ -167,6 +167,12 @@ async def process_photo(message: Message, state: FSMContext):
     )
 
 
+@router.callback_query(F.data == "cancel_receipt")
+async def cb_cancel_receipt(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("رسید لغو شد.", reply_markup=await back_to_menu())
+
+
 @router.callback_query(F.data == "tx_history")
 async def cb_tx_history(callback: CallbackQuery):
     from database import get_db

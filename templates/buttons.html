@@ -25,7 +25,7 @@
 </div>
 
 <form id="buttonsForm" method="POST">
-{{ csrf_field() }}
+            {{ csrf_field() }}
 <div class="row g-4" id="buttonsList">
     {% for btn_id, btn in buttons.items() %}
     <div class="col-lg-6 btn-card" data-search="{{ btn.label|lower }} {{ btn_id|lower }}">
@@ -35,6 +35,12 @@
                 <small class="text-muted ms-2">({{ btn_id }})</small>
             </div>
             <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">متن دکمه</label>
+                    <input type="text" name="btn_{{ btn_id }}" class="form-control"
+                           value="{{ btn.label }}"
+                           placeholder="متن دکمه را وارد کنید">
+                </div>
                 <div class="mb-3">
                     <label class="form-label">شناسه ایموجی</label>
                     <input type="text" name="btn_emoji_{{ btn_id }}" class="form-control"

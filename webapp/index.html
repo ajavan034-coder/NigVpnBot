@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#ffffff">
+    <title>پنل VPN</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/webapp/js/qrcode.min.js"></script>
+    <style>
+        :root {
+            --bg: #f5f6fa; --card: #ffffff; --text: #1a1a2e; --text2: #6b7280; --text3: #9ca3af;
+            --border: #e5e7eb; --accent: #4f46e5; --accent2: #6366f1; --accent-bg: #eef2ff;
+            --green: #10b981; --green-bg: #ecfdf5; --red: #ef4444; --red-bg: #fef2f2;
+            --yellow: #f59e0b; --yellow-bg: #fffbeb; --nav-bg: rgba(255,255,255,0.92);
+        }
+        .dark {
+            --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; --text2: #94a3b8; --text3: #64748b;
+            --border: #334155; --accent: #818cf8; --accent2: #a5b4fc; --accent-bg: #1e1b4b;
+            --green-bg: #052e16; --red-bg: #450a0a; --yellow-bg: #451a03; --nav-bg: rgba(15,23,42,0.95);
+        }
+        * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, sans-serif;
+            background: var(--bg); color: var(--text); min-height: 100vh;
+            overscroll-behavior: none; transition: background .3s, color .3s;
+        }
+        /* ── Loader ── */
+        #loader { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--bg); z-index:999; gap:16px; transition:opacity .3s; }
+        #loader.hide { opacity:0; pointer-events:none; }
+        .ld-spinner { width:40px; height:40px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; }
+        @keyframes spin { to{transform:rotate(360deg)} }
+        .ld-text { color:var(--text3); font-size:14px; }
+        /* ── App Container ── */
+        #app { display:none; padding-bottom:80px; min-height:100vh; }
+        #app.show { display:block; animation:fadeUp .3s ease; }
+        @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        .page { display:none; padding:16px; animation:fadeUp .25s ease; }
+        .page.active { display:block; }
+        .page-title { font-size:22px; font-weight:800; margin-bottom:4px; }
+        .page-sub { font-size:13px; color:var(--text3); margin-bottom:20px; }
+        /* ── Bottom Nav ── */
+        .bnav {
+            position:fixed; bottom:0; left:0; right:0; background:var(--nav-bg);
+            backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+            border-top:1px solid var(--border); display:flex; z-index:50;
+            padding-bottom: max(env(safe-area-inset-bottom,0px), 8px);
+            transition: background .3s;
+        }
+        .bnav-item {
+            flex:1; display:flex; flex-direction:column; align-items:center; padding:10px 0 6px;
+            cursor:pointer; color:var(--text3); transition:color .2s; gap:3px;
+        }
+        .bnav-item.active { color:var(--accent); }
+        .bnav-item svg { width:22px; height:22px; transition:transform .2s; }
+        .bnav-item.active svg { transform:scale(1.1); }
+        .bnav-item span { font-size:10px; font-weight:600; letter-spacing:.3px; }
+        /* ── Cards ── */
+        .card {
+            background:var(--card); border:1px solid var(--border); border-radius:16px;
+            padding:16px; margin-bottom:12px; transition:background .3s, border-color .3s, transform .15s;
+        }
+        .card:active { transform:scale(0.98); }
+        /* ── Plan Card ── */
+        .plan-header { display:flex; justify-content:space-between; align-items:start; margin-bottom:12px; }
+        .plan-name { font-size:16px; font-weight:700; }
+        .plan-badge {
+            font-size:9px; font-weight:800; padding:3px 8px; border-radius:20px;
+            background:linear-gradient(135deg,#f59e0b,#ef4444); color:#fff; letter-spacing:.5px;
+        }
+        .plan-volume { margin:8px 0 4px; }
+        .plan-gb { font-size:40px; font-weight:900; color:var(--accent); line-height:1; }
+        .plan-gb-unit { font-size:14px; color:var(--text3); font-weight:500; margin-right:4px; }
+        .plan-duration { font-size:13px; color:var(--text2); margin-bottom:14px; }
+        .plan-footer { display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border); padding-top:14px; }
+        .plan-price { font-size:18px; font-weight:800; }
+        .plan-currency { font-size:12px; color:var(--text3); font-weight:400; margin-right:4px; }
+        .btn-buy {
+            background:var(--accent); color:#fff; border:none; padding:10px 24px;
+            border-radius:12px; font-size:14px; font-weight:700; cursor:pointer;
+            transition:all .2s; font-family:inherit;
+        }
+        .btn-buy:hover { background:var(--accent2); }
+        .btn-buy:active { transform:scale(0.95); }
+        /* ── Service Card ── */
+        .svc-header { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+        .svc-icon {
+            width:44px; height:44px; border-radius:12px; display:flex;
+            align-items:center; justify-content:center; flex-shrink:0;
+        }
+        .svc-icon.active { background:var(--green-bg); }
+        .svc-icon.expiring { background:var(--yellow-bg); }
+        .svc-icon.expired { background:var(--red-bg); }
+        .svc-name { font-size:15px; font-weight:700; }
+        .svc-id { font-size:12px; color:var(--text3); }
+        .svc-status {
+            margin-right:auto; font-size:11px; font-weight:700; padding:3px 10px;
+            border-radius:20px;
+        }
+        .svc-status.active { background:var(--green-bg); color:var(--green); }
+        .svc-status.expiring { background:var(--yellow-bg); color:var(--yellow); }
+        .svc-status.expired { background:var(--red-bg); color:var(--red); }
+        .svc-progress { margin:10px 0; }
+        .svc-progress-bar { width:100%; height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
+        .svc-progress-fill { height:100%; border-radius:3px; transition:width .6s ease; }
+        .svc-progress-fill.safe { background:var(--green); }
+        .svc-progress-fill.warn { background:var(--yellow); }
+        .svc-progress-fill.danger { background:var(--red); }
+        .svc-progress-text { display:flex; justify-content:space-between; font-size:11px; color:var(--text3); margin-top:4px; }
+        .svc-expiry { font-size:12px; color:var(--text3); display:flex; align-items:center; gap:4px; }
+        .svc-actions { display:flex; gap:8px; margin-top:12px; }
+        .svc-btn {
+            flex:1; padding:10px; border-radius:10px; border:1px solid var(--border);
+            background:var(--card); color:var(--text); font-size:12px; font-weight:600;
+            cursor:pointer; text-align:center; transition:all .2s; font-family:inherit;
+        }
+        .svc-btn:hover { border-color:var(--accent); color:var(--accent); }
+        .svc-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+        /* ── Profile ── */
+        .profile-header {
+            background:var(--card); border:1px solid var(--border); border-radius:20px;
+            padding:24px; text-align:center; margin-bottom:16px; transition:background .3s;
+        }
+        .profile-avatar {
+            width:72px; height:72px; border-radius:50%; margin:0 auto 12px;
+            background:linear-gradient(135deg,var(--accent),#8b5cf6);
+            display:flex; align-items:center; justify-content:center;
+            color:#fff; font-size:28px; font-weight:800;
+            box-shadow:0 4px 20px rgba(99,102,241,0.3);
+        }
+        .profile-avatar img { width:100%; height:100%; border-radius:50%; object-fit:cover; }
+        .profile-name { font-size:20px; font-weight:800; margin-bottom:2px; }
+        .profile-username { font-size:13px; color:var(--text3); }
+        .stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+        .stat-card {
+            background:var(--card); border:1px solid var(--border); border-radius:14px;
+            padding:14px; transition:background .3s;
+        }
+        .stat-icon { width:32px; height:32px; border-radius:10px; display:flex; align-items:center; justify-content:center; margin-bottom:8px; }
+        .stat-label { font-size:11px; color:var(--text3); margin-bottom:2px; }
+        .stat-value { font-size:20px; font-weight:800; }
+        .stat-sub { font-size:10px; color:var(--text3); }
+        /* ── Invite ── */
+        .invite-card {
+            background:linear-gradient(135deg,var(--accent),#7c3aed);
+            border-radius:16px; padding:20px; color:#fff; margin-bottom:16px;
+        }
+        .invite-title { font-size:16px; font-weight:700; margin-bottom:4px; }
+        .invite-desc { font-size:12px; opacity:.8; margin-bottom:14px; }
+        .invite-link {
+            display:flex; align-items:center; background:rgba(255,255,255,0.15);
+            border-radius:10px; padding:8px 10px; gap:8px; backdrop-filter:blur(8px);
+        }
+        .invite-link input {
+            flex:1; background:none; border:none; color:#fff; font-size:11px;
+            font-family:monospace; direction:ltr; text-align:left; outline:none;
+        }
+        .invite-link button {
+            background:rgba(255,255,255,0.25); border:none; color:#fff; padding:6px 10px;
+            border-radius:8px; cursor:pointer; font-size:12px; font-weight:600;
+        }
+        .invite-stats { display:flex; gap:16px; margin-top:14px; }
+        .invite-stat-val { font-size:20px; font-weight:800; }
+        .invite-stat-label { font-size:10px; opacity:.7; }
+        /* ── Empty State ── */
+        .empty { text-align:center; padding:48px 20px; }
+        .empty-icon { font-size:48px; margin-bottom:12px; opacity:.4; }
+        .empty-title { font-size:16px; font-weight:700; color:var(--text2); margin-bottom:4px; }
+        .empty-desc { font-size:13px; color:var(--text3); margin-bottom:20px; }
+        /* ── Bottom Sheet ── */
+        .overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:100; opacity:0; pointer-events:none; transition:opacity .3s; }
+        .overlay.open { opacity:1; pointer-events:auto; }
+        .sheet {
+            position:fixed; bottom:0; left:0; right:0; background:var(--card);
+            border-radius:20px 20px 0 0; z-index:101; transform:translateY(100%);
+            transition:transform .3s cubic-bezier(.32,.72,0,1); max-height:85vh; overflow-y:auto;
+        }
+        .sheet.open { transform:translateY(0); }
+        .sheet-handle { width:36px; height:4px; background:var(--border); border-radius:2px; margin:12px auto; }
+        .sheet-body { padding:0 20px 24px; }
+        /* ── Toast ── */
+        .toast {
+            position:fixed; top:16px; left:50%; transform:translateX(-50%) translateY(-80px);
+            background:var(--text); color:var(--card); padding:10px 22px; border-radius:20px;
+            font-size:13px; font-weight:600; z-index:200; transition:transform .3s ease;
+            box-shadow:0 4px 20px rgba(0,0,0,.15);
+        }
+        .toast.show { transform:translateX(-50%) translateY(0); }
+        /* ── Utilities ── */
+        .flex { display:flex; } .items-center { align-items:center; } .gap-2 { gap:8px; }
+        .mt-2 { margin-top:8px; } .mt-3 { margin-top:12px; } .mb-2 { margin-bottom:8px; }
+        .text-center { text-align:center; } .truncate { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    </style>
+</head>
+<body>
+    <!-- ═══ Loader ═══ -->
+    <div id="loader">
+        <div class="ld-spinner"></div>
+        <div class="ld-text">در حال بارگذاری...</div>
+    </div>
+
+    <!-- ═══ App ═══ -->
+    <div id="app">
+
+        <!-- ─── Tab: سرویس‌ها ─── -->
+        <div id="pg-services" class="page active">
+            <div class="page-title">سرویس‌ها</div>
+            <div class="page-sub">پلن مورد نظر خود را انتخاب کنید</div>
+            <div id="plansList"></div>
+        </div>
+
+        <!-- ─── Tab: سرویس‌های من ─── -->
+        <div id="pg-my-services" class="page">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                <div class="page-title" style="margin:0">سرویس‌های من</div>
+                <span id="svcCount" style="display:none;background:var(--accent-bg);color:var(--accent);font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px;"></span>
+            </div>
+            <div class="page-sub">تمام اشتراک‌های شما</div>
+            <div id="configsList"></div>
+        </div>
+
+        <!-- ─── Tab: پروفایل ─── -->
+        <div id="pg-profile" class="page">
+            <div class="page-title">پروفایل</div>
+            <div class="page-sub">اطلاعات حساب شما</div>
+            <div id="profileContent"></div>
+        </div>
+    </div>
+
+    <!-- ═══ Bottom Navigation ═══ -->
+    <nav class="bnav" id="bnav" style="display:none;">
+        <div class="bnav-item active" data-tab="services" onclick="goTab('services')">
+            <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
+            <span>سرویس‌ها</span>
+        </div>
+        <div class="bnav-item" data-tab="my-services" onclick="goTab('my-services')">
+            <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>سرویس‌های من</span>
+        </div>
+        <div class="bnav-item" data-tab="profile" onclick="goTab('profile')">
+            <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
+            <span>پروفایل</span>
+        </div>
+    </nav>
+
+    <!-- ═══ Payment Sheet ═══ -->
+    <div id="payOverlay" class="overlay" onclick="closeSheet('pay')"></div>
+    <div id="paySheet" class="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-body">
+            <h3 style="font-size:18px;font-weight:800;margin-bottom:4px;">تکمیل خرید</h3>
+            <p id="payPlanInfo" style="font-size:13px;color:var(--text3);margin-bottom:16px;"></p>
+            <div style="margin-bottom:16px;">
+                <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:6px;">نام سرویس (اختیاری)</label>
+                <div style="display:flex;gap:8px;">
+                    <input id="configNameInput" type="text" placeholder="مثلاً: سریع-1" maxlength="20" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--text1);font-family:inherit;outline:none;">
+                    <button onclick="generateRandomName()" style="background:var(--accent-bg);border:1px solid var(--accent);color:var(--accent);border-radius:10px;padding:10px 14px;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap;">🎲 تصادفی</button>
+                </div>
+            </div>
+            <div id="payWalletBtn" class="card" style="display:flex;align-items:center;gap:12px;cursor:pointer;" onclick="doPay('wallet')">
+                <div class="stat-icon" style="background:var(--green-bg);">
+                    <svg width="18" height="18" fill="none" stroke="var(--green)" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3"/></svg>
+                </div>
+                <div style="flex:1;text-align:right;">
+                    <p style="font-weight:700;">پرداخت با کیف پول</p>
+                    <p id="payBalText" style="font-size:12px;color:var(--text3);">موجودی: ۰</p>
+                </div>
+            </div>
+            <div class="card" style="display:flex;align-items:center;gap:12px;cursor:pointer;" onclick="doPay('c2c')">
+                <div class="stat-icon" style="background:var(--accent-bg);">
+                    <svg width="18" height="18" fill="none" stroke="var(--accent)" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z"/></svg>
+                </div>
+                <div style="flex:1;text-align:right;">
+                    <p style="font-weight:700;">کارت به کارت</p>
+                    <p style="font-size:12px;color:var(--text3);">انتقال دستی به کارت</p>
+                </div>
+            </div>
+            <button onclick="closeSheet('pay')" style="width:100%;margin-top:8px;padding:12px;background:none;border:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit;">انصراف</button>
+        </div>
+    </div>
+
+    <!-- ═══ Detail Sheet ═══ -->
+    <div id="detOverlay" class="overlay" onclick="closeSheet('det')"></div>
+    <div id="detSheet" class="sheet">
+        <div class="sheet-handle"></div>
+        <div id="detContent" class="sheet-body"></div>
+    </div>
+
+    <!-- ═══ Toast ═══ -->
+    <div id="toast" class="toast"></div>
+
+    <script src="/webapp/js/app.js?v=7"></script>
+</body>
+</html>
