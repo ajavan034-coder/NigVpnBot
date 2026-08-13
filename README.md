@@ -32,25 +32,6 @@ A Telegram bot for selling VPN configs (VLESS/VMess) connected to a 3x-ui panel.
 
 ---
 
-## Screenshots / اسکرین‌شات‌ها
-
-### Bot Menu / منوی ربات
-![Bot Menu](screenshots/bot_menu.png)
-
-### Buy Config / خرید کانفیگ
-![Buy Config](screenshots/buy_config.png)
-
-### My Services / سرویس‌های من
-![My Services](screenshots/my_services.png)
-
-### Web Panel Dashboard / پنل مدیریت
-![Web Panel](screenshots/web_panel.png)
-
-### Settings Page / صفحه تنظیمات
-![Settings](screenshots/settings.png)
-
----
-
 ## Quick Install / نصب سریع
 
 Run this **one command** on your Ubuntu/Debian server:
@@ -58,7 +39,7 @@ Run this **one command** on your Ubuntu/Debian server:
 این **یک دستور** را روی سرور خود (Ubuntu/Debian) اجرا کنید:
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/Smertam/3-xui-telbot/main/setup.sh)
+sudo bash -c "$(curl -sL https://raw.githubusercontent.com/Smertam/NigSeller_Bpt/main/setup.sh)"
 ```
 
 The installer will ask you for:
@@ -72,8 +53,6 @@ The installer will ask you for:
 | Web Panel Port | Default 5000 |
 | Admin Panel Username | Default admin |
 | Admin Panel Password | For web panel login |
-
-> All other settings (panel URL, channel, pricing) are preserved from your existing .env if updating, or use sensible defaults.
 
 ---
 
@@ -95,7 +74,7 @@ The installer will ask you for:
 ## Manual Install / نصب دستی
 
 ```bash
-git clone -b main https://github.com/Smertam/3-xui-telbot.git /root/robot
+git clone -b main https://github.com/Smertam/NigSeller_Bpt.git /root/robot
 cd /root/robot
 python3 -m venv venv
 source venv/bin/activate

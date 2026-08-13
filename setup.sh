@@ -1,9 +1,11 @@
 #!/bin/bash
 
-REPO="https://github.com/Smertam/3-xui-telbot.git"
+REPO="Smertam/NigSeller_Bpt"
 INSTALL_DIR="/root/robot"
 SERVICE_NAME="nigvpn-bot"
 BRANCH="main"
+RAW_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
+API_URL="https://api.github.com/repos/${REPO}/contents"
 
 echo ""
 echo "========================================="
@@ -24,10 +26,10 @@ echo "[2/6] Downloading bot files..."
 if [ -d "$INSTALL_DIR/.git" ]; then
     cd "$INSTALL_DIR"
     git checkout $BRANCH -q 2>/dev/null
-    git pull -q
+    git pull -q 2>/dev/null
     echo "Updated existing installation."
 else
-    git clone -b $BRANCH "$REPO" "$INSTALL_DIR" -q 2>/dev/null
+    git clone -b $BRANCH "https://github.com/${REPO}.git" "$INSTALL_DIR" -q 2>/dev/null
     cd "$INSTALL_DIR"
 fi
 
@@ -77,7 +79,6 @@ ADMIN_WEB_PASS=${ADMIN_WEB_PASS:-$OLD_WEB_PASS}
 
 SECRET_KEY=$(openssl rand -hex 16 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | head -c 32)
 
-# Preserve PANEL_URL, PANEL_USER, PANEL_PASS from existing .env if present
 OLD_PANEL_URL=""
 OLD_PANEL_USER=""
 OLD_PANEL_PASS=""
