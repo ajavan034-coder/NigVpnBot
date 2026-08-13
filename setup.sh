@@ -4,8 +4,6 @@ REPO="Smertam/NigSeller_Bpt"
 INSTALL_DIR="/root/robot"
 SERVICE_NAME="nigvpn-bot"
 BRANCH="main"
-RAW_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
-API_URL="https://api.github.com/repos/${REPO}/contents"
 
 echo ""
 echo "========================================="
@@ -29,9 +27,61 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     git pull -q 2>/dev/null
     echo "Updated existing installation."
 else
-    git clone -b $BRANCH "https://github.com/${REPO}.git" "$INSTALL_DIR" -q 2>/dev/null
-    cd "$INSTALL_DIR"
+    git clone -b $BRANCH "https://github.com/${REPO}.git" "$INSTALL_DIR" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo "Git clone failed, downloading via API..."
+        mkdir -p "$INSTALL_DIR"
+        cd "$INSTALL_DIR"
+        API_URL="https://api.github.com/repos/${REPO}/contents"
+        FILES=$(curl -s "$API_URL" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for item in data:
+    print(item['name'], item['type'])
+")
+        for LINE in $FILES; do
+            NAME=$(echo $LINE | cut -d' ' -f1)
+            TYPE=$(echo $LINE | cut -d' ' -f2)
+            if [ "$TYPE" = "file" ]; then
+                curl -s "$API_URL/$NAME" | python3 -c "
+import sys, json, base64
+data = json.load(sys.stdin)
+content = base64.b64decode(data['content']).decode()
+with open('$NAME', 'w') as f:
+    f.write(content)
+"
+                echo "Downloaded: $NAME"
+            elif [ "$TYPE" = "dir" ]; then
+                mkdir -p "$NAME"
+                SUB_FILES=$(curl -s "$API_URL/$NAME" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for item in data:
+    print(item['name'], item['type'])
+")
+                for SUB in $SUB_FILES; do
+                    SUB_NAME=$(echo $SUB | cut -d' ' -f1)
+                    SUB_TYPE=$(echo $SUB | cut -d' ' -f2)
+                    if [ "$SUB_TYPE" = "file" ]; then
+                        curl -s "$API_URL/$NAME/$SUB_NAME" | python3 -c "
+import sys, json, base64
+data = json.load(sys.stdin)
+content = base64.b64decode(data['content']).decode()
+with open('$NAME/$SUB_NAME', 'w') as f:
+    f.write(content)
+"
+                        echo "Downloaded: $NAME/$SUB_NAME"
+                    fi
+                done
+            fi
+        done
+        echo "Downloaded via API."
+    else
+        cd "$INSTALL_DIR"
+    fi
 fi
+
+cd "$INSTALL_DIR" 2>/dev/null || { echo "Error: Cannot access $INSTALL_DIR"; exit 1; }
 
 echo "[3/6] Installing Python packages..."
 if [ ! -d "venv" ]; then
