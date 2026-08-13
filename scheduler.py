@@ -146,6 +146,7 @@ async def _send_backup(bot):
 
     channel_id = await get_setting("notification_channel_id") or ""
     if not channel_id:
+        logger.debug("Backup skipped: no notification_channel_id set")
         return
 
     backup_hour = int(await get_setting("backup_hour") or "4")
@@ -155,16 +156,19 @@ async def _send_backup(bot):
     today_str = now.strftime("%Y-%m-%d")
 
     if _last_backup_date == today_str:
+        logger.debug("Backup already sent today (%s)", today_str)
         return
 
     time_match = (now.hour == backup_hour and now.minute == backup_minute)
     past_scheduled = (now.hour > backup_hour) or (now.hour == backup_hour and now.minute > backup_minute)
 
     if not time_match and not past_scheduled:
+        logger.debug("Backup waiting: current %02d:%02d, scheduled %02d:%02d", now.hour, now.minute, backup_hour, backup_minute)
         return
 
     from database import get_active_panels
     panels = await get_active_panels()
+    logger.info("Backup check: %d active panels, channel=%s, time=%02d:%02d", len(panels), channel_id, now.hour, now.minute)
 
     if not panels:
         logger.warning("No active panels found for backup")
@@ -173,30 +177,41 @@ async def _send_backup(bot):
     logger.info("Starting scheduled backup for %d panels", len(panels))
 
     success_count = 0
+    fail_count = 0
     for p in panels:
-        ptype = p.get("panel_type", "v2ray")
+        ptype = (p.get("panel_type") or "v2ray").strip().lower()
         purl = p.get("url", "")
         pid = p.get("id")
+        pname = p.get("name", f"Panel #{pid}")
 
-        if ptype == "wireguard":
-            ok = await _backup_wireguard_panel(purl, channel_id, bot, panel_id=pid)
-        else:
-            from api import PanelAPI
-            panel_api_instance = PanelAPI(
-                panel_url=purl,
-                panel_user=p.get("username", ""),
-                panel_pass=p.get("password", ""),
-                panel_id=pid,
-            )
-            ok = await _backup_3xui_panel(panel_api_instance, channel_id, bot)
-            await panel_api_instance.close()
+        logger.info("Backing up panel '%s' (id=%s, type=%s)", pname, pid, ptype)
 
-        if ok:
-            success_count += 1
+        try:
+            if ptype in ("wireguard", "azumi", "wg"):
+                ok = await _backup_wireguard_panel(purl, channel_id, bot, panel_id=pid)
+            else:
+                from api import PanelAPI
+                panel_api_instance = PanelAPI(
+                    panel_url=purl,
+                    panel_user=p.get("username", ""),
+                    panel_pass=p.get("password", ""),
+                    panel_id=pid,
+                )
+                ok = await _backup_3xui_panel(panel_api_instance, channel_id, bot)
+                await panel_api_instance.close()
+
+            if ok:
+                success_count += 1
+            else:
+                fail_count += 1
+                logger.warning("Backup returned false for panel '%s'", pname)
+        except Exception as e:
+            fail_count += 1
+            logger.error("Exception backing up panel '%s': %s", pname, e)
 
     _last_backup_time = now.timestamp()
     _last_backup_date = today_str
-    logger.info("Scheduled backup completed: %d/%d panels backed up", success_count, len(panels))
+    logger.info("Scheduled backup completed: %d success, %d failed out of %d total", success_count, fail_count, len(panels))
 
 
 async def _retry_unsent_receipts(bot):
