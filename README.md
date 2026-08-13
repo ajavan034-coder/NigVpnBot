@@ -49,10 +49,6 @@ A Telegram bot for selling VPN configs (VLESS/VMess) connected to a 3x-ui panel.
 ### Settings Page / صفحه تنظیمات
 ![Settings](screenshots/settings.png)
 
-> **Note:** Replace the images in the `screenshots/` folder with your own screenshots.
->
-> **توجه:** تصاویر پوشه `screenshots/` را با اسکرین‌شات‌های خود جایگزین کنید.
-
 ---
 
 ## Quick Install / نصب سریع
@@ -62,25 +58,14 @@ Run this on your Ubuntu/Debian server:
 این دستور را روی سرور خود (Ubuntu/Debian) اجرا کنید:
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/Smertam/3-xui-telbot/main/setup.sh)
+git clone -b main https://github.com/Smertam/3-xui-telbot.git /tmp/robot-install && sudo bash /tmp/robot-install/setup.sh
 ```
 
-If the command above gives a 404 error, use this instead:
+> **Note:** If your repo is private, you'll be asked for your GitHub username and a Personal Access Token.
+> Create one at: https://github.com/settings/tokens
 
-اگر دستور بالا خطای 404 داد، از این استفاده کنید:
-
-```bash
-cd /tmp && curl -sLO https://raw.githubusercontent.com/Smertam/3-xui-telbot/main/setup.sh && sudo bash setup.sh
-```
-
-Or clone manually:
-
-یا دستی کلون کنید:
-
-```bash
-git clone -b main https://github.com/Smertam/3-xui-telbot.git /tmp/robot-install
-sudo bash /tmp/robot-install/setup.sh
-```
+> **توجه:** اگر رپازیت شما خصوصی است، نام کاربری GitHub و یک Personal Access Token از شما خواسته می‌شود.
+> یکی بسازید در: https://github.com/settings/tokens
 
 The installer will ask you for:
 
