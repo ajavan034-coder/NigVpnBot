@@ -1,6 +1,6 @@
 # NigVpnBot - VPN Telegram Bot
 
-A Telegram bot for selling VPN configs (VLESS/VMess) connected to a 3x-ui panel.
+A Telegram bot for selling VPN configs connected to a 3x-ui panel, Azumi Wireguard Panel.
 
 ---
 
