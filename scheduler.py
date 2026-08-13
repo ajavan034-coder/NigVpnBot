@@ -157,7 +157,10 @@ async def _send_backup(bot):
     if _last_backup_date == today_str:
         return
 
-    if now.hour != backup_hour or now.minute != backup_minute:
+    time_match = (now.hour == backup_hour and now.minute == backup_minute)
+    past_scheduled = (now.hour > backup_hour) or (now.hour == backup_hour and now.minute > backup_minute)
+
+    if not time_match and not past_scheduled:
         return
 
     from database import get_active_panels
