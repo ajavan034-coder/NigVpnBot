@@ -16,11 +16,11 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-echo "[1/6] Installing system dependencies..."
+echo "[1/7] Installing system dependencies..."
 apt-get update -qq > /dev/null 2>&1
 apt-get install -y -qq git python3 python3-venv python3-pip > /dev/null 2>&1
 
-echo "[2/6] Downloading bot files..."
+echo "[2/7] Downloading bot files..."
 if [ -d "$INSTALL_DIR/.git" ]; then
     cd "$INSTALL_DIR"
     git checkout $BRANCH -q 2>/dev/null
@@ -40,14 +40,18 @@ else
     fi
 fi
 
-echo "[3/6] Installing Python packages..."
+echo "[3/7] Installing Python packages..."
 if [ ! -d "venv" ]; then
     python3 -m venv venv
 fi
 $INSTALL_DIR/venv/bin/pip install --upgrade pip -q 2>/dev/null
 $INSTALL_DIR/venv/bin/pip install -r requirements.txt -q
 
-echo "[4/6] Configuring..."
+echo "[4/7] Setting up management command..."
+chmod +x "$INSTALL_DIR/manage.sh" 2>/dev/null
+ln -sf "$INSTALL_DIR/manage.sh" /usr/local/bin/nigvpn 2>/dev/null
+
+echo "[5/7] Configuring..."
 echo ""
 
 OLD_TOKEN=""
@@ -117,7 +121,7 @@ SECRET_KEY=$SECRET_KEY
 WEB_PORT=$WEB_PORT
 EOF
 
-echo "[5/6] Setting up service..."
+echo "[6/7] Setting up service..."
 cat > /etc/systemd/system/${SERVICE_NAME}.service <<SEOF
 [Unit]
 Description=NigVpn Telegram Bot
@@ -142,7 +146,7 @@ systemctl enable ${SERVICE_NAME} > /dev/null 2>&1
 OLD_PID=$(lsof -ti:$WEB_PORT 2>/dev/null)
 if [ -n "$OLD_PID" ]; then kill -9 $OLD_PID 2>/dev/null; fi
 
-echo "[6/6] Starting bot..."
+echo "[7/7] Starting bot..."
 systemctl restart ${SERVICE_NAME}
 sleep 3
 
@@ -154,6 +158,7 @@ if systemctl is-active --quiet ${SERVICE_NAME}; then
     echo "  Login: $ADMIN_WEB_USER / $ADMIN_WEB_PASS"
     echo "  Logs: tail -f $INSTALL_DIR/bot.log"
     echo "  Status: systemctl status ${SERVICE_NAME}"
+    echo "  Manager: nigvpn"
     echo "========================================="
 else
     echo "========================================="
