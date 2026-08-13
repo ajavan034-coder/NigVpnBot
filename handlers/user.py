@@ -1015,6 +1015,8 @@ async def cb_select_plan(callback: CallbackQuery, state: FSMContext):
     is_collab = user and user.get("is_collaborator") and collab_price > 0
     display_price = collab_price if is_collab else plan['price']
     collab_line = f"  👥 قیمت همکاری: <b>{collab_price:,} {symbol}</b>\n" if is_collab else ""
+    profit = plan['price'] - collab_price if is_collab and collab_price > 0 else 0
+    profit_line = f"  💎 سود شما: <b>{profit:,} {symbol}</b>\n" if profit > 0 else ""
 
     text = (
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1024,6 +1026,7 @@ async def cb_select_plan(callback: CallbackQuery, state: FSMContext):
         f"  📅 مدت: <b>{plan['days']} روز</b>\n"
         f"  💰 قیمت: <b>{display_price:,} {symbol}</b>\n"
         f"{collab_line}"
+        f"{profit_line}"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"  برای سرویس خود یک نام انتخاب کنید:"
     )
@@ -1225,6 +1228,9 @@ async def show_payment_methods(target, plan_id: int, discount_amount: float = 0,
     if is_collab and collab_price > 0:
         collab_line = f"  👥 قیمت همکاری: <b>{collab_price:,} {symbol}</b>\n"
 
+    profit = plan['price'] - collab_price if is_collab and collab_price > 0 else 0
+    profit_line = f"  💎 سود شما: <b>{profit:,} {symbol}</b>\n" if profit > 0 else ""
+
     price_display = f"{final_price:,.0f}" if discount_amount > 0 else f"{base_price:,}"
     text = (
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1234,6 +1240,7 @@ async def show_payment_methods(target, plan_id: int, discount_amount: float = 0,
         f"  📅 مدت: <b>{plan['days']} روز</b>\n"
         f"  💰 قیمت: <b>{base_price:,} {symbol}</b>\n"
         f"{collab_line}"
+        f"{profit_line}"
         f"{discount_line}"
         f"  💰 قیمت نهایی: <b>{price_display} {symbol}</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
