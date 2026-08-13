@@ -33,6 +33,12 @@
                                value="{{ plan.price if plan else '' }}" placeholder="150000">
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">قیمت همکاری</label>
+                        <input type="number" name="collaborator_price" class="form-control" min="0"
+                               value="{{ plan.collaborator_price if plan and plan.collaborator_price else '' }}" placeholder="0">
+                        <div class="form-text">قیمتی که همکاران تایید شده پرداخت می‌کنند. 0 یا خالی = غیرفعال</div>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">شناسه اینباندها</label>
                         <input type="text" name="inbound_ids" class="form-control"
                                value="{{ plan.inbound_ids if plan else '' }}" placeholder="مثلاً 1,2,3">

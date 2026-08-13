@@ -108,16 +108,16 @@ def get_plan(plan_id):
     return dict(row) if row else None
 
 
-def add_plan(name, gb, days, price, inbound_ids="", is_ultimate=False):
+def add_plan(name, gb, days, price, inbound_ids="", is_ultimate=False, collaborator_price=0):
     conn = get_conn()
-    cur = conn.execute("INSERT INTO plans (name, gb, days, price, inbound_ids, is_ultimate) VALUES (?, ?, ?, ?, ?, ?)", (name, gb, days, price, inbound_ids, 1 if is_ultimate else 0))
+    cur = conn.execute("INSERT INTO plans (name, gb, days, price, inbound_ids, is_ultimate, collaborator_price) VALUES (?, ?, ?, ?, ?, ?, ?)", (name, gb, days, price, inbound_ids, 1 if is_ultimate else 0, collaborator_price))
     plan_id = cur.lastrowid
     conn.commit()
     conn.close()
     return plan_id
 
 
-def update_plan(plan_id, name=None, gb=None, days=None, price=None, is_active=None, inbound_ids=None, is_ultimate=None, section_id=None):
+def update_plan(plan_id, name=None, gb=None, days=None, price=None, is_active=None, inbound_ids=None, is_ultimate=None, section_id=None, collaborator_price=None):
     conn = get_conn()
     updates, values = [], []
     if name is not None:
@@ -144,6 +144,9 @@ def update_plan(plan_id, name=None, gb=None, days=None, price=None, is_active=No
     if section_id is not None:
         updates.append("section_id = ?")
         values.append(section_id)
+    if collaborator_price is not None:
+        updates.append("collaborator_price = ?")
+        values.append(collaborator_price)
     if updates:
         values.append(plan_id)
         conn.execute(f"UPDATE plans SET {', '.join(updates)} WHERE id = ?", values)

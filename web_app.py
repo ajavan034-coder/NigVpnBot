@@ -344,10 +344,11 @@ def plan_add():
         price = int(request.form["price"])
         inbound_ids = request.form.get("inbound_ids", "").strip()
         is_ultimate = "is_ultimate" in request.form
+        collaborator_price = int(request.form.get("collaborator_price", 0) or 0)
         section_id = request.form.get("section_id") or None
         if section_id:
             section_id = int(section_id)
-        web_db.add_plan(name, gb, days, price, inbound_ids, is_ultimate)
+        web_db.add_plan(name, gb, days, price, inbound_ids, is_ultimate, collaborator_price)
         flash(f"Plan '{name}' added!", "success")
         return redirect(url_for("plans"))
     return render_template("plan_form.html", plan=None, sections=web_db.get_plan_sections())
@@ -374,6 +375,7 @@ def plan_edit(plan_id):
             inbound_ids=request.form.get("inbound_ids", "").strip(),
             is_ultimate="is_ultimate" in request.form,
             section_id=section_id,
+            collaborator_price=int(request.form.get("collaborator_price", 0) or 0),
         )
         flash(f"Plan '{request.form['name']}' updated!", "success")
         return redirect(url_for("plans"))

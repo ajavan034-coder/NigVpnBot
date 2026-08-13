@@ -33,6 +33,7 @@
                     <th>حجم</th>
                     <th>مدت</th>
                     <th>قیمت</th>
+                    <th>قیمت همکاری</th>
                     <th>اینباندها</th>
                     <th>وضعیت</th>
                     <th>عملیات</th>
@@ -46,6 +47,13 @@
                     <td>{{ plan.gb }} GB</td>
                     <td>{{ plan.days }} روز</td>
                     <td>{{ "{:,}".format(plan.price) }} {{ symbol }}</td>
+                    <td>
+                        {% if plan.collaborator_price %}
+                        {{ "{:,}".format(plan.collaborator_price) }} {{ symbol }}
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
                     <td><code>{{ plan.inbound_ids or 'جهانی' }}</code></td>
                     <td>
                         {% if plan.is_active %}
@@ -70,7 +78,7 @@
                 {% endfor %}
                 {% if not plans %}
                 <tr>
-                    <td colspan="8" class="text-center text-muted py-4">پلنی یافت نشد</td>
+                    <td colspan="9" class="text-center text-muted py-4">پلنی یافت نشد</td>
                 </tr>
                 {% endif %}
             </tbody>
