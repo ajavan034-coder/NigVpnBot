@@ -139,7 +139,9 @@ async def plans_menu(plans: list) -> InlineKeyboardMarkup:
     symbol = await get_setting("currency_symbol") or "تومان"
     buttons = []
     for p in plans:
-        name_text = f"📦 {p['name']} | {p['gb']}GB | {p['price']:,} {symbol}"
+        collab_price = p.get("collaborator_price", 0)
+        collab_text = f" | 👥 {collab_price:,}" if collab_price else ""
+        name_text = f"📦 {p['name']} | {p['gb']}GB | {p['price']:,} {symbol}{collab_text}"
         buttons.append([InlineKeyboardButton(
             text=name_text,
             callback_data=f"adm_plan_detail_{p['id']}",
@@ -286,6 +288,9 @@ async def settings_menu() -> InlineKeyboardMarkup:
             await _btn("👥 زیرمجموعه گیری", "adm_edit_invite", "link"),
         ],
         [
+            await _btn("🤝 درخواست همکاری", "adm_edit_collab", "link"),
+        ],
+        [
             await _btn("🎯 ایموجی خوش‌آمدگویی", "adm_edit_welcome_emoji", "gear"),
         ],
         [
@@ -345,6 +350,19 @@ async def invite_settings_menu() -> InlineKeyboardMarkup:
         [await _btn(f"🔄 وضعیت فعلی: {status}", "adm_toggle_invite", "gear")],
         [await _btn(f"💰 مبلغ پاداش: {reward} {symbol}", "adm_edit_invite_reward", "money")],
         [await _btn("📝 متن دعوت", "adm_edit_invite_text", "gear")],
+        [await _btn("🔙 بازگشت", "adm_settings", btn_id="back")],
+    ])
+
+async def collab_settings_menu() -> InlineKeyboardMarkup:
+    enabled = await get_setting("collab_enabled") or "0"
+    status = "فعال ✅" if enabled == "1" else "غیرفعال ❌"
+    channel = await get_setting("collab_notification_channel") or ""
+    channel_display = channel if channel else "همان کانال اعلان اصلی"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [await _btn(f"🔄 وضعیت فعلی: {status}", "adm_toggle_collab", "gear")],
+        [await _btn(f"📢 کانال اعلان: {channel_display}", "adm_edit_collab_channel", "link")],
+        [await _btn("📝 متن دکمه", "adm_edit_collab_btn_text", "gear")],
+        [await _btn("📋 درخواست‌های در انتظار", "adm_collab_requests", "list")],
         [await _btn("🔙 بازگشت", "adm_settings", btn_id="back")],
     ])
 
@@ -452,7 +470,28 @@ async def menu_editor_menu(layout_summary: list) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-# ─── Trial Plan Management ──────────────────────────────────
+async def collab_requests_list(requests: list) -> InlineKeyboardMarkup:
+    buttons = []
+    for r in requests[:10]:
+        uname = f"@{r.get('username', 'ندارد')}" if r.get("username") else str(r["user_id"])
+        buttons.append([InlineKeyboardButton(
+            text=f"🤝 #{r['id']} — {uname}",
+            callback_data=f"adm_collab_detail_{r['id']}",
+        )])
+    buttons.append([await _btn("🔙 بازگشت", "adm_edit_collab", btn_id="back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def collab_request_actions(request_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            await _btn("✅ تایید", f"collab_approve_{request_id}", "approve", "success"),
+            await _btn("❌ رد", f"collab_reject_{request_id}", "reject", "danger"),
+        ],
+        [await _btn("🔙 بازگشت", "adm_collab_requests", btn_id="back")],
+    ])
+
+
 async def trial_management_menu() -> InlineKeyboardMarkup:
     from database import get_setting
     enabled = await get_setting("free_test_enabled") or "1"

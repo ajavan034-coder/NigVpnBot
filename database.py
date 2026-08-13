@@ -189,6 +189,28 @@ async def init_db():
         """)
     except Exception:
         pass
+    try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS collab_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                message TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                reviewed_at TIMESTAMP,
+                reviewed_by INTEGER
+            )
+        """)
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE users ADD COLUMN is_collaborator INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE plans ADD COLUMN collaborator_price INTEGER DEFAULT 0")
+    except Exception:
+        pass
     await db.commit()
 
     for admin_id in ADMIN_IDS:
@@ -247,6 +269,9 @@ async def init_db():
         "text_free_test_notification": "",
         "text_new_config_notification": "",
         "text_receipt_notification": "",
+        "collab_enabled": "0",
+        "collab_notification_channel": "",
+        "btn_collab_request": "🤝 درخواست همکاری",
     }
     for key, value in defaults.items():
         existing = await db.execute("SELECT key FROM settings WHERE key = ?", (key,))
@@ -657,11 +682,11 @@ async def get_plan(plan_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-async def add_plan(name: str, gb: int, days: int, price: int, inbound_ids: str = "", is_ultimate: bool = False, ip_limit: int = 0, panel_id: int = None, service_type: str = "v2ray") -> int:
+async def add_plan(name: str, gb: int, days: int, price: int, inbound_ids: str = "", is_ultimate: bool = False, ip_limit: int = 0, panel_id: int = None, service_type: str = "v2ray", collaborator_price: int = 0) -> int:
     db = await get_db()
     cursor = await db.execute(
-        "INSERT INTO plans (name, gb, days, price, inbound_ids, is_ultimate, ip_limit, panel_id, service_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (name, gb, days, price, inbound_ids, 1 if is_ultimate else 0, ip_limit, panel_id, service_type),
+        "INSERT INTO plans (name, gb, days, price, inbound_ids, is_ultimate, ip_limit, panel_id, service_type, collaborator_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (name, gb, days, price, inbound_ids, 1 if is_ultimate else 0, ip_limit, panel_id, service_type, collaborator_price),
     )
     plan_id = cursor.lastrowid
     await db.commit()
@@ -669,7 +694,7 @@ async def add_plan(name: str, gb: int, days: int, price: int, inbound_ids: str =
     return plan_id
 
 
-async def update_plan(plan_id: int, name: str = None, gb: int = None, days: int = None, price: int = None, is_active: bool = None, inbound_ids: str = None, is_ultimate: bool = None, section_id: int = None, ip_limit: int = None, panel_id: int = None, service_type: str = None):
+async def update_plan(plan_id: int, name: str = None, gb: int = None, days: int = None, price: int = None, is_active: bool = None, inbound_ids: str = None, is_ultimate: bool = None, section_id: int = None, ip_limit: int = None, panel_id: int = None, service_type: str = None, collaborator_price: int = None):
     db = await get_db()
     updates = []
     values = []
@@ -706,6 +731,9 @@ async def update_plan(plan_id: int, name: str = None, gb: int = None, days: int 
     if service_type is not None:
         updates.append("service_type = ?")
         values.append(service_type)
+    if collaborator_price is not None:
+        updates.append("collaborator_price = ?")
+        values.append(collaborator_price)
     if updates:
         values.append(plan_id)
         await db.execute(f"UPDATE plans SET {', '.join(updates)} WHERE id = ?", values)
@@ -958,3 +986,54 @@ async def get_all_discount_codes() -> list[dict]:
     rows = await cursor.fetchall()
     await db.close()
     return [dict(r) for r in rows]
+
+
+# ==================== Collaboration Requests ====================
+
+async def add_collab_request(user_id: int, message: str) -> int:
+    db = await get_db()
+    cursor = await db.execute(
+        "INSERT INTO collab_requests (user_id, message) VALUES (?, ?)",
+        (user_id, message),
+    )
+    request_id = cursor.lastrowid
+    await db.commit()
+    await db.close()
+    return request_id
+
+
+async def get_collab_request(request_id: int) -> dict | None:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM collab_requests WHERE id = ?", (request_id,))
+    row = await cursor.fetchone()
+    await db.close()
+    return dict(row) if row else None
+
+
+async def get_pending_collab_requests() -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT cr.*, u.username, u.first_name FROM collab_requests cr "
+        "LEFT JOIN users u ON cr.user_id = u.id "
+        "WHERE cr.status = 'pending' ORDER BY cr.created_at DESC"
+    )
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def update_collab_request(request_id: int, status: str, reviewed_by: int):
+    db = await get_db()
+    await db.execute(
+        "UPDATE collab_requests SET status = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?",
+        (status, datetime.utcnow().isoformat(), reviewed_by, request_id),
+    )
+    await db.commit()
+    await db.close()
+
+
+async def set_user_collaborator(user_id: int, is_collaborator: bool):
+    db = await get_db()
+    await db.execute("UPDATE users SET is_collaborator = ? WHERE id = ?", (1 if is_collaborator else 0, user_id))
+    await db.commit()
+    await db.close()

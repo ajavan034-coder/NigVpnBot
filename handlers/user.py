@@ -10,6 +10,7 @@ from database import (
     get_setting, is_admin, get_plan, add_receipt, get_admins, update_balance,
     get_config_by_id, update_config_sub_link, get_plan_name,
     get_invite_stats, get_active_configs, get_balance,
+    add_collab_request, set_user_collaborator,
 )
 from api import panel_api, panel_manager
 from keyboards.user import (
@@ -774,7 +775,13 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
     email = f"c2c_{user_id}_{username}_{int(time.time())}"
     mdata = await state.get_data()
     cfg_name = mdata.get("config_name")
-    pay_price_mk = mdata.get("discounted_price", plan["price"])
+
+    collab_price = plan.get("collaborator_price", 0)
+    base_price = plan["price"]
+    if user and user.get("is_collaborator") and collab_price > 0:
+        base_price = collab_price
+
+    pay_price_mk = mdata.get("discounted_price", base_price)
     disc_code_mk = mdata.get("discount_code", "")
     await state.clear()
     if not cfg_name:
@@ -1002,13 +1009,21 @@ async def cb_select_plan(callback: CallbackQuery, state: FSMContext):
 
     symbol = await get_setting("currency_symbol") or "تومان"
     volume_line = "" if plan.get("is_ultimate") else f"  📊 حجم: <b>{plan['gb']} GB</b>\n"
+
+    user = await get_user(callback.from_user.id)
+    collab_price = plan.get("collaborator_price", 0)
+    is_collab = user and user.get("is_collaborator") and collab_price > 0
+    display_price = collab_price if is_collab else plan['price']
+    collab_line = f"  👥 قیمت همکاری: <b>{collab_price:,} {symbol}</b>\n" if is_collab else ""
+
     text = (
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"  📦 <b>{plan['name']}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{volume_line}"
         f"  📅 مدت: <b>{plan['days']} روز</b>\n"
-        f"  💰 قیمت: <b>{plan['price']:,} {symbol}</b>\n\n"
+        f"  💰 قیمت: <b>{plan['price']:,} {symbol}</b>\n"
+        f"{collab_line}"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"  برای سرویس خود یک نام انتخاب کنید:"
     )
@@ -1173,17 +1188,38 @@ async def handle_discount_code(message: Message, state: FSMContext):
 
 
 async def show_payment_methods(target, plan_id: int, discount_amount: float = 0, discount_label: str = ""):
-    from database import get_plan, get_setting
+    from database import get_plan, get_setting, get_user
     plan = await get_plan(plan_id)
     symbol = await get_setting("currency_symbol") or "تومان"
     volume_line = "" if plan.get("is_ultimate") else f"  📊 حجم: <b>{plan['gb']} GB</b>\n"
+
+    base_price = plan['price']
+    collab_price = plan.get("collaborator_price", 0)
+
+    user_id = None
+    if hasattr(target, 'from_user') and target.from_user:
+        user_id = target.from_user.id
+    elif hasattr(target, 'message') and hasattr(target.message, 'from_user'):
+        user_id = target.message.from_user.id
+
+    is_collab = False
+    if user_id:
+        user = await get_user(user_id)
+        if user and user.get("is_collaborator") and collab_price > 0:
+            is_collab = True
+            base_price = collab_price
+
     discount_line = ""
-    final_price = plan['price']
+    final_price = base_price
     if discount_amount > 0:
-        final_price = max(0, plan['price'] - discount_amount)
+        final_price = max(0, base_price - discount_amount)
         discount_line = f"  🏷️ تخفیف ({discount_label}): <b>\u2212{discount_amount:,.0f} {symbol}</b>\n"
-    price_display = f"{final_price:,.0f}" if discount_amount > 0 else f"{plan['price']:,}"
-    price_key = "discounted_price" if discount_amount > 0 else "price"
+
+    collab_line = ""
+    if is_collab and collab_price > 0:
+        collab_line = f"  👥 قیمت همکاری: <b>{collab_price:,} {symbol}</b>\n"
+
+    price_display = f"{final_price:,.0f}" if discount_amount > 0 else f"{base_price:,}"
     text = (
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"  📦 <b>{plan['name']}</b>\n"
@@ -1191,6 +1227,7 @@ async def show_payment_methods(target, plan_id: int, discount_amount: float = 0,
         f"{volume_line}"
         f"  📅 مدت: <b>{plan['days']} روز</b>\n"
         f"  💰 قیمت: <b>{plan['price']:,} {symbol}</b>\n"
+        f"{collab_line}"
         f"{discount_line}"
         f"  💰 قیمت نهایی: <b>{price_display} {symbol}</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1220,8 +1257,13 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
     user = await get_user(user_id)
     symbol = await get_setting("currency_symbol") or "تومان"
 
+    collab_price = plan.get("collaborator_price", 0)
+    base_price = plan["price"]
+    if user and user.get("is_collaborator") and collab_price > 0:
+        base_price = collab_price
+
     wdata_pre = await state.get_data()
-    pay_price = wdata_pre.get("discounted_price", plan["price"])
+    pay_price = wdata_pre.get("discounted_price", base_price)
     disc_amount = wdata_pre.get("discount_amount", 0)
     disc_code = wdata_pre.get("discount_code", "")
 
@@ -1395,12 +1437,18 @@ async def cb_pay_c2c(callback: CallbackQuery, state: FSMContext):
         await callback.answer("پلن یافت نشد!", show_alert=True)
         return
 
+    user = await get_user(callback.from_user.id)
     symbol = await get_setting("currency_symbol") or "تومان"
     card_number = await get_setting("card_number") or "1234-5678-9012-3456"
     card_owner = await get_setting("card_owner") or "Card Owner"
 
+    collab_price = plan.get("collaborator_price", 0)
+    base_price = plan["price"]
+    if user and user.get("is_collaborator") and collab_price > 0:
+        base_price = collab_price
+
     c2c_data = await state.get_data()
-    c2c_pay_price = c2c_data.get("discounted_price", plan["price"])
+    c2c_pay_price = c2c_data.get("discounted_price", base_price)
     await state.update_data(c2c_plan_id=plan_id, c2c_pay_price=c2c_pay_price)
     await state.set_state(C2CState.waiting_confirm)
 
@@ -1595,6 +1643,10 @@ class CollabRequestState(StatesGroup):
 # --- Collaboration Request Flow ---
 @router.callback_query(F.data == "collab_request")
 async def cb_collab_request(callback: CallbackQuery, state: FSMContext):
+    enabled = await get_setting("collab_enabled")
+    if enabled != "1":
+        await callback.answer("این قابلیت غیرفعال است", show_alert=True)
+        return
     user = await get_user(callback.from_user.id)
     if not user:
         await callback.answer("لطفاً ابتدا /start را بزنید", show_alert=True)
@@ -1629,18 +1681,10 @@ async def process_collab_request(message: Message, state: FSMContext):
     first_name = message.from_user.first_name or ""
     request_text = message.text.strip()
 
-    # Save request to DB
-    import sqlite3
-    conn = sqlite3.connect('/root/robot/bot_database.db')
-    c = conn.cursor()
-    c.execute('INSERT INTO collab_requests (user_id, message) VALUES (?, ?)', (user_id, request_text))
-    request_id = c.lastrowid
-    conn.commit()
-    conn.close()
+    request_id = await add_collab_request(user_id, request_text)
 
     await state.clear()
 
-    # Send to notification channel
     channel_id = await get_setting("collab_notification_channel") or await get_setting("notification_channel_id")
     if channel_id:
         try:

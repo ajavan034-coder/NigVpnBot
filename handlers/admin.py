@@ -19,6 +19,8 @@ from database import (
     add_discount_code, get_discount_code, get_discount_code_by_id,
     use_discount_code, delete_discount_code, get_all_discount_codes,
     reset_free_test, get_free_test_users, reset_all_free_tests,
+    add_collab_request, get_collab_request, get_pending_collab_requests,
+    update_collab_request, set_user_collaborator,
 )
 from api import panel_api
 from keyboards.admin import (
@@ -29,6 +31,7 @@ from keyboards.admin import (
     configs_menu, config_list_keyboard, config_actions,
     admins_menu, settings_menu, payment_settings_menu,
     buttons_editor_menu, force_join_settings_menu, invite_settings_menu,
+    collab_settings_menu, collab_requests_list, collab_request_actions,
     premium_emojis_menu, bot_texts_menu,
     control_panel_menu, backup_list_keyboard,
     broadcast_menu, broadcast_destination_keyboard, broadcast_button_keyboard, broadcast_pin_keyboard, menu_editor_menu, confirm_action,
@@ -53,6 +56,7 @@ class AdminState(StatesGroup):
     add_plan_price = State()
     add_plan_panel = State()
     add_plan_ip_limit = State()
+    add_plan_collab_price = State()
     add_plan_service_type = State()
     edit_plan_field = State()
     add_plan_section_name = State()
@@ -91,6 +95,9 @@ class AdminState(StatesGroup):
     add_discount_max = State()
     add_discount_expiry = State()
     add_discount_plan = State()
+    edit_collab_channel = State()
+    edit_collab_btn_text = State()
+    collab_reject_reason = State()
 
 
 # ─── Entry Point ─────────────────────────────────────────────
@@ -513,6 +520,8 @@ async def cb_plan_detail(callback: CallbackQuery):
     ib_text = inbound_ids if inbound_ids else "پیش‌فرض"
     ip_limit = plan.get("ip_limit", 0)
     ip_text = f"{ip_limit}" if ip_limit > 0 else "بدون محدودیت"
+    collab_price = plan.get("collaborator_price", 0)
+    collab_text = f"{collab_price:,} {symbol}" if collab_price > 0 else "غیرفعال"
     text = (
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"  📦 <b>{plan['name']}</b>\n"
@@ -520,6 +529,7 @@ async def cb_plan_detail(callback: CallbackQuery):
         f"  📊 حجم: <b>{plan['gb']} GB</b>\n"
         f"  📅 مدت: <b>{plan['days']} روز</b>\n"
         f"  💰 قیمت: <b>{plan['price']:,} {symbol}</b>\n"
+        f"  👥 قیمت همکاری: <b>{collab_text}</b>\n"
         f"  📡 اینباندها: <b>{ib_text}</b>\n"
         f"  🔒 محدودیت IP: <b>{ip_text}</b>\n"
         f"  📌 وضعیت: <b>{status}</b>"
@@ -935,7 +945,7 @@ async def cb_select_ip_limit(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text("🔒 عدد محدودیت IP را وارد کنید (۰ = بدون محدودیت):")
         return
     ip_limit = int(cb_data.split("_")[-1])
-    await _finalize_plan(callback.message, state, ip_limit)
+    await _ask_collab_price(callback.message, state, ip_limit)
 
 
 @router.message(AdminState.add_plan_ip_limit)
@@ -949,6 +959,36 @@ async def process_plan_ip_limit(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ عدد نامعتبر. یک عدد غیرمنفی وارد کنید:")
         return
+    await _ask_collab_price(message, state, ip_limit)
+
+
+async def _ask_collab_price(target, state: FSMContext, ip_limit: int):
+    await state.update_data(plan_ip_limit=ip_limit)
+    await state.set_state(AdminState.add_plan_collab_price)
+    symbol = await get_setting("currency_symbol") or "تومان"
+    text = (
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"  👥 <b>قیمت همکاری</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  قیمت ویژه همکاران را به {symbol} وارد کنید:\n"
+        f"  (۰ = بدون قیمت همکاری، از قیمت عادی استفاده شود)\n"
+    )
+    await target.edit_text(text, parse_mode="HTML") if hasattr(target, 'edit_text') else await target.answer(text, parse_mode="HTML")
+
+
+@router.message(AdminState.add_plan_collab_price)
+async def process_plan_collab_price(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        collab_price = int(message.text.strip())
+        if collab_price < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ عدد نامعتبر. یک عدد غیرمنفی وارد کنید:")
+        return
+    data = await state.get_data()
+    ip_limit = data.get("plan_ip_limit", 0)
     await _finalize_plan(message, state, ip_limit)
 
 
@@ -957,21 +997,24 @@ async def _finalize_plan(target, state: FSMContext, ip_limit: int):
     inbound_str = data.get("plan_inbound_ids", "")
     panel_id = data.get("plan_panel_id")
     service_type = data.get("plan_service_type", "v2ray")
+    collab_price = data.get("plan_collab_price", 0)
     plan_id = await add_plan(
         data["plan_name"], data["plan_gb"], data["plan_days"],
         data["plan_price"], inbound_ids=inbound_str, ip_limit=ip_limit, panel_id=panel_id,
-        service_type=service_type,
+        service_type=service_type, collaborator_price=collab_price,
     )
     await state.clear()
     symbol = await get_setting("currency_symbol") or "تومان"
     ib_text = inbound_str if inbound_str else "پیش‌فرض"
     ip_text = f"{ip_limit}" if ip_limit > 0 else "بدون محدودیت"
+    collab_text = f"{collab_price:,} {symbol}" if collab_price > 0 else "غیرفعال"
     plans = await get_all_plans()
     await target.answer(
         f"✅ پلن <b>{data['plan_name']}</b> ایجاد شد!\n\n"
         f"📊 حجم: {data['plan_gb']} GB\n"
         f"📅 مدت: {data['plan_days']} روز\n"
         f"💰 قیمت: {data['plan_price']:,} {symbol}\n"
+        f"👥 قیمت همکاری: {collab_text}\n"
         f"📡 اینباندها: {ib_text}\n"
         f"🔒 محدودیت IP: {ip_text}",
         parse_mode="HTML", reply_markup=await plans_menu(plans)
@@ -989,12 +1032,17 @@ async def cb_edit_plan(callback: CallbackQuery, state: FSMContext):
         return
     await state.update_data(edit_plan_id=plan_id)
     await state.set_state(AdminState.edit_plan_field)
+    symbol = await get_setting("currency_symbol") or "تومان"
+    collab = plan.get("collaborator_price", 0)
+    collab_display = f" | {collab}" if collab else ""
     await callback.message.edit_text(
         f"✏️ <b>ویرایش پلن: {plan['name']}</b>\n\n"
         f"مقادیر جدید را به این فرمت وارد کنید:\n"
-        f"<code>نام | حجم | روز | قیمت</code>\n\n"
-        f"مثال: <code>۱ ماهه | 50 | 30 | 150000</code>\n"
-        f"فعلی: <code>{plan['name']} | {plan['gb']} | {plan['days']} | {plan['price']}</code>",
+        f"<code>نام | حجم | روز | قیمت</code>\n"
+        f"یا با قیمت همکاری:\n"
+        f"<code>نام | حجم | روز | قیمت | قیمت همکاری</code>\n\n"
+        f"مثال: <code>۱ ماهه | 50 | 30 | 150000 | 120000</code>\n"
+        f"فعلی: <code>{plan['name']} | {plan['gb']} | {plan['days']} | {plan['price']}{collab_display}</code>",
         parse_mode="HTML", reply_markup=await back_to_admin()
     )
 
@@ -1007,23 +1055,25 @@ async def process_edit_plan(message: Message, state: FSMContext):
     plan_id = data.get("edit_plan_id")
     try:
         parts = [p.strip() for p in message.text.split("|")]
-        if len(parts) != 4:
+        if len(parts) not in (4, 5):
             raise ValueError
         name = parts[0]
         gb = int(parts[1])
         days = int(parts[2])
         price = int(parts[3])
+        collab_price = int(parts[4]) if len(parts) == 5 else 0
         if gb <= 0 or days <= 0 or price <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ فرمت نامعتبر. از فرمت <code>نام | حجم | روز | قیمت</code> استفاده کنید:", parse_mode="Markdown")
+        await message.answer("❌ فرمت نامعتبر. از فرمت <code>نام | حجم | روز | قیمت</code> یا <code>نام | حجم | روز | قیمت | قیمت همکاری</code> استفاده کنید:", parse_mode="Markdown")
         return
-    await update_plan(plan_id, name=name, gb=gb, days=days, price=price)
+    await update_plan(plan_id, name=name, gb=gb, days=days, price=price, collaborator_price=collab_price)
     await state.clear()
     symbol = await get_setting("currency_symbol") or "تومان"
+    collab_text = f" | همکاری: {collab_price:,}" if collab_price else ""
     plans = await get_all_plans()
     await message.answer(
-        f"✅ پلن به‌روزرسانی شد: <b>{name}</b> | {gb}GB | {days} روز | {price:,} {symbol}",
+        f"✅ پلن به‌روزرسانی شد: <b>{name}</b> | {gb}GB | {days} روز | {price:,} {symbol}{collab_text}",
         parse_mode="HTML", reply_markup=await plans_menu(plans)
     )
 
@@ -2176,6 +2226,213 @@ async def cb_qr_bg_info(callback: CallbackQuery):
         f"<code>http://212.87.199.33:5000/settings</code>",
         parse_mode="HTML", reply_markup=await back_to_admin()
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# Collaboration Settings
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_edit_collab")
+async def cb_edit_collab(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text("🤝 <b>تنظیمات درخواست همکاری</b>", parse_mode="HTML", reply_markup=await collab_settings_menu())
+
+
+@router.callback_query(F.data == "adm_toggle_collab")
+async def cb_toggle_collab(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("collab_enabled") or "0"
+    new_val = "0" if current == "1" else "1"
+    await set_setting("collab_enabled", new_val)
+    status = "فعال شد ✅" if new_val == "1" else "غیرفعال شد ❌"
+    await callback.answer(f"درخواست همکاری {status}", show_alert=True)
+    await callback.message.edit_text("🤝 <b>تنظیمات درخواست همکاری</b>", parse_mode="HTML", reply_markup=await collab_settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_collab_channel")
+async def cb_edit_collab_channel(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("collab_notification_channel") or ""
+    await state.set_state(AdminState.edit_collab_channel)
+    await callback.message.edit_text(
+        f"📢 <b>کانال اعلان درخواست همکاری</b>\n\n"
+        f"فعلی: <code>{current if current else 'همان کانال اعلان اصلی'}</code>\n\n"
+        f"شناسه کانال جدید را وارد کنید (مثلاً @mychannel یا -1001234567890):\n"
+        f"برای استفاده از کانال اصلی، بنویسید: <code>-</code>",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_collab_channel)
+async def process_edit_collab_channel(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    text = message.text.strip()
+    if text == "-":
+        await set_setting("collab_notification_channel", "")
+        await message.answer("✅ از کانال اصلی استفاده می‌شود.", reply_markup=await collab_settings_menu())
+    else:
+        await set_setting("collab_notification_channel", text)
+        await message.answer(f"✅ کانال اعلان: <code>{text}</code>", parse_mode="HTML", reply_markup=await collab_settings_menu())
+    await state.clear()
+
+
+@router.callback_query(F.data == "adm_edit_collab_btn_text")
+async def cb_edit_collab_btn_text(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("btn_collab_request") or "🤝 درخواست همکاری"
+    await state.set_state(AdminState.edit_collab_btn_text)
+    await callback.message.edit_text(
+        f"📝 <b>متن دکمه درخواست همکاری</b>\n\n"
+        f"فعلی: <b>{current}</b>\n\n"
+        f"متن جدید را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_collab_btn_text)
+async def process_edit_collab_btn_text(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await set_setting("btn_collab_request", message.text.strip())
+    await state.clear()
+    await message.answer("✅ متن دکمه به‌روزرسانی شد!", reply_markup=await collab_settings_menu())
+
+
+@router.callback_query(F.data == "adm_collab_requests")
+async def cb_collab_requests(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    requests = await get_pending_collab_requests()
+    if not requests:
+        await callback.message.edit_text(
+            "📋 <b>درخواست‌های همکاری</b>\n\nهیچ درخواست در انتظاری وجود ندارد.",
+            parse_mode="HTML", reply_markup=await collab_settings_menu()
+        )
+        return
+    await callback.message.edit_text(
+        f"📋 <b>درخواست‌های همکاری</b> ({len(requests)})",
+        parse_mode="HTML", reply_markup=await collab_requests_list(requests)
+    )
+
+
+@router.callback_query(F.data.startswith("adm_collab_detail_"))
+async def cb_collab_detail(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    request_id = int(callback.data.split("_")[-1])
+    request = await get_collab_request(request_id)
+    if not request:
+        await callback.answer("❌ درخواست یافت نشد!", show_alert=True)
+        return
+    uname = f"@{request.get('username', 'ندارد')}" if request.get("username") else str(request["user_id"])
+    text = (
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"  🤝 <b>درخواست همکاری #{request['id']}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  👤 کاربر: {uname} (ID: <code>{request['user_id']}</code>)\n"
+        f"  📛 نام: {request.get('first_name', 'ندارد')}\n"
+        f"  📅 تاریخ: {request.get('created_at', '?')[:16]}\n"
+        f"  📌 وضعیت: <b>{request['status']}</b>\n\n"
+        f"  💬 پیام:\n{request['message']}"
+    )
+    if request["status"] == "pending":
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await collab_request_actions(request_id))
+    else:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await back_to_admin())
+
+
+@router.callback_query(F.data.startswith("collab_approve_"))
+async def cb_collab_approve(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    request_id = int(callback.data.split("_")[-1])
+    request = await get_collab_request(request_id)
+    if not request:
+        await callback.answer("❌ درخواست یافت نشد!", show_alert=True)
+        return
+    if request["status"] != "pending":
+        await callback.answer("این درخواست قبلاً بررسی شده!", show_alert=True)
+        return
+
+    await update_collab_request(request_id, "approved", callback.from_user.id)
+    await set_user_collaborator(request["user_id"], True)
+
+    try:
+        await callback.bot.send_message(
+            chat_id=request["user_id"],
+            text="✅ <b>درخواست همکاری شما تایید شد!</b>\n\nاکنون شما یک همکار هستید و از قیمت‌های ویژه بهره‌مند می‌شوید.",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+    await callback.answer("✅ درخواست تایید شد!", show_alert=True)
+    requests = await get_pending_collab_requests()
+    if requests:
+        await callback.message.edit_text(
+            f"📋 <b>درخواست‌های همکاری</b> ({len(requests)})",
+            parse_mode="HTML", reply_markup=await collab_requests_list(requests)
+        )
+    else:
+        await callback.message.edit_text(
+            "📋 <b>درخواست‌های همکاری</b>\n\nهیچ درخواست در انتظاری وجود ندارد.",
+            parse_mode="HTML", reply_markup=await collab_settings_menu()
+        )
+
+
+@router.callback_query(F.data.startswith("collab_reject_"))
+async def cb_collab_reject(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    request_id = int(callback.data.split("_")[-1])
+    request = await get_collab_request(request_id)
+    if not request:
+        await callback.answer("❌ درخواست یافت نشد!", show_alert=True)
+        return
+    if request["status"] != "pending":
+        await callback.answer("این درخواست قبلاً بررسی شده!", show_alert=True)
+        return
+
+    await state.update_data(collab_reject_request_id=request_id)
+    await state.set_state(AdminState.collab_reject_reason)
+    await callback.message.edit_text(
+        f"❌ <b>رد درخواست همکاری</b>\n\n"
+        f"دلیل رد را وارد کنید (این پیام برای کاربر ارسال خواهد شد):",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+    await callback.answer()
+
+
+@router.message(AdminState.collab_reject_reason)
+async def process_collab_reject_reason(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    request_id = data.get("collab_reject_request_id")
+    request = await get_collab_request(request_id)
+    if not request:
+        await state.clear()
+        await message.answer("❌ درخواست یافت نشد.", reply_markup=await back_to_admin())
+        return
+
+    await update_collab_request(request_id, "rejected", message.from_user.id)
+
+    try:
+        await message.bot.send_message(
+            chat_id=request["user_id"],
+            text=f"❌ <b>درخواست همکاری شما رد شد</b>\n\n"
+                 f"📌 دلیل: {message.text.strip()}",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+    await state.clear()
+    await message.answer("✅ درخواست رد شد و به کاربر اطلاع داده شد.", reply_markup=await collab_settings_menu())
 
 
 @router.callback_query(F.data == "adm_control")
