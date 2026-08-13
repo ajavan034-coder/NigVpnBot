@@ -680,7 +680,7 @@ def menu_layout():
     BUILTIN_LABELS = {
         "wallet": "Wallet", "free_test": "Free Test", "buy_config": "Buy Config",
         "my_configs": "My Configs", "channel": "Channel", "support": "Support",
-        "admin": "Admin Panel", "invite": "Referral",
+        "admin": "Admin Panel", "invite": "Referral", "collab": "Collaboration Request",
     }
 
     if request.method == "POST":
@@ -748,7 +748,7 @@ def menu_layout():
                 "enabled": item.get("enabled", True),
             })
 
-    default_order = ["wallet", "free_test", "buy_config", "my_configs", "invite", "channel", "support", "admin"]
+    default_order = ["wallet", "free_test", "buy_config", "my_configs", "invite", "collab", "channel", "support", "admin"]
     for bid in default_order:
         if bid not in existing_ids:
             buttons.append({

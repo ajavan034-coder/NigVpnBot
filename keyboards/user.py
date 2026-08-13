@@ -383,6 +383,7 @@ BUTTON_CONFIGS = {
     "admin_settings": {"label": "Admin - Settings", "default_style": "", "default_emoji": "settings"},
     "admin_admins": {"label": "Admin - Admins", "default_style": "", "default_emoji": "admins"},
     "admin_plans": {"label": "Admin - Plans", "default_style": "", "default_emoji": "plans"},
+    "collab_request": {"label": "Collaboration Request", "default_style": "primary", "default_emoji": "link"},
     "admin_broadcast": {"label": "Admin - Broadcast", "default_style": "", "default_emoji": "list"},
     "admin_panel_info": {"label": "Admin - Panel Info", "default_style": "", "default_emoji": "gear"},
     "approve": {"label": "Approve Receipt", "default_style": "success", "default_emoji": "approve"},
