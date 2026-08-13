@@ -72,6 +72,20 @@ async def main_menu(user_id: int = 0) -> InlineKeyboardMarkup:
         ]
         layout = default_order
 
+    has_collab = any(item.get("id") == "collab" for item in layout if item.get("type") == "builtin")
+    if not has_collab:
+        new_layout = []
+        for item in layout:
+            new_layout.append(item)
+            if item.get("type") == "builtin" and item.get("id") == "invite":
+                new_layout.append({"type": "builtin", "id": "collab", "enabled": True})
+        if not any(item.get("id") == "collab" for item in new_layout if item.get("type") == "builtin"):
+            insert_idx = len(new_layout) - 1
+            new_layout.insert(insert_idx, {"type": "builtin", "id": "collab", "enabled": True})
+            if insert_idx > 0 and new_layout[insert_idx - 1].get("type") != "row_break":
+                new_layout.insert(insert_idx, {"type": "row_break"})
+        layout = new_layout
+
     async def make_builtin_btn(bid):
         if bid == "wallet":
             return await _btn(await get_setting("btn_wallet"), "wallet", "wallet", "primary", "wallet")

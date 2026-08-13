@@ -39,6 +39,7 @@ show_menu() {
     echo -e "  ${BOLD}[6]${NC} SSL Certificate & Nginx Setup"
     echo -e "  ${BOLD}[7]${NC} View Logs"
     echo -e "  ${BOLD}[8]${NC} Edit .env"
+    echo -e "  ${BOLD}[9]${NC} ${GREEN}⬆  Update Bot${NC}"
     echo -e "  ${BOLD}[0]${NC} Exit"
     echo ""
 }
@@ -256,6 +257,77 @@ do_edit_env() {
     fi
 }
 
+do_update() {
+    echo -e "\n${CYAN}═══ Updating Bot ═══${NC}"
+    echo ""
+
+    cd "$INSTALL_DIR"
+
+    # Check if git repo
+    if [ ! -d ".git" ]; then
+        echo -e "${RED}Not a git repository. Reinstalling...${NC}"
+        bash <(curl -s https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/setup.sh)
+        return
+    fi
+
+    # Save current state
+    OLD_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+    # Fetch latest
+    echo -e "  ${YELLOW}➤${NC} Fetching latest changes..."
+    git fetch origin main -q 2>/dev/null
+    NEW_COMMIT=$(git rev-parse --short origin/main 2>/dev/null || echo "unknown")
+
+    if [ "$OLD_COMMIT" = "$NEW_COMMIT" ]; then
+        echo -e "  ${GREEN}✔${NC} Already up to date (${CYAN}${OLD_COMMIT}${NC})"
+        echo ""
+        return
+    fi
+
+    # Show what changed
+    echo -e "  ${YELLOW}➤${NC} Updating: ${CYAN}${OLD_COMMIT}${NC} → ${GREEN}${NEW_COMMIT}${NC}"
+    echo ""
+
+    # Backup .env
+    cp .env .env.bak 2>/dev/null || true
+
+    # Pull
+    git pull origin main -q 2>/dev/null
+
+    # Restore .env
+    cp .env.bak .env 2>/dev/null || true
+    rm -f .env.bak
+
+    # Show diff stats
+    CHANGED=$(git diff --stat ${OLD_COMMIT}..${NEW_COMMIT} 2>/dev/null | tail -1 || echo "")
+    if [ -n "$CHANGED" ]; then
+        FILES_CHANGED=$(echo "$CHANGED" | grep -oP '\d+(?= file)' || echo "?")
+        INSERTIONS=$(echo "$CHANGED" | grep -oP '\d+(?= insertion)' || echo "0")
+        DELETIONS=$(echo "$CHANGED" | grep -oP '\d+(?= deletion)' || echo "0")
+        echo -e "  📄 ${FILES_CHANGED} files changed  ${GREEN}+${INSERTIONS}${NC}  ${RED}-${DELETIONS}${NC}"
+    fi
+
+    # Update packages
+    echo -e "  ${YELLOW}➤${NC} Updating Python packages..."
+    $INSTALL_DIR/venv/bin/pip install -q -r requirements.txt 2>/dev/null
+    echo -e "  ${GREEN}✔${NC} Packages updated"
+
+    # Restart
+    echo -e "  ${YELLOW}➤${NC} Restarting bot..."
+    systemctl restart "$SERVICE_NAME"
+    sleep 3
+
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        PID=$(systemctl show $SERVICE_NAME --property=MainPID --value 2>/dev/null || echo "?")
+        echo ""
+        echo -e "  ${GREEN}✔ Update successful!${NC} (PID: ${CYAN}${PID}${NC})"
+    else
+        echo ""
+        echo -e "  ${RED}✘ Bot failed to start after update.${NC}"
+        echo -e "  Check logs: ${CYAN}tail -20 $INSTALL_DIR/bot.log${NC}"
+    fi
+}
+
 # Main loop
 while true; do
     clear_screen
@@ -273,6 +345,7 @@ while true; do
         6) do_ssl ;;
         7) do_logs ;;
         8) do_edit_env ;;
+        9) do_update ;;
         0) echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
         *) echo -e "${RED}Invalid option.${NC}" ;;
     esac
