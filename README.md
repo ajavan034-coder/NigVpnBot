@@ -14,6 +14,10 @@ sudo bash <(curl -sL https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot
 ```bash
 curl -sL https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/deploy.sh -o /tmp/deploy.sh && sudo bash /tmp/deploy.sh
 ```
+## Open Consol Panel / باز کردن پنل
+```bash
+nigvpn
+```
 
 You'll be asked for:
 - Bot Token (from @BotFather)
