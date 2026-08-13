@@ -4,6 +4,7 @@ REPO="Smertam/NigSeller_Bpt"
 INSTALL_DIR="/root/robot"
 SERVICE_NAME="nigvpn-bot"
 BRANCH="main"
+DOWNLOAD_URL="http://140.233.177.223:8888"
 
 echo ""
 echo "========================================="
@@ -28,26 +29,30 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     echo "Updated existing installation."
 else
     rm -rf "$INSTALL_DIR"
-    # Try git clone first
-    if ! git clone -b $BRANCH "https://github.com/${REPO}.git" "$INSTALL_DIR" 2>/dev/null; then
-        # Fallback: download tarball
-        echo "Git clone failed, downloading tarball..."
-        curl -sL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" -o /tmp/bot.tar.gz
+    if git clone -b $BRANCH "https://github.com/${REPO}.git" "$INSTALL_DIR" 2>/dev/null; then
+        cd "$INSTALL_DIR"
+    elif curl -sL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" -o /tmp/bot.tar.gz 2>/dev/null && file /tmp/bot.tar.gz | grep -q gzip; then
         mkdir -p "$INSTALL_DIR"
         tar xzf /tmp/bot.tar.gz -C /tmp
         mv /tmp/${REPO}-${BRANCH}/* "$INSTALL_DIR"/
         rm -rf /tmp/${REPO}-${BRANCH} /tmp/bot.tar.gz
+        cd "$INSTALL_DIR"
+    else
+        echo "Downloading from mirror..."
+        curl -sL "${DOWNLOAD_URL}/bot-files.tar.gz" -o /tmp/bot.tar.gz
+        mkdir -p "$INSTALL_DIR"
+        tar xzf /tmp/bot.tar.gz -C "$INSTALL_DIR"
+        rm -f /tmp/bot.tar.gz
+        cd "$INSTALL_DIR"
     fi
-    cd "$INSTALL_DIR"
 fi
 
 echo "[3/6] Installing Python packages..."
 if [ ! -d "venv" ]; then
     python3 -m venv venv
 fi
-source venv/bin/activate
-pip install --upgrade pip -q 2>/dev/null
-pip install -r requirements.txt -q
+$INSTALL_DIR/venv/bin/pip install --upgrade pip -q 2>/dev/null
+$INSTALL_DIR/venv/bin/pip install -r requirements.txt -q
 
 echo "[4/6] Configuring..."
 echo ""
