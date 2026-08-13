@@ -63,7 +63,7 @@ async def _send_expiry_reminders(bot):
             _notified_today.add(uid)
 
 
-async def _backup_3xui_panel(panel, channel_id, bot):
+async def _backup_3xui_panel(panel, channel_id, bot, panel_name=""):
     """Backup a single 3x-ui panel and send .db file to channel."""
     try:
         db_path = await panel.backup_database()
@@ -76,13 +76,11 @@ async def _backup_3xui_panel(panel, channel_id, bot):
         now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
         filename = os.path.basename(db_path)
 
-        panel_label = f" (پنل #{panel.panel_id})" if panel.panel_id else ""
-
         await bot.send_document(
             chat_id=channel_id,
             document=FSInputFile(db_path, filename=filename),
             caption=(
-                f"📦 <b>بکاپ پنل 3x-ui{panel_label}</b>\n\n"
+                f"📦 <b>Backup for {panel_name}</b>\n\n"
                 f"🕐 {now_str} UTC\n"
                 f"💾 حجم: {file_size / 1024:.1f} KB\n"
                 f"📋 فرمت: SQLite Database (.db)"
@@ -90,14 +88,14 @@ async def _backup_3xui_panel(panel, channel_id, bot):
             parse_mode="HTML",
         )
         os.remove(db_path)
-        logger.info("3x-ui backup sent for panel %s", panel.panel_id)
+        logger.info("3x-ui backup sent for panel '%s'", panel_name)
         return True
     except Exception as e:
-        logger.error("Failed to backup 3x-ui panel %s: %s", panel.panel_id, e)
+        logger.error("Failed to backup 3x-ui panel '%s': %s", panel_name, e)
         return False
 
 
-async def _backup_wireguard_panel(panel_url, channel_id, bot, panel_id=None):
+async def _backup_wireguard_panel(panel_url, channel_id, bot, panel_id=None, panel_name=""):
     """Backup a Wireguard/Azumi panel and send .db file to channel."""
     try:
         from wireguard_api import WireguardAPI
@@ -106,7 +104,7 @@ async def _backup_wireguard_panel(panel_url, channel_id, bot, panel_id=None):
         await wg.close()
 
         if not db_path or not os.path.exists(db_path):
-            logger.warning("Wireguard backup returned no file for panel %s", panel_id)
+            logger.warning("Wireguard backup returned no file for panel '%s'", panel_name)
             return False
 
         from aiogram.types import FSInputFile
@@ -114,13 +112,11 @@ async def _backup_wireguard_panel(panel_url, channel_id, bot, panel_id=None):
         now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
         filename = os.path.basename(db_path)
 
-        panel_label = f" (پنل #{panel_id})" if panel_id else ""
-
         await bot.send_document(
             chat_id=channel_id,
             document=FSInputFile(db_path, filename=filename),
             caption=(
-                f"📦 <b>بکاپ پنل Azumi (Wireguard){panel_label}</b>\n\n"
+                f"📦 <b>Backup for {panel_name}</b>\n\n"
                 f"🕐 {now_str} UTC\n"
                 f"💾 حجم: {file_size / 1024:.1f} KB\n"
                 f"📋 فرمت: SQLite Database (.db)"
@@ -128,10 +124,10 @@ async def _backup_wireguard_panel(panel_url, channel_id, bot, panel_id=None):
             parse_mode="HTML",
         )
         os.remove(db_path)
-        logger.info("Wireguard backup sent for panel %s", panel_id)
+        logger.info("Wireguard backup sent for panel '%s'", panel_name)
         return True
     except Exception as e:
-        logger.error("Failed to backup Wireguard panel %s: %s", panel_id, e)
+        logger.error("Failed to backup Wireguard panel '%s': %s", panel_name, e)
         return False
 
 
@@ -188,7 +184,7 @@ async def _send_backup(bot):
 
         try:
             if ptype in ("wireguard", "azumi", "wg"):
-                ok = await _backup_wireguard_panel(purl, channel_id, bot, panel_id=pid)
+                ok = await _backup_wireguard_panel(purl, channel_id, bot, panel_id=pid, panel_name=pname)
             else:
                 from api import PanelAPI
                 panel_api_instance = PanelAPI(
@@ -197,7 +193,7 @@ async def _send_backup(bot):
                     panel_pass=p.get("password", ""),
                     panel_id=pid,
                 )
-                ok = await _backup_3xui_panel(panel_api_instance, channel_id, bot)
+                ok = await _backup_3xui_panel(panel_api_instance, channel_id, bot, panel_name=pname)
                 await panel_api_instance.close()
 
             if ok:
