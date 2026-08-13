@@ -62,7 +62,24 @@ Run this on your Ubuntu/Debian server:
 این دستور را روی سرور خود (Ubuntu/Debian) اجرا کنید:
 
 ```bash
-sudo bash -c "$(curl -sL https://raw.githubusercontent.com/Smertam/3-xui-telbot/main/setup.sh)"
+bash <(curl -sL https://raw.githubusercontent.com/Smertam/3-xui-telbot/main/setup.sh)
+```
+
+If the command above gives a 404 error, use this instead:
+
+اگر دستور بالا خطای 404 داد، از این استفاده کنید:
+
+```bash
+cd /tmp && curl -sLO https://raw.githubusercontent.com/Smertam/3-xui-telbot/main/setup.sh && sudo bash setup.sh
+```
+
+Or clone manually:
+
+یا دستی کلون کنید:
+
+```bash
+git clone -b main https://github.com/Smertam/3-xui-telbot.git /tmp/robot-install
+sudo bash /tmp/robot-install/setup.sh
 ```
 
 The installer will ask you for:
