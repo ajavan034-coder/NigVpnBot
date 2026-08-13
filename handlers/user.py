@@ -1022,7 +1022,7 @@ async def cb_select_plan(callback: CallbackQuery, state: FSMContext):
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{volume_line}"
         f"  📅 مدت: <b>{plan['days']} روز</b>\n"
-        f"  💰 قیمت: <b>{plan['price']:,} {symbol}</b>\n"
+        f"  💰 قیمت: <b>{display_price:,} {symbol}</b>\n"
         f"{collab_line}"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"  برای سرویس خود یک نام انتخاب کنید:"
@@ -1128,8 +1128,14 @@ async def handle_discount_code(message: Message, state: FSMContext):
         await message.answer(f"❌ {error}\n\nکد دیگری وارد کنید یا بازگردید:")
         return
 
-    final_price, discount_amount_str = calc_discount(plan["price"], code)
-    discount_amount = plan["price"] - final_price
+    user = await get_user(message.from_user.id)
+    collab_price = plan.get("collaborator_price", 0)
+    base_for_discount = plan["price"]
+    if user and user.get("is_collaborator") and collab_price > 0:
+        base_for_discount = collab_price
+
+    final_price, discount_amount_str = calc_discount(base_for_discount, code)
+    discount_amount = base_for_discount - final_price
     await state.update_data(
         discount_code=code["code"],
         discount_amount=discount_amount,
@@ -1174,7 +1180,7 @@ async def handle_discount_code(message: Message, state: FSMContext):
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{volume_line}"
         f"  📅 مدت: <b>{plan['days']} روز</b>\n"
-        f"  💰 قیمت: <b>{plan['price']:,} {symbol}</b>\n"
+        f"  💰 قیمت: <b>{base_for_discount:,} {symbol}</b>\n"
         f"  🏷️ تخفیف ({discount_label}): <b>\u2212{discount_amount:,.0f} {symbol}</b>\n"
         f"  💰 قیمت نهایی: <b>{final_price:,.0f} {symbol}</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1226,7 +1232,7 @@ async def show_payment_methods(target, plan_id: int, discount_amount: float = 0,
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{volume_line}"
         f"  📅 مدت: <b>{plan['days']} روز</b>\n"
-        f"  💰 قیمت: <b>{plan['price']:,} {symbol}</b>\n"
+        f"  💰 قیمت: <b>{base_price:,} {symbol}</b>\n"
         f"{collab_line}"
         f"{discount_line}"
         f"  💰 قیمت نهایی: <b>{price_display} {symbol}</b>\n\n"
