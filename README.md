@@ -1,30 +1,25 @@
-# 3X-UI Telegram Bot / ربات تلگرامی 3X-UI
+# NigVpnBot - VPN Telegram Bot
 
-A Telegram bot for selling VPN configs (VLESS/VMess) connected to a 3x-ui panel. Includes a web admin panel for managing users, plans, configs, and settings.
+A Telegram bot for selling VPN configs (VLESS/VMess) connected to a 3x-ui panel.
 
 ---
 
-## Quick Install / نصب سریع
-
-Run this **one command** on your Ubuntu/Debian server:
+## Install / نصب
 
 ```bash
-sudo bash <(curl -sL http://140.233.177.223:8888/setup.sh)
+sudo bash <(curl -sL https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/setup.sh)
 ```
 
-The installer will ask you for:
-
-| Field | Description |
-|-------|-------------|
-| Bot Token | From @BotFather |
-| Admin Telegram IDs | Your Telegram user ID |
-| Web Panel Port | Default 5000 |
-| Admin Panel Username | Default admin |
-| Admin Panel Password | For web panel login |
+You'll be asked for:
+- Bot Token (from @BotFather)
+- Admin Telegram IDs
+- Web Panel Port (default 5000)
+- Admin Panel Username
+- Admin Panel Password
 
 ---
 
-## Quick Commands / دستورات سریع
+## Commands / دستورات
 
 | Command | Description |
 |---------|-------------|
@@ -32,10 +27,7 @@ The installer will ask you for:
 | `sudo bash deploy.sh` | Update & restart |
 | `systemctl status nigvpn-bot` | Check status |
 | `systemctl restart nigvpn-bot` | Restart bot |
-| `systemctl stop nigvpn-bot` | Stop bot |
-| `systemctl start nigvpn-bot` | Start bot |
-| `tail -f /root/robot/bot.log` | View live logs |
-| `nano /root/robot/.env` | Edit config |
+| `tail -f /root/robot/bot.log` | View logs |
 
 ---
 

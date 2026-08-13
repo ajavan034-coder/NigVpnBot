@@ -1,10 +1,9 @@
 #!/bin/bash
 
-REPO="Smertam/NigSeller_Bpt"
+REPO="ajavan034-coder/NigVpnBot"
 INSTALL_DIR="/root/robot"
 SERVICE_NAME="nigvpn-bot"
 BRANCH="main"
-DOWNLOAD_URL="http://140.233.177.223:8888"
 
 echo ""
 echo "========================================="
@@ -31,17 +30,11 @@ else
     rm -rf "$INSTALL_DIR"
     if git clone -b $BRANCH "https://github.com/${REPO}.git" "$INSTALL_DIR" 2>/dev/null; then
         cd "$INSTALL_DIR"
-    elif curl -sL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" -o /tmp/bot.tar.gz 2>/dev/null && file /tmp/bot.tar.gz | grep -q gzip; then
-        mkdir -p "$INSTALL_DIR"
-        tar xzf /tmp/bot.tar.gz -C /tmp
-        mv /tmp/${REPO}-${BRANCH}/* "$INSTALL_DIR"/
-        rm -rf /tmp/${REPO}-${BRANCH} /tmp/bot.tar.gz
-        cd "$INSTALL_DIR"
     else
-        echo "Downloading from mirror..."
-        curl -sL "${DOWNLOAD_URL}/bot-files.tar.gz" -o /tmp/bot.tar.gz
+        echo "Git clone failed, downloading tarball..."
+        curl -sL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" -o /tmp/bot.tar.gz
         mkdir -p "$INSTALL_DIR"
-        tar xzf /tmp/bot.tar.gz -C "$INSTALL_DIR"
+        tar xzf /tmp/bot.tar.gz -C "$INSTALL_DIR" --strip-components=1
         rm -f /tmp/bot.tar.gz
         cd "$INSTALL_DIR"
     fi
