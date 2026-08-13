@@ -269,7 +269,7 @@ async def init_db():
         "text_free_test_notification": "",
         "text_new_config_notification": "",
         "text_receipt_notification": "",
-        "collab_enabled": "0",
+        "collab_enabled": "1",
         "collab_notification_channel": "",
         "btn_collab_request": "🤝 درخواست همکاری",
     }
