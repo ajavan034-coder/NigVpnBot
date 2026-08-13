@@ -526,6 +526,102 @@ class PanelAPI:
                     return None
         return None
 
+    async def backup_database(self) -> str | None:
+        """Create a .db backup of the 3x-ui panel by exporting all data via API
+        and packaging it as a SQLite database file. Returns the file path."""
+        import sqlite3 as _sqlite3
+
+        inbounds = await self.get_inbounds()
+        if not inbounds:
+            logger.warning("No inbounds found for backup on panel %s", self.panel_id)
+            return None
+
+        full_data = []
+        for inbound in inbounds:
+            detail = await self.get_inbound(inbound["id"])
+            if detail:
+                full_data.append(detail)
+
+        if not full_data:
+            return None
+
+        from datetime import datetime as _dt
+        now_str = _dt.utcnow().strftime("%Y-%m-%d_%H-%M")
+        db_path = f"/tmp/3xui_backup_{now_str}.db"
+
+        conn = _sqlite3.connect(db_path)
+        cur = conn.cursor()
+
+        cur.execute("""CREATE TABLE IF NOT EXISTS inbounds (
+            id INTEGER PRIMARY KEY, tag TEXT, protocol TEXT, port INTEGER,
+            settings TEXT, stream_settings TEXT, sniffing TEXT,
+            enable INTEGER, expiry_time INTEGER, total INTEGER,
+            remark TEXT, listen TEXT, traffic INTEGER
+        )""")
+
+        cur.execute("""CREATE TABLE IF NOT EXISTS clients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inbound_id INTEGER, email TEXT, uuid TEXT,
+            sub_id TEXT, enable INTEGER, total_gb REAL,
+            expiry_time INTEGER, ip_limit INTEGER,
+            FOREIGN KEY (inbound_id) REFERENCES inbounds(id)
+        )""")
+
+        cur.execute("""CREATE TABLE IF NOT EXISTS panel_info (
+            key TEXT PRIMARY KEY, value TEXT
+        )""")
+
+        cur.execute("INSERT INTO panel_info (key, value) VALUES (?, ?)",
+                     ("panel_url", self.panel_url))
+        cur.execute("INSERT INTO panel_info (key, value) VALUES (?, ?)",
+                     ("backup_date", now_str))
+        cur.execute("INSERT INTO panel_info (key, value) VALUES (?, ?)",
+                     ("panel_id", str(self.panel_id or "")))
+
+        for inbound in full_data:
+            cur.execute(
+                "INSERT INTO inbounds (id, tag, protocol, port, settings, stream_settings, sniffing, enable, expiry_time, total, remark, listen, traffic) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    inbound.get("id"),
+                    inbound.get("tag", ""),
+                    inbound.get("protocol", ""),
+                    inbound.get("port", 0),
+                    json.dumps(inbound.get("settings", {}), ensure_ascii=False),
+                    json.dumps(inbound.get("streamSettings", {}), ensure_ascii=False),
+                    json.dumps(inbound.get("sniffing", {}), ensure_ascii=False),
+                    1 if inbound.get("enable") else 0,
+                    inbound.get("expiryTime", 0),
+                    inbound.get("total", 0),
+                    inbound.get("remark", ""),
+                    inbound.get("listen", ""),
+                    inbound.get("traffic", 0),
+                ),
+            )
+
+            clients = inbound.get("clientStats", []) or []
+            settings = inbound.get("settings", {})
+            clients_list = settings.get("clients", []) if isinstance(settings, dict) else []
+
+            for cl in clients_list:
+                email = cl.get("email", "")
+                cl_uuid = cl.get("id", "")
+                sub_id = cl.get("subId", "")
+                enable = 1 if cl.get("enable", True) else 0
+                total_gb = cl.get("totalGB", 0)
+                expiry = cl.get("expiryTime", 0)
+                ip_limit = cl.get("limitIp", 0)
+
+                cur.execute(
+                    "INSERT INTO clients (inbound_id, email, uuid, sub_id, enable, total_gb, expiry_time, ip_limit) VALUES (?,?,?,?,?,?,?,?)",
+                    (inbound.get("id"), email, cl_uuid, sub_id, enable, total_gb, expiry, ip_limit),
+                )
+
+        conn.commit()
+        conn.close()
+
+        logger.info("3x-ui backup created: %s (%d inbounds)", db_path, len(full_data))
+        return db_path
+
     async def close(self):
         if self.session and not self.session.closed:
             await self.session.close()

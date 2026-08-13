@@ -251,5 +251,69 @@ class WireguardAPI:
             return result["peers"]
         return []
 
+    async def backup_database(self) -> str | None:
+        """Create a .db backup of the Wireguard/Azumi panel by exporting all peers."""
+        import sqlite3 as _sqlite3
+
+        interfaces = await self.get_interfaces()
+        all_peers = []
+        for iface in interfaces:
+            peers = await self.get_peers_by_interface(iface)
+            for p in peers:
+                p["_interface"] = iface
+            all_peers.extend(peers)
+
+        if not all_peers:
+            logger.warning("No Wireguard peers found for backup")
+            return None
+
+        from datetime import datetime as _dt
+        now_str = _dt.utcnow().strftime("%Y-%m-%d_%H-%M")
+        db_path = f"/tmp/wireguard_backup_{now_str}.db"
+
+        conn = _sqlite3.connect(db_path)
+        cur = conn.cursor()
+
+        cur.execute("""CREATE TABLE IF NOT EXISTS peers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            peer_name TEXT, peer_ip TEXT, interface TEXT,
+            data_limit INTEGER, data_used INTEGER,
+            expiry_time INTEGER, config_file TEXT,
+            persistent_keepalive INTEGER, mtu INTEGER,
+            blocked INTEGER DEFAULT 0
+        )""")
+
+        cur.execute("""CREATE TABLE IF NOT EXISTS panel_info (
+            key TEXT PRIMARY KEY, value TEXT
+        )""")
+
+        cur.execute("INSERT INTO panel_info (key, value) VALUES (?, ?)",
+                     ("panel_url", self.panel_url))
+        cur.execute("INSERT INTO panel_info (key, value) VALUES (?, ?)",
+                     ("backup_date", now_str))
+
+        for peer in all_peers:
+            cur.execute(
+                "INSERT INTO peers (peer_name, peer_ip, interface, data_limit, data_used, expiry_time, config_file, persistent_keepalive, mtu, blocked) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    peer.get("peer_name", ""),
+                    peer.get("peer_ip", ""),
+                    peer.get("_interface", ""),
+                    peer.get("data_limit", 0),
+                    peer.get("data_used", 0),
+                    peer.get("expiry_time", 0),
+                    peer.get("config_file", "wg0.conf"),
+                    peer.get("persistent_keepalive", 25),
+                    peer.get("mtu", 1280),
+                    1 if peer.get("blocked", False) else 0,
+                ),
+            )
+
+        conn.commit()
+        conn.close()
+
+        logger.info("Wireguard backup created: %s (%d peers)", db_path, len(all_peers))
+        return db_path
+
 
 wireguard_api = WireguardAPI()

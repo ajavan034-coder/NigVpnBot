@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 _notified_today: set[int] = set()
 _last_reset_date: str = ""
 _last_backup_time: float = 0
+_last_backup_date: str = ""
 
 
 async def _deactivate_expired():
@@ -62,48 +63,137 @@ async def _send_expiry_reminders(bot):
             _notified_today.add(uid)
 
 
+async def _backup_3xui_panel(panel, channel_id, bot):
+    """Backup a single 3x-ui panel and send .db file to channel."""
+    try:
+        db_path = await panel.backup_database()
+        if not db_path or not os.path.exists(db_path):
+            logger.warning("3x-ui backup returned no file for panel %s", panel.panel_id)
+            return False
+
+        from aiogram.types import FSInputFile
+        file_size = os.path.getsize(db_path)
+        now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        filename = os.path.basename(db_path)
+
+        panel_label = f" (پنل #{panel.panel_id})" if panel.panel_id else ""
+
+        await bot.send_document(
+            chat_id=channel_id,
+            document=FSInputFile(db_path, filename=filename),
+            caption=(
+                f"📦 <b>بکاپ پنل 3x-ui{panel_label}</b>\n\n"
+                f"🕐 {now_str} UTC\n"
+                f"💾 حجم: {file_size / 1024:.1f} KB\n"
+                f"📋 فرمت: SQLite Database (.db)"
+            ),
+            parse_mode="HTML",
+        )
+        os.remove(db_path)
+        logger.info("3x-ui backup sent for panel %s", panel.panel_id)
+        return True
+    except Exception as e:
+        logger.error("Failed to backup 3x-ui panel %s: %s", panel.panel_id, e)
+        return False
+
+
+async def _backup_wireguard_panel(panel_url, channel_id, bot, panel_id=None):
+    """Backup a Wireguard/Azumi panel and send .db file to channel."""
+    try:
+        from wireguard_api import WireguardAPI
+        wg = WireguardAPI(panel_url)
+        db_path = await wg.backup_database()
+        await wg.close()
+
+        if not db_path or not os.path.exists(db_path):
+            logger.warning("Wireguard backup returned no file for panel %s", panel_id)
+            return False
+
+        from aiogram.types import FSInputFile
+        file_size = os.path.getsize(db_path)
+        now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        filename = os.path.basename(db_path)
+
+        panel_label = f" (پنل #{panel_id})" if panel_id else ""
+
+        await bot.send_document(
+            chat_id=channel_id,
+            document=FSInputFile(db_path, filename=filename),
+            caption=(
+                f"📦 <b>بکاپ پنل Azumi (Wireguard){panel_label}</b>\n\n"
+                f"🕐 {now_str} UTC\n"
+                f"💾 حجم: {file_size / 1024:.1f} KB\n"
+                f"📋 فرمت: SQLite Database (.db)"
+            ),
+            parse_mode="HTML",
+        )
+        os.remove(db_path)
+        logger.info("Wireguard backup sent for panel %s", panel_id)
+        return True
+    except Exception as e:
+        logger.error("Failed to backup Wireguard panel %s: %s", panel_id, e)
+        return False
+
+
 async def _send_backup(bot):
-    global _last_backup_time
-    now = datetime.utcnow().timestamp()
-    if _last_backup_time and (now - _last_backup_time) < 12 * 3600:
-        return
+    global _last_backup_time, _last_backup_date
 
     from database import get_setting
+
+    enabled = await get_setting("backup_enabled")
+    if enabled == "0":
+        return
+
     channel_id = await get_setting("notification_channel_id") or ""
     if not channel_id:
         return
 
-    try:
-        from api import panel_api
-        inbounds = await panel_api.get_inbounds()
-        if not inbounds:
-            logger.warning("No inbounds found for backup")
-            return
+    backup_hour = int(await get_setting("backup_hour") or "4")
+    backup_minute = int(await get_setting("backup_minute") or "0")
 
-        full_data = []
-        for inbound in inbounds:
-            detail = await panel_api.get_inbound(inbound["id"])
-            if detail:
-                full_data.append(detail)
+    now = datetime.utcnow()
+    today_str = now.strftime("%Y-%m-%d")
 
-        now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-        backup_file = f"/tmp/3xui_backup_{now_str.replace(' ', '_').replace(':', '-')}.json"
-        with open(backup_file, "w", encoding="utf-8") as f:
-            json.dump(full_data, f, ensure_ascii=False, indent=2)
+    if _last_backup_date == today_str:
+        return
 
-        from aiogram.types import FSInputFile
-        file_size = os.path.getsize(backup_file)
-        await bot.send_document(
-            chat_id=channel_id,
-            document=FSInputFile(backup_file, filename=f"3xui_backup_{now_str.replace(' ', '_').replace(':', '-')}.json"),
-            caption=f"📦 <b>بکاپ پنل 3x-ui</b>\n\n🕐 {now_str} UTC\n📋 تعداد اینباند: {len(full_data)}\n💾 حجم: {file_size / 1024:.1f} KB",
-            parse_mode="HTML",
-        )
-        os.remove(backup_file)
-        _last_backup_time = now
-        logger.info("3x-ui backup sent to channel %s", channel_id)
-    except Exception as e:
-        logger.error("Failed to send 3x-ui backup: %s", e)
+    if now.hour != backup_hour or now.minute != backup_minute:
+        return
+
+    from database import get_active_panels
+    panels = await get_active_panels()
+
+    if not panels:
+        logger.warning("No active panels found for backup")
+        return
+
+    logger.info("Starting scheduled backup for %d panels", len(panels))
+
+    success_count = 0
+    for p in panels:
+        ptype = p.get("panel_type", "v2ray")
+        purl = p.get("url", "")
+        pid = p.get("id")
+
+        if ptype == "wireguard":
+            ok = await _backup_wireguard_panel(purl, channel_id, bot, panel_id=pid)
+        else:
+            from api import PanelAPI
+            panel_api_instance = PanelAPI(
+                panel_url=purl,
+                panel_user=p.get("username", ""),
+                panel_pass=p.get("password", ""),
+                panel_id=pid,
+            )
+            ok = await _backup_3xui_panel(panel_api_instance, channel_id, bot)
+            await panel_api_instance.close()
+
+        if ok:
+            success_count += 1
+
+    _last_backup_time = now.timestamp()
+    _last_backup_date = today_str
+    logger.info("Scheduled backup completed: %d/%d panels backed up", success_count, len(panels))
 
 
 async def _retry_unsent_receipts(bot):
@@ -143,7 +233,7 @@ async def _retry_unsent_receipts(bot):
         logger.error("Error in _retry_unsent_receipts: %s", e)
 
 
-async def scheduler_loop(bot, interval: int = 300):
+async def scheduler_loop(bot, interval: int = 60):
     logger.info("Scheduler started (interval=%ds)", interval)
     while True:
         try:

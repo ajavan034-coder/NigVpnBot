@@ -272,6 +272,9 @@ async def init_db():
         "collab_enabled": "1",
         "collab_notification_channel": "",
         "btn_collab_request": "🤝 درخواست همکاری",
+        "backup_enabled": "1",
+        "backup_hour": "4",
+        "backup_minute": "0",
     }
     for key, value in defaults.items():
         existing = await db.execute("SELECT key FROM settings WHERE key = ?", (key,))
