@@ -1588,6 +1588,9 @@ async def cb_my_services_panel(callback: CallbackQuery):
             pass
         await callback.message.answer(text, parse_mode="HTML", reply_markup=await my_services_configs_menu(user_id, panel_id))
 
+class CollabRequestState(StatesGroup):
+    waiting_text = State()
+
 
 # --- Collaboration Request Flow ---
 @router.callback_query(F.data == "collab_request")
@@ -1601,11 +1604,8 @@ async def cb_collab_request(callback: CallbackQuery, state: FSMContext):
         return
     await state.set_state(CollabRequestState.waiting_text)
     text = (
-        "🤝 <b>درخواست همکاری</b>
-
-"
-        "لطفاً درباره کار خود توضیح دهید:
-"
+        "🤝 <b>درخواست همکاری</b>\n"
+        "\nلطفاً درباره کار خود تضخیر دهید:\n"
         "(نحوه همکاری، تعداد مشتریان و...)"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -1652,16 +1652,10 @@ async def process_collab_request(message: Message, state: FSMContext):
                 ]
             ])
             admin_text = (
-                f"🤝 <b>درخواست همکاری جدید</b>
-
-"
-                f"👤 کاربر: @{username} (ID: <code>{user_id}</code>)
-"
-                f"📝 نام: {first_name}
-
-"
-                f"💬 پیام:
-{request_text}"
+                f"🤝 <b>درخواست همکاری جدید</b>\n"
+                f"👤 کاربر: @{username} (ID: <code>{user_id}</code>)\n"
+                f"📝 نام: {first_name}\n"
+                f"💬 پیام:\n{request_text}"
             )
             await message.bot.send_message(chat_id=channel_id, text=admin_text, parse_mode="HTML", reply_markup=admin_kb)
         except Exception as e:
@@ -1669,8 +1663,7 @@ async def process_collab_request(message: Message, state: FSMContext):
             logging.getLogger(__name__).error("Failed collab notification: %s", e)
 
     await message.answer(
-        "✅ درخواست شما ارسال شد!
-پس از بررسی توسط مدیر به شما اطلاع داده خواهد شد.",
+        "✅ درخواست شما ارسال شد!\nپس از بررسی توسط مدیر به شما اطلاع داده خواهد شد.",
         reply_markup=await back_to_menu()
     )
 
@@ -1681,8 +1674,6 @@ class RecoverState(StatesGroup):
     waiting_name = State()
 
 
-class CollabRequestState(StatesGroup):
-    waiting_text = State()
 
 
 @router.callback_query(F.data.startswith("recover_config_"))
