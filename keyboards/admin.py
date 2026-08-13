@@ -322,6 +322,7 @@ async def buttons_editor_menu() -> InlineKeyboardMarkup:
         [await _btn("🧪 تست رایگان", "adm_edit_btn_free_test", "gear")],
         [await _btn("🛒 خرید کانفیگ", "adm_edit_btn_buy_config", "package")],
         [await _btn("📋 سرویس‌ها", "adm_edit_btn_my_configs", "list")],
+        [await _btn("🤝 درخواست همکاری", "adm_edit_btn_collab", "link")],
         [await _btn("💰 شارژ کیف پول", "adm_edit_btn_topup", "money")],
         [await _btn("📊 تاریخچه", "adm_edit_btn_tx_history", "history")],
         [await _btn("⬅️ بازگشت", "adm_edit_btn_back", "back")],

@@ -1841,6 +1841,7 @@ BUTTON_SETTINGS = {
     "adm_edit_btn_free_test": "btn_free_test",
     "adm_edit_btn_buy_config": "btn_buy_config",
     "adm_edit_btn_my_configs": "btn_my_configs",
+    "adm_edit_btn_collab": "btn_collab_request",
     "adm_edit_btn_topup": "btn_topup",
     "adm_edit_btn_tx_history": "btn_tx_history",
     "adm_edit_btn_back": "btn_back",
