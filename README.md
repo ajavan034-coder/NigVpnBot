@@ -7,7 +7,7 @@ A Telegram bot for selling VPN configs (VLESS/VMess) connected to a 3x-ui panel.
 ## Install / نصب
 
 ```bash
-sudo bash <(curl -sL https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/setup.sh)
+curl -sL https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/setup.sh -o /tmp/setup.sh && sudo bash /tmp/setup.sh
 ```
 
 You'll be asked for:
