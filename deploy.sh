@@ -1,84 +1,41 @@
 #!/bin/bash
 set -euo pipefail
 
-# ============================================================
-# VPN Bot — Deploy Script (pull & restart)
-# Usage: bash deploy.sh [git-branch]
-# ============================================================
+INSTALL_DIR="/root/robot"
+SERVICE_NAME="nigvpn-bot"
 
-BOT_DIR="/opt/vpnbot"
-SERVICE_NAME="vpnbot"
-BRANCH="${1:-main}"
+echo "[1/4] Pulling latest code..."
+cd "$INSTALL_DIR"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-log()  { echo -e "${GREEN}[+]${NC} $*"; }
-warn() { echo -e "${YELLOW}[!]${NC} $*"; }
-err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
-
-if [[ ! -d "$BOT_DIR/.git" ]]; then
-    err "No git repo found at $BOT_DIR"
-    exit 1
-fi
-
-cd "$BOT_DIR"
-
-# ---- pre-deploy syntax check -----------------------------------
-log "Checking Python syntax..."
-SYNTAX_ERRORS=0
-while IFS= read -r -d '' pyfile; do
-    if ! python3 -m py_compile "$pyfile" 2>/dev/null; then
-        err "Syntax error in: $pyfile"
-        SYNTAX_ERRORS=1
-    fi
-done < <(find . -name "*.py" -not -path "./venv/*" -not -path "./__pycache__/*" -print0)
-
-if [[ $SYNTAX_ERRORS -ne 1 ]]; then
-    log "All Python files pass syntax check"
-fi
-
-# ---- backup critical files -------------------------------------
-log "Backing up .env and database..."
+# Backup .env
 cp .env .env.bak 2>/dev/null || true
-cp bot_database.db bot_database.db.bak 2>/dev/null || true
 
-# ---- pull latest code ------------------------------------------
-log "Pulling latest code from origin/$BRANCH..."
-if ! git pull --ff-only origin "$BRANCH"; then
-    warn "Fast-forward failed. Trying git pull (may create merge commit)..."
-    git pull origin "$BRANCH" || {
-        err "Git pull failed. Restore backups and check manually."
-        cp .env.bak .env 2>/dev/null || true
-        cp bot_database.db.bak bot_database.db 2>/dev/null || true
-        rm -f .env.bak bot_database.db.bak
-        exit 1
-    }
+# Pull
+if [ -d ".git" ]; then
+    git pull origin main -q
+else
+    echo "Not a git repo. Re-downloading..."
+    rm -rf "$INSTALL_DIR"
+    git clone -b main https://github.com/ajavan034-coder/NigVpnBot.git "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
 fi
 
-# ---- restore critical files ------------------------------------
+# Restore .env
 cp .env.bak .env 2>/dev/null || true
-cp bot_database.db.bak bot_database.db 2>/dev/null || true
-rm -f .env.bak bot_database.db.bak
+rm -f .env.bak
 
-# ---- update dependencies if requirements changed ---------------
-if git diff HEAD~1 --name-only 2>/dev/null | grep -q "requirements.txt"; then
-    log "requirements.txt changed — updating dependencies..."
-    ./venv/bin/pip install -q -r requirements.txt
-fi
+echo "[2/4] Updating Python packages..."
+$INSTALL_DIR/venv/bin/pip install -q -r requirements.txt
 
-# ---- restart service -------------------------------------------
-log "Restarting $SERVICE_NAME..."
+echo "[3/4] Restarting bot..."
 systemctl restart "$SERVICE_NAME"
 
-sleep 2
+sleep 3
+echo "[4/4] Done!"
+echo ""
 if systemctl is-active --quiet "$SERVICE_NAME"; then
-    log "Service is running!"
-    systemctl status "$SERVICE_NAME" --no-pager -l
+    echo "Bot updated and running!"
+    systemctl status "$SERVICE_NAME" --no-pager -l | head -5
 else
-    err "Service failed to start. Checking logs..."
-    journalctl -u "$SERVICE_NAME" --no-pager -n 30
-    exit 1
+    echo "Error! Check: tail -50 $INSTALL_DIR/bot.log"
 fi
