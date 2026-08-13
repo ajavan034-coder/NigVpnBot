@@ -2,7 +2,7 @@
 
 A Telegram bot for selling VPN configs (VLESS/VMess) connected to a 3x-ui panel. Includes a web admin panel for managing users, plans, configs, and settings.
 
-ربات تلگرامی برای فروش کانفیگ VPN (VLESS/VMess) متصل به پنل 3x-ui. دارای پنل مدیریت وب برای مدیریت کاربران، پلن‌ها، کانفیگ‌ها و تنظیمات.
+ربات تلگرامی برای فروش کانفیگ VPN (کارت به کارت و کیف پول) متصل به پنل 3x-ui. دارای پنل مدیریت وب برای مدیریت کاربران، پلن‌ها، کانفیگ‌ها و تنظیمات.
 
 ---
 
@@ -55,25 +55,14 @@ A Telegram bot for selling VPN configs (VLESS/VMess) connected to a 3x-ui panel.
 
 ---
 
-## One-Command Install / نصب با یک دستور
+## Quick Install / نصب سریع
 
-Run this on your server (Ubuntu/Debian):
+Run this on your Ubuntu/Debian server:
 
-این دستور را روی سرور خود اجرا کنید (Ubuntu/Debian):
+این دستور را روی سرور خود (Ubuntu/Debian) اجرا کنید:
 
-**Option 1:**
 ```bash
-curl -sL https://raw.githubusercontent.com/Smertam/3-xui-telbot/master/setup.sh | sudo bash
-```
-
-**Option 2:**
-```bash
-wget -qO- https://raw.githubusercontent.com/Smertam/3-xui-telbot/master/setup.sh | sudo bash
-```
-
-**Option 3:**
-```bash
-sudo bash -c "$(curl -sL https://raw.githubusercontent.com/Smertam/3-xui-telbot/master/setup.sh)"
+sudo bash -c "$(curl -sL https://raw.githubusercontent.com/Smertam/3-xui-telbot/main/setup.sh)"
 ```
 
 The installer will ask you for:
@@ -97,27 +86,43 @@ The installer will ask you for:
 
 ---
 
+## Quick Commands / دستورات سریع
+
+| Command | Description | توضیح |
+|---------|-------------|-------|
+| `sudo bash setup.sh` | Fresh install | نصب جدید |
+| `sudo bash deploy.sh` | Update & restart | بروزرسانی و ریستارت |
+| `systemctl status nigvpn-bot` | Check status | بررسی وضعیت |
+| `systemctl restart nigvpn-bot` | Restart bot | ریستارت ربات |
+| `systemctl stop nigvpn-bot` | Stop bot | توقف ربات |
+| `systemctl start nigvpn-bot` | Start bot | شروع ربات |
+| `tail -f /root/robot/bot.log` | View live logs | مشاهده لاگ زنده |
+| `nano /root/robot/.env` | Edit config | ویرایش تنظیمات |
+
+---
+
 ## Manual Install / نصب دستی
 
 ```bash
-git clone https://github.com/Smertam/3-xui-telbot.git /root/robot
+git clone -b main https://github.com/Smertam/3-xui-telbot.git /root/robot
 cd /root/robot
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 nano .env  # Fill in your credentials
-nohup ./venv/bin/python run.py > bot.log 2>&1 &
 ```
 
-git clone https://github.com/Smertam/3-xui-telbot.git /root/robot
-cd /root/robot
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-nano .env  # اطلاعات خود را وارد کنید
-nohup ./venv/bin/python run.py > bot.log 2>&1 &
+Then install and start the service:
+
+سرویس را نصب و شروع کنید:
+
+```bash
+cp vpnbot.service /etc/systemd/system/nigvpn-bot.service
+systemctl daemon-reload
+systemctl enable nigvpn-bot
+systemctl start nigvpn-bot
+```
 
 ---
 
@@ -125,20 +130,28 @@ nohup ./venv/bin/python run.py > bot.log 2>&1 &
 
 ```bash
 cd /root/robot
+sudo bash deploy.sh
+```
+
+Or manually:
+
+یا دستی:
+
+```bash
+cd /root/robot
 git pull
 source venv/bin/activate
 pip install -r requirements.txt
-kill -9 $(lsof -ti:5000)
-nohup ./venv/bin/python run.py > bot.log 2>&1 &
+systemctl restart nigvpn-bot
 ```
 
 ---
 
 ## Web Panel / پنل مدیریت
 
-Access at `http://YOUR_IP:5000`
+Access at `http://YOUR_IP:WEB_PORT`
 
-دسترسی از `http://YOUR_IP:5000`
+دسترسی از `http://YOUR_IP:WEB_PORT`
 
 Manage: users, plans, configs, receipts, settings, bot texts, button styles, menu layout.
 
@@ -152,6 +165,7 @@ Manage: users, plans, configs, receipts, settings, bot texts, button styles, men
 - Flask (web admin panel)
 - SQLite (bot_database.db)
 - 3x-ui / Xray panel API
+- systemd (process management)
 
 ---
 
