@@ -746,7 +746,7 @@ async def update_plan(plan_id: int, name: str = None, gb: int = None, days: int 
 
 async def delete_plan(plan_id: int):
     db = await get_db()
-    await db.execute("UPDATE plans SET is_active = 0 WHERE id = ?", (plan_id,))
+    await db.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
     await db.commit()
     await db.close()
 

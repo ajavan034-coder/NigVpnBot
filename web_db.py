@@ -156,7 +156,7 @@ def update_plan(plan_id, name=None, gb=None, days=None, price=None, is_active=No
 
 def delete_plan(plan_id):
     conn = get_conn()
-    conn.execute("UPDATE plans SET is_active = 0 WHERE id = ?", (plan_id,))
+    conn.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
     conn.commit()
     conn.close()
 
