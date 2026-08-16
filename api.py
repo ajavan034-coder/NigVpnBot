@@ -673,6 +673,10 @@ class PanelManager:
             is_default=panel_data.get("is_default", False),
             volume_gb=panel_data.get("volume_gb", 0),
             panel_type=panel_data.get("panel_type", "v2ray"),
+            free_test_enabled=panel_data.get("free_test_enabled", 0),
+            free_test_mb=panel_data.get("free_test_mb", 102400),
+            free_test_days=panel_data.get("free_test_days", 1),
+            free_test_inbound_ids=panel_data.get("free_test_inbound_ids", ""),
         )
         inbound_ids = [int(x.strip()) for x in inbound_ids_str.split(",") if x.strip().isdigit()]
         instance = PanelAPI(

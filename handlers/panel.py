@@ -30,6 +30,10 @@ class PanelState(StatesGroup):
     waiting_panel_plan_ip_limit = State()
     waiting_free_test_mb = State()
     waiting_free_test_days = State()
+    waiting_wizard_ft_enabled = State()
+    waiting_wizard_ft_mb = State()
+    waiting_wizard_ft_days = State()
+    waiting_wizard_ft_inbounds = State()
     waiting_panel_plan_edit = State()
 
 
@@ -706,7 +710,152 @@ async def process_volume(message: Message, state: FSMContext):
         await message.answer("عدد نامعتبر. یک عدد غیرمنفی وارد کنید:")
         return
     await state.update_data(panel_volume_gb=volume)
-    await _finalize_panel_add(message, state)
+    panel_type = (await state.get_data()).get("panel_type", "3xui")
+    if panel_type == "wireguard":
+        await _finalize_panel_add(message, state)
+        return
+    await state.set_state(PanelState.waiting_wizard_ft_enabled)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ فعال", callback_data="adm_wiz_ft_enable_1")],
+        [InlineKeyboardButton(text="❌ غیرفعال", callback_data="adm_wiz_ft_enable_0")],
+    ])
+    await message.answer(
+        "آیا تست رایگان برای این پنل فعال باشد?",
+        reply_markup=kb
+    )
+
+
+@panel_router.callback_query(F.data.startswith("adm_wiz_ft_enable_"))
+async def cb_wiz_ft_enable(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    enabled = int(callback.data.split("_")[-1])
+    await state.update_data(wizard_ft_enabled=enabled)
+    if not enabled:
+        await _finalize_panel_add(callback.message, state)
+        return
+    await state.set_state(PanelState.waiting_wizard_ft_mb)
+    await callback.message.edit_text(
+        "📊 حجم تست رایگان را به مگابایت وارد کنید:\n"
+        "(مثال: 100 = 100 مگابایت)"
+    )
+    await callback.answer()
+
+
+@panel_router.message(PanelState.waiting_wizard_ft_mb)
+async def process_wiz_ft_mb(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        mb = int(message.text.strip())
+        if mb <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("عدد نامعتبر. یک عدد مثبت وارد کنید:")
+        return
+    await state.update_data(wizard_ft_mb=mb)
+    await state.set_state(PanelState.waiting_wizard_ft_days)
+    await message.answer(
+        "📅 مدت تست رایگان را به روز وارد کنید:\n"
+        "(مثال: 1)"
+    )
+
+
+@panel_router.message(PanelState.waiting_wizard_ft_days)
+async def process_wiz_ft_days(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        days = int(message.text.strip())
+        if days <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("عدد نامعتبر. یک عدد مثبت وارد کنید:")
+        return
+    await state.update_data(wizard_ft_days=days)
+    await _show_wizard_ft_inbounds(message, state)
+
+
+async def _show_wizard_ft_inbounds(message, state):
+    data = await state.get_data()
+    panel_url = data.get("panel_url", "")
+    panel_username = data.get("panel_username", "")
+    panel_password = data.get("panel_password", "")
+    inbounds = []
+    try:
+        temp_api = PanelAPI(panel_url=panel_url, panel_user=panel_username, panel_pass=panel_password)
+        inbounds = await temp_api.get_inbounds()
+        await temp_api.close()
+    except Exception:
+        pass
+    if not inbounds:
+        await state.update_data(wizard_ft_inbound_ids="")
+        await _finalize_panel_add(message, state)
+        return
+    await state.update_data(wizard_all_ft_inbounds=inbounds, wizard_ft_selected_inbounds={})
+    lines = ["📥 **اینبوندهای تست رایگان را انتخاب کنید:**\n"]
+    kb_rows = []
+    for ib in inbounds:
+        cb_data = f"adm_wiz_ft_ib_{ib['id']}"
+        kb_rows.append([InlineKeyboardButton(
+            text=f"☐ {ib.get('tag', '?')} ({ib.get('protocol', '?')})",
+            callback_data=cb_data
+        )])
+    kb_rows.append([InlineKeyboardButton(text="✅ تایید", callback_data="adm_wiz_ft_ib_confirm")])
+    kb_rows.append([InlineKeyboardButton(text="⏭️ رد شدن", callback_data="adm_wiz_ft_ib_skip")])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    await state.set_state(PanelState.waiting_wizard_ft_inbounds)
+    await message.answer("\n".join(lines), reply_markup=kb, parse_mode="Markdown")
+
+
+@panel_router.callback_query(F.data.startswith("adm_wiz_ft_ib_"))
+async def cb_wiz_ft_toggle_inbound(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    ib_id = int(callback.data.split("_")[-1])
+    data = await state.get_data()
+    selected = data.get("wizard_ft_selected_inbounds", {})
+    if ib_id in selected:
+        del selected[ib_id]
+    else:
+        selected[ib_id] = True
+    await state.update_data(wizard_ft_selected_inbounds=selected)
+
+    all_inbounds = data.get("wizard_all_ft_inbounds", [])
+    kb_rows = []
+    for ib in all_inbounds:
+        is_sel = ib["id"] in selected
+        check = "☑" if is_sel else "☐"
+        kb_rows.append([InlineKeyboardButton(
+            text=f"{check} {ib.get('tag', '?')} ({ib.get('protocol', '?')})",
+            callback_data=f"adm_wiz_ft_ib_{ib['id']}"
+        )])
+    if selected:
+        kb_rows.append([InlineKeyboardButton(text=f"✅ تایید ({len(selected)} انتخاب شده)", callback_data="adm_wiz_ft_ib_confirm")])
+    else:
+        kb_rows.append([InlineKeyboardButton(text="⚠️ حداقل ۱ اینبوند انتخاب کنید", callback_data="noop")])
+    kb_rows.append([InlineKeyboardButton(text="⏭️ رد شدن", callback_data="adm_wiz_ft_ib_skip")])
+    await callback.message.edit_reply_markup(InlineKeyboardMarkup(inline_keyboard=kb_rows))
+    await callback.answer()
+
+
+@panel_router.callback_query(F.data == "adm_wiz_ft_ib_confirm")
+async def cb_wiz_ft_ib_confirm(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    data = await state.get_data()
+    selected = data.get("wizard_ft_selected_inbounds", {})
+    inbound_ids_str = ",".join(str(x) for x in selected.keys())
+    await state.update_data(wizard_ft_inbound_ids=inbound_ids_str)
+    await _finalize_panel_add(callback.message, state)
+
+
+@panel_router.callback_query(F.data == "adm_wiz_ft_ib_skip")
+async def cb_wiz_ft_ib_skip(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.update_data(wizard_ft_inbound_ids="")
+    await _finalize_panel_add(callback.message, state)
 
 
 async def _finalize_panel_add(message: Message, state: FSMContext):
@@ -723,6 +872,10 @@ async def _finalize_panel_add(message: Message, state: FSMContext):
             "is_default": False,
             "volume_gb": data.get("panel_volume_gb", 0),
             "panel_type": panel_type,
+            "free_test_enabled": data.get("wizard_ft_enabled", 0),
+            "free_test_mb": data.get("wizard_ft_mb", 102400),
+            "free_test_days": data.get("wizard_ft_days", 1),
+            "free_test_inbound_ids": data.get("wizard_ft_inbound_ids", ""),
         })
         # Auto-create plan section for this panel
         import database as db
