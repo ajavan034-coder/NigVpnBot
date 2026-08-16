@@ -801,8 +801,8 @@ async def _show_wizard_ft_inbounds(message, state):
             text=f"☐ {ib.get('tag', '?')} ({ib.get('protocol', '?')})",
             callback_data=cb_data
         )])
-    kb_rows.append([InlineKeyboardButton(text="✅ تایید", callback_data="adm_wiz_ft_ib_confirm")])
-    kb_rows.append([InlineKeyboardButton(text="⏭️ رد شدن", callback_data="adm_wiz_ft_ib_skip")])
+    kb_rows.append([InlineKeyboardButton(text="✅ تایید", callback_data="adm_wiz_ft_ib_done")])
+    kb_rows.append([InlineKeyboardButton(text="⏭️ رد شدن", callback_data="adm_wiz_ft_skip_all")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await state.set_state(PanelState.waiting_wizard_ft_inbounds)
     await message.answer("\n".join(lines), reply_markup=kb, parse_mode="Markdown")
@@ -812,7 +812,11 @@ async def _show_wizard_ft_inbounds(message, state):
 async def cb_wiz_ft_toggle_inbound(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
         return
-    ib_id = int(callback.data.split("_")[-1])
+    parts = callback.data.split("_")
+    try:
+        ib_id = int(parts[-1])
+    except ValueError:
+        return
     data = await state.get_data()
     selected = data.get("wizard_ft_selected_inbounds", {})
     if ib_id in selected:
@@ -831,15 +835,15 @@ async def cb_wiz_ft_toggle_inbound(callback: CallbackQuery, state: FSMContext):
             callback_data=f"adm_wiz_ft_ib_{ib['id']}"
         )])
     if selected:
-        kb_rows.append([InlineKeyboardButton(text=f"✅ تایید ({len(selected)} انتخاب شده)", callback_data="adm_wiz_ft_ib_confirm")])
+        kb_rows.append([InlineKeyboardButton(text=f"✅ تایید ({len(selected)} انتخاب شده)", callback_data="adm_wiz_ft_ib_done")])
     else:
         kb_rows.append([InlineKeyboardButton(text="⚠️ حداقل ۱ اینبوند انتخاب کنید", callback_data="noop")])
-    kb_rows.append([InlineKeyboardButton(text="⏭️ رد شدن", callback_data="adm_wiz_ft_ib_skip")])
+    kb_rows.append([InlineKeyboardButton(text="⏭️ رد شدن", callback_data="adm_wiz_ft_skip_all")])
     await callback.message.edit_reply_markup(InlineKeyboardMarkup(inline_keyboard=kb_rows))
     await callback.answer()
 
 
-@panel_router.callback_query(F.data == "adm_wiz_ft_ib_confirm")
+@panel_router.callback_query(F.data == "adm_wiz_ft_ib_done")
 async def cb_wiz_ft_ib_confirm(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
         return
@@ -850,7 +854,7 @@ async def cb_wiz_ft_ib_confirm(callback: CallbackQuery, state: FSMContext):
     await _finalize_panel_add(callback.message, state)
 
 
-@panel_router.callback_query(F.data == "adm_wiz_ft_ib_skip")
+@panel_router.callback_query(F.data == "adm_wiz_ft_skip_all")
 async def cb_wiz_ft_ib_skip(callback: CallbackQuery, state: FSMContext):
     if not await is_admin(callback.from_user.id):
         return
