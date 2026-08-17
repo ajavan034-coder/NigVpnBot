@@ -28,6 +28,10 @@ async def admin_menu() -> InlineKeyboardMarkup:
             await _btn("📱 ویرایش منو", "adm_menu_editor", "gear", btn_id="admin_menu_editor"),
             await _btn("🏷️ تخفیف‌ها", "adm_discounts", "link", btn_id="admin_discounts"),
         ],
+        [
+            await _btn("🎁 کدهای هدیه", "adm_gift_codes", "package", btn_id="admin_gift_codes"),
+            await _btn("📖 راهنماها", "adm_guides", "link", btn_id="admin_guides"),
+        ],
         [await _btn("⛔ لیست سیاه", "adm_blacklist", "ban", btn_id="admin_blacklist")],
     ])
 
@@ -289,6 +293,12 @@ async def settings_menu() -> InlineKeyboardMarkup:
             await _btn("🤝 همکاری", "adm_edit_collab", "link"),
             await _btn(f"{shop_icon} فروشگاه", "adm_toggle_shop", "gear"),
         ],
+        [
+            await _btn("💰 کش‌بک", "adm_edit_cashback", "money"),
+        ],
+        [
+            await _btn("📱 تایید شماره", "adm_toggle_phone_verification", "gear"),
+        ],
         [InlineKeyboardButton(text=f"─── 💳 مالی ───", callback_data="noop")],
         [
             await _btn("💳 اطلاعات پرداخت", "adm_edit_payment", "card"),
@@ -324,6 +334,7 @@ async def buttons_editor_menu() -> InlineKeyboardMarkup:
         [await _btn("🛒 خرید کانفیگ", "adm_edit_btn_buy_config", "package")],
         [await _btn("📋 سرویس‌ها", "adm_edit_btn_my_configs", "list")],
         [await _btn("🤝 درخواست همکاری", "adm_edit_btn_collab", "link")],
+        [await _btn("💬 پشتیبانی", "adm_edit_btn_support", "owner")],
         [await _btn("💰 شارژ کیف پول", "adm_edit_btn_topup", "money")],
         [await _btn("📊 تاریخچه", "adm_edit_btn_tx_history", "history")],
         [await _btn("⬅️ بازگشت", "adm_edit_btn_back", "back")],
@@ -399,9 +410,16 @@ async def bot_texts_menu() -> InlineKeyboardMarkup:
 
 # ─── Section 8: Control Panel ────────────────────────────────
 async def control_panel_menu() -> InlineKeyboardMarkup:
+    from database import get_setting
+    mode = await get_setting("operating_mode") or "NORMAL"
+    mode_labels = {"NORMAL": "🟢 عادی", "SALES_PAUSED": "🟡 فروش متوقف", "MAINTENANCE": "🔴 تعمیرات"}
+    mode_text = mode_labels.get(mode, mode)
     return InlineKeyboardMarkup(inline_keyboard=[
+        [await _btn(f"⚡ حالت: {mode_text}", "adm_toggle_mode", "gear")],
         [await _btn("🧪 تست اتصال پنل", "adm_test_connection_ctrl", "check", "success")],
+        [await _btn("🔍 بررسی دستی سرویس‌ها", "cb_force_check_services", "check", "primary")],
         [await _btn("🔄 ری‌استارت ربات", "adm_restart_bot", "gear", "danger")],
+        [await _btn("🖥️ وضعیت سرور", "adm_server_status", "gear")],
         [await _btn("💾 ایجاد بکاپ", "adm_create_backup", "gear", "primary")],
         [await _btn("📥 بکاپ‌های موجود", "adm_backups_list", "list")],
         [await _btn("🔙 بازگشت", "adm_menu", btn_id="back")],
@@ -525,6 +543,51 @@ async def blacklist_keyboard(users: list) -> InlineKeyboardMarkup:
             callback_data=f"adm_blacklist_detail_{uid}",
         )])
     buttons.append([await _btn("➕ مسدود کردن کاربر", "adm_blacklist_add", "plus", "danger")])
+    buttons.append([await _btn("🔙 بازگشت", "adm_menu", btn_id="back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+# ─── Gift Codes Management ───────────────────────────────────
+async def gift_codes_menu(codes: list = None) -> InlineKeyboardMarkup:
+    buttons = []
+    buttons.append([await _btn("➕ ایجاد کد جدید", "adm_add_gift_code", "plus", btn_id="add_gift_code")])
+    if codes:
+        for c in codes[:10]:
+            status = "🟢" if c.get("active") else "🔴"
+            btn_text = f"{status} {c['code']} — {c['amount']:,.0f} ({c['uses']}/{c['max_uses'] or '∞'})"
+            buttons.append([await _btn(btn_text, f"adm_gift_detail_{c['id']}", "link", btn_id="gift_item")])
+    buttons.append([await _btn("🔙 بازگشت", "adm_menu", btn_id="back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def gift_code_detail_menu(code_id: int, is_active: bool = True) -> InlineKeyboardMarkup:
+    toggle_text = "🔴 غیرفعال کردن" if is_active else "🟢 فعال کردن"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [await _btn("🗑️ حذف کد", f"adm_delete_gift_code_{code_id}", "delete", btn_id="delete_gift_code", style="danger")],
+        [await _btn("🔙 بازگشت", "adm_gift_codes", btn_id="back")],
+    ])
+
+
+# ─── Guides Management ───────────────────────────────────────
+async def guides_menu() -> InlineKeyboardMarkup:
+    buttons = []
+    buttons.append([await _btn("➕ افزودن راهنما", "adm_add_guide", "plus", btn_id="add_guide")])
+    buttons.append([await _btn("🔙 بازگشت", "adm_menu", btn_id="back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def guide_platforms_menu() -> InlineKeyboardMarkup:
+    platforms = [
+        ("Android", "android"),
+        ("iOS", "ios"),
+        ("Windows", "windows"),
+        ("macOS", "macos"),
+        ("Linux", "linux"),
+        ("Android TV", "android_tv"),
+    ]
+    buttons = []
+    for label, slug in platforms:
+        buttons.append([await _btn(label, f"adm_guide_platform_{slug}", "link", btn_id="guide_platform")])
     buttons.append([await _btn("🔙 بازگشت", "adm_menu", btn_id="back")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

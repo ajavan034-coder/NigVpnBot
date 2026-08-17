@@ -102,9 +102,9 @@ async def main_menu(user_id: int = 0) -> InlineKeyboardMarkup:
             return await _url_btn("channel", url, "link", "primary")
         elif bid == "support":
             url = await get_setting("support_url") or ""
-            if not url:
-                return None
-            return await _url_btn("support", url, "owner", "")
+            if url:
+                return await _url_btn("support", url, "owner", "")
+            return await _btn(await get_setting("btn_support") or "💬 پشتیبانی", "support", "owner", "", "support")
         elif bid == "admin":
             return await _btn(await get_setting("btn_admin_settings") or "Admin", "adm_menu", "settings", "", "admin_settings")
         elif bid == "invite":
@@ -124,6 +124,10 @@ async def main_menu(user_id: int = 0) -> InlineKeyboardMarkup:
         elif bid == "webapp":
             url = "https://nigcity.ir/app"
             return InlineKeyboardButton(text="🌐 Open Panel", web_app=WebAppInfo(url=url))
+        elif bid == "redeem_gift":
+            return await _btn(await get_setting("btn_redeem_gift") or "🎁 کد هدیه", "redeem_gift", "package", "primary", "redeem_gift")
+        elif bid == "guides":
+            return await _btn(await get_setting("btn_guides") or "📖 راهنمای اتصال", "guides", "link", "", "guides")
         return None
 
     current_row = []
@@ -276,6 +280,7 @@ async def service_detail_keyboard(config_id: int) -> InlineKeyboardMarkup:
                 await _btn("خرید حجم", f"buy_extra_{config_id}", btn_id="service_buy_extra"),
             ],
             [
+                await _btn("📱 کد QR", f"qr_{config_id}", "link"),
                 await _btn("کانفیگ‌ها", f"extract_configs_{config_id}", btn_id="service_extract"),
             ],
             [await _btn("بازگشت", "my_configs", btn_id="back")],
@@ -423,6 +428,9 @@ BUTTON_CONFIGS = {
     "service_confirm_regenerate": {"label": "Confirm", "default_style": "success", "default_emoji": "approve"},
     "service_extract": {"label": "Extract Configs", "default_style": "", "default_emoji": "link"},
     "view_user_details": {"label": "View User Details", "default_style": "", "default_emoji": "owner"},
+    "redeem_gift": {"label": "Gift Code", "default_style": "primary", "default_emoji": "package"},
+    "guides": {"label": "Connection Guides", "default_style": "", "default_emoji": "link"},
+    "support": {"label": "Support", "default_style": "", "default_emoji": "owner"},
 }
 
 
@@ -503,3 +511,26 @@ async def view_user_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👤 مشاهده پروفایل کاربر", url=f"https://t.me/NigVpnBot?start=view_user_{user_id}")],
     ])
+
+
+async def guides_platforms_keyboard() -> InlineKeyboardMarkup:
+    platforms = [
+        ("Android", "android"),
+        ("iOS", "ios"),
+        ("Windows", "windows"),
+        ("macOS", "macos"),
+        ("Linux", "linux"),
+        ("Android TV", "android_tv"),
+    ]
+    buttons = []
+    row = []
+    for label, slug in platforms:
+        btn = await _btn(label, f"guide_platform_{slug}", "link", btn_id="guide_platform")
+        row.append(btn)
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([await _btn("🏠 بازگشت", "main_menu", "back", btn_id="back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

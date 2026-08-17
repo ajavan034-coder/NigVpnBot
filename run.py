@@ -77,10 +77,13 @@ async def run_bot():
     logger.info("Bot starting polling...")
     from scheduler import scheduler_loop
     sched_task = asyncio.create_task(scheduler_loop(bot))
+    from utils.service_monitor import monitor_loop
+    monitor_task = asyncio.create_task(monitor_loop())
     try:
         await dp.start_polling(bot)
     finally:
         sched_task.cancel()
+        monitor_task.cancel()
         await panel_manager.close_all()
         await panel_api.close()
         await bot.session.close()

@@ -235,12 +235,107 @@ async def init_db():
         """)
     except Exception:
         pass
+
+    # ── New tables from SpeedyBot features ──────────────────────
+    try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS wallet_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                balance_after REAL NOT NULL,
+                type TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                unique_key TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    except Exception:
+        pass
+
+    try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS guide_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                platform TEXT NOT NULL,
+                media_type TEXT DEFAULT 'TEXT',
+                body TEXT DEFAULT '',
+                file_id TEXT DEFAULT '',
+                active INTEGER DEFAULT 1,
+                sort_order INTEGER DEFAULT 0
+            )
+        """)
+    except Exception:
+        pass
+
+    try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS service_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                service_email TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(service_email, event_type)
+            )
+        """)
+    except Exception:
+        pass
+
+    try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS gift_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                amount REAL NOT NULL,
+                max_uses INTEGER DEFAULT 1,
+                uses INTEGER DEFAULT 0,
+                expires_at TIMESTAMP,
+                active INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    except Exception:
+        pass
+
+    try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS gift_redemptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    except Exception:
+        pass
+
+    try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS support_messages (
+                admin_msg_id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    except Exception:
+        pass
+
     try:
         await db.execute("ALTER TABLE users ADD COLUMN is_collaborator INTEGER DEFAULT 0")
     except Exception:
         pass
     try:
         await db.execute("ALTER TABLE plans ADD COLUMN collaborator_price INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE users ADD COLUMN phone_verified_at TIMESTAMP")
     except Exception:
         pass
     await db.commit()
@@ -309,6 +404,17 @@ async def init_db():
         "backup_minute": "0",
         "shop_open": "1",
         "shop_close_message": "فروش به دلیل بروزرسانی موقتاً بسته شده است.",
+        "operating_mode": "NORMAL",
+        "phone_verification_enabled": "0",
+        "cashback_percent": "0",
+        "service_monitor_enabled": "0",
+        "service_monitor_interval": "300",
+        "volume_warning_percent": "80",
+        "expiry_warning_hours": "48",
+        "maintenance_message": "🔧 ربات در حال بروزرسانی است. لطفاً بعداً تلاش کنید.",
+        "sales_paused_message": "⛔ فروش موقتاً متوقف شده است.",
+        "btn_redeem_gift": "🎁 کد هدیه",
+        "btn_guides": "📖 راهنمای اتصال",
     }
     for key, value in defaults.items():
         existing = await db.execute("SELECT key FROM settings WHERE key = ?", (key,))
@@ -1103,3 +1209,238 @@ async def get_blacklisted_users() -> list:
     rows = await cursor.fetchall()
     await db.close()
     return [dict(r) for r in rows]
+
+
+# ==================== Wallet Transaction Ledger ====================
+
+async def wallet_credit(user_id: int, amount: float, tx_type: str, description: str = "", unique_key: str = None) -> bool:
+    """Credit wallet with idempotent unique_key. Returns True if applied."""
+    db = await get_db()
+    if unique_key:
+        existing = await db.execute("SELECT 1 FROM wallet_transactions WHERE unique_key = ?", (unique_key,))
+        if await existing.fetchone():
+            await db.close()
+            return False
+    await db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (amount, user_id))
+    cursor = await db.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
+    row = await cursor.fetchone()
+    balance_after = row["balance"] if row else 0
+    await db.execute(
+        "INSERT INTO wallet_transactions (user_id, amount, balance_after, type, description, unique_key) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, amount, balance_after, tx_type, description, unique_key),
+    )
+    await db.commit()
+    await db.close()
+    return True
+
+
+async def wallet_debit(user_id: int, amount: float, tx_type: str, description: str = "", unique_key: str = None) -> bool:
+    """Debit wallet. Returns True if applied, False if insufficient balance or duplicate."""
+    db = await get_db()
+    if unique_key:
+        existing = await db.execute("SELECT 1 FROM wallet_transactions WHERE unique_key = ?", (unique_key,))
+        if await existing.fetchone():
+            await db.close()
+            return False
+    cursor = await db.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
+    row = await cursor.fetchone()
+    if not row or row["balance"] < amount:
+        await db.close()
+        return False
+    await db.execute("UPDATE users SET balance = balance - ? WHERE id = ?", (amount, user_id))
+    cursor = await db.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
+    row = await cursor.fetchone()
+    balance_after = row["balance"] if row else 0
+    await db.execute(
+        "INSERT INTO wallet_transactions (user_id, amount, balance_after, type, description, unique_key) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, -amount, balance_after, tx_type, description, unique_key),
+    )
+    await db.commit()
+    await db.close()
+    return True
+
+
+async def get_wallet_history(user_id: int, limit: int = 20) -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT * FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+        (user_id, limit),
+    )
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+# ==================== Service Notifications ====================
+
+async def has_service_notification(service_email: str, event_type: str) -> bool:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT 1 FROM service_notifications WHERE service_email = ? AND event_type = ?",
+        (service_email, event_type),
+    )
+    result = await cursor.fetchone()
+    await db.close()
+    return result is not None
+
+
+async def add_service_notification(service_email: str, user_id: int, event_type: str) -> bool:
+    """Returns True if inserted (not duplicate)."""
+    db = await get_db()
+    try:
+        await db.execute(
+            "INSERT INTO service_notifications (service_email, user_id, event_type) VALUES (?, ?, ?)",
+            (service_email, user_id, event_type),
+        )
+        await db.commit()
+        await db.close()
+        return True
+    except Exception:
+        await db.close()
+        return False
+
+
+# ==================== Guide Items ====================
+
+async def add_guide_item(platform: str, media_type: str = "TEXT", body: str = "", file_id: str = "") -> int:
+    db = await get_db()
+    cursor = await db.execute(
+        "INSERT INTO guide_items (platform, media_type, body, file_id) VALUES (?, ?, ?, ?)",
+        (platform, media_type, body, file_id),
+    )
+    item_id = cursor.lastrowid
+    await db.commit()
+    await db.close()
+    return item_id
+
+
+async def get_guides_by_platform(platform: str) -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT * FROM guide_items WHERE platform = ? AND active = 1 ORDER BY sort_order, id",
+        (platform,),
+    )
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def get_all_guides() -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM guide_items ORDER BY platform, sort_order, id")
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def delete_guide_item(guide_id: int):
+    db = await get_db()
+    await db.execute("DELETE FROM guide_items WHERE id = ?", (guide_id,))
+    await db.commit()
+    await db.close()
+
+
+async def toggle_guide_item(guide_id: int):
+    db = await get_db()
+    await db.execute("UPDATE guide_items SET active = NOT active WHERE id = ?", (guide_id,))
+    await db.commit()
+    await db.close()
+
+
+# ==================== Gift Codes ====================
+
+async def add_gift_code(code: str, amount: float, max_uses: int = 1, expires_at: str = None) -> int:
+    db = await get_db()
+    cursor = await db.execute(
+        "INSERT INTO gift_codes (code, amount, max_uses, expires_at) VALUES (?, ?, ?, ?)",
+        (code.upper(), amount, max_uses, expires_at),
+    )
+    row_id = cursor.lastrowid
+    await db.commit()
+    await db.close()
+    return row_id
+
+
+async def get_gift_code(code: str) -> dict | None:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM gift_codes WHERE code = ?", (code.upper(),))
+    row = await cursor.fetchone()
+    await db.close()
+    return dict(row) if row else None
+
+
+async def get_gift_code_by_id(code_id: int) -> dict | None:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM gift_codes WHERE id = ?", (code_id,))
+    row = await cursor.fetchone()
+    await db.close()
+    return dict(row) if row else None
+
+
+async def redeem_gift_code(code: str, user_id: int) -> float:
+    """Try to redeem a gift code. Returns amount if success, 0 if failed."""
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM gift_codes WHERE code = ? AND active = 1", (code.upper(),))
+    row = await cursor.fetchone()
+    if not row:
+        await db.close()
+        return 0
+    gift = dict(row)
+    if gift["expires_at"]:
+        from datetime import datetime
+        if datetime.fromisoformat(gift["expires_at"]) < datetime.utcnow():
+            await db.close()
+            return 0
+    if gift["uses"] >= gift["max_uses"]:
+        await db.close()
+        return 0
+    await db.execute("UPDATE gift_codes SET uses = uses + 1 WHERE code = ?", (code.upper(),))
+    await db.execute(
+        "INSERT INTO gift_redemptions (code, user_id, amount) VALUES (?, ?, ?)",
+        (code.upper(), user_id, gift["amount"]),
+    )
+    await db.commit()
+    await db.close()
+    return gift["amount"]
+
+
+async def get_all_gift_codes() -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM gift_codes ORDER BY created_at DESC")
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def delete_gift_code(code_id: int):
+    db = await get_db()
+    await db.execute("DELETE FROM gift_codes WHERE id = ?", (code_id,))
+    await db.commit()
+    await db.close()
+
+
+async def toggle_gift_code(code_id: int):
+    db = await get_db()
+    await db.execute("UPDATE gift_codes SET active = NOT active WHERE id = ?", (code_id,))
+    await db.commit()
+    await db.close()
+
+
+# ==================== Support Messages ====================
+
+async def store_support_message(admin_msg_id: int, user_id: int):
+    db = await get_db()
+    await db.execute(
+        "INSERT OR REPLACE INTO support_messages (admin_msg_id, user_id) VALUES (?, ?)",
+        (admin_msg_id, user_id),
+    )
+    await db.commit()
+    await db.close()
+
+
+async def get_support_user(admin_msg_id: int) -> int | None:
+    db = await get_db()
+    cursor = await db.execute("SELECT user_id FROM support_messages WHERE admin_msg_id = ?", (admin_msg_id,))
+    row = await cursor.fetchone()
+    await db.close()
+    return row["user_id"] if row else None

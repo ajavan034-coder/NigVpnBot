@@ -22,6 +22,9 @@ from database import (
     add_collab_request, get_collab_request, get_pending_collab_requests,
     update_collab_request, set_user_collaborator,
     is_blacklisted, add_to_blacklist, remove_from_blacklist, get_blacklisted_users,
+    get_all_gift_codes, get_gift_code_by_id, add_gift_code, delete_gift_code, toggle_gift_code,
+    get_all_guides, delete_guide_item, add_guide_item,
+    get_support_user,
 )
 from api import panel_api
 from keyboards.admin import (
@@ -38,6 +41,7 @@ from keyboards.admin import (
     broadcast_menu, broadcast_destination_keyboard, broadcast_button_keyboard, broadcast_pin_keyboard, menu_editor_menu, confirm_action,
     discount_codes_menu, discount_code_detail_menu,
     trial_management_menu, blacklist_keyboard,
+    gift_codes_menu, gift_code_detail_menu, guides_menu, guide_platforms_menu,
 )
 from keyboards.user import _btn
 
@@ -102,6 +106,13 @@ class AdminState(StatesGroup):
     edit_shop_message = State()
     blacklist_add_id = State()
     blacklist_add_reason = State()
+    gift_code_code = State()
+    gift_code_amount = State()
+    gift_code_max_uses = State()
+    guide_platform = State()
+    guide_body = State()
+    guide_media = State()
+    edit_cashback_percent = State()
 
 
 # ─── Entry Point ─────────────────────────────────────────────
@@ -1850,6 +1861,7 @@ BUTTON_SETTINGS = {
     "adm_edit_btn_tx_history": "btn_tx_history",
     "adm_edit_btn_back": "btn_back",
     "adm_edit_btn_back_to_menu": "btn_back_to_menu",
+    "adm_edit_btn_support": "btn_support",
 }
 
 
@@ -2271,6 +2283,51 @@ async def process_edit_currency(message: Message, state: FSMContext):
     await message.answer("✅ نماد ارز به‌روزرسانی شد!", reply_markup=await settings_menu())
 
 
+@router.callback_query(F.data == "adm_edit_cashback")
+async def cb_edit_cashback(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("cashback_percent") or "0"
+    await state.set_state(AdminState.edit_cashback_percent)
+    await callback.message.edit_text(
+        f"💰 <b>درصد کش‌بک</b>\n\n"
+        f"فعلی: <b>{current}%</b>\n\n"
+        f"درصد کش‌بک را وارد کنید (۰ = غیرفعال):",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_cashback_percent)
+async def process_cashback_percent(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        pct = float(message.text.strip())
+        if pct < 0 or pct > 100:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ عدد نامعتبر. درصدی بین ۰ تا ۱۰۰ وارد کنید:")
+        return
+    await set_setting("cashback_percent", str(pct))
+    await state.clear()
+    if pct > 0:
+        await message.answer(f"✅ درصد کش‌بک: <b>{pct}%</b>", parse_mode="HTML", reply_markup=await settings_menu())
+    else:
+        await message.answer("✅ کش‌بک غیرفعال شد.", reply_markup=await settings_menu())
+
+
+@router.callback_query(F.data == "adm_toggle_phone_verification")
+async def cb_toggle_phone_verification(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("phone_verification_enabled") or "0"
+    new_val = "0" if current == "1" else "1"
+    await set_setting("phone_verification_enabled", new_val)
+    status = "فعال شد ✅" if new_val == "1" else "غیرفعال شد ❌"
+    await callback.answer(f"تایید شماره تلفن {status}", show_alert=True)
+    await callback.message.edit_text("⚙️ <b>تنظیمات ربات</b>", parse_mode="HTML", reply_markup=await settings_menu())
+
+
 @router.callback_query(F.data == "adm_toggle_expiry_reminder")
 async def cb_toggle_expiry_reminder(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
@@ -2508,6 +2565,43 @@ async def cb_control(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
         return
     await callback.message.edit_text("🎛️ <b>کنترل‌پنل</b>", parse_mode="HTML", reply_markup=await control_panel_menu())
+
+
+@router.callback_query(F.data == "cb_force_check_services")
+async def cb_force_check_services(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.answer("🔍 در حال بررسی سرویس‌ها...", show_alert=True)
+    from utils.service_monitor import check_services
+    await check_services()
+    await callback.message.edit_text("✅ <b>بررسی سرویس‌ها انجام شد.</b>", parse_mode="HTML", reply_markup=await control_panel_menu())
+
+
+@router.callback_query(F.data == "adm_server_status")
+async def cb_server_status(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    from utils.server_status import get_server_status, format_server_status
+    status = get_server_status()
+    text = format_server_status(status)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await control_panel_menu())
+
+
+@router.callback_query(F.data == "adm_toggle_mode")
+async def cb_toggle_mode(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("operating_mode") or "NORMAL"
+    cycle = {"NORMAL": "SALES_PAUSED", "SALES_PAUSED": "MAINTENANCE", "MAINTENANCE": "NORMAL"}
+    new_mode = cycle.get(current, "NORMAL")
+    await set_setting("operating_mode", new_mode)
+    mode_labels = {"NORMAL": "🟢 عادی", "SALES_PAUSED": "🟡 فروش متوقف", "MAINTENANCE": "🔴 تعمیرات"}
+    await callback.answer(f"حالت: {mode_labels.get(new_mode, new_mode)}", show_alert=True)
+    from keyboards.admin import control_panel_menu
+    await callback.message.edit_text(
+        f"🎛️ <b>کنترل‌پنل</b>\n\nوضعیت فعلی: <b>{mode_labels.get(new_mode, new_mode)}</b>",
+        parse_mode="HTML", reply_markup=await control_panel_menu(),
+    )
 
 
 @router.callback_query(F.data == "adm_test_connection_ctrl")
@@ -3186,6 +3280,366 @@ async def process_blacklist_add_reason(message: Message, state: FSMContext):
         f"✅ کاربر <code>{user_id}</code> مسدود شد.",
         parse_mode="HTML", reply_markup=await back_to_admin()
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION: Gift Codes Management
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_gift_codes")
+async def cb_gift_codes(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    if not await is_admin(callback.from_user.id):
+        return
+    codes = await get_all_gift_codes()
+    if not codes:
+        text = "🎁 <b>کدهای هدیه</b>\n\nهنوز کد هدیه‌ای ایجاد نشده است."
+    else:
+        text = f"🎁 <b>کدهای هدیه</b> ({len(codes)})\n\nلیست کدهای هدیه شما:"
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await gift_codes_menu(codes))
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=await gift_codes_menu(codes))
+
+
+@router.callback_query(F.data == "adm_add_gift_code")
+async def cb_add_gift_code_start(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.gift_code_code)
+    await callback.message.edit_text(
+        "🎁 <b>ایجاد کد هدیه جدید</b>\n\nکد هدیه را وارد کنید (مثال: GIFT100):",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.gift_code_code)
+async def process_gift_code_code(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    code = (message.text or "").strip().upper()
+    if not code or len(code) < 3:
+        await message.answer("کد نامعتبر است. حداقل ۳ کاراکتر وارد کنید:")
+        return
+    await state.update_data(gift_code=code)
+    symbol = await get_setting("currency_symbol") or "تومان"
+    await state.set_state(AdminState.gift_code_amount)
+    await message.answer(f"💰 مبلغ هدیه را به {symbol} وارد کنید:")
+
+
+@router.message(AdminState.gift_code_amount)
+async def process_gift_code_amount(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        amount = float(message.text.strip())
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ عدد نامعتبر. یک عدد مثبت وارد کنید:")
+        return
+    await state.update_data(gift_amount=amount)
+    await state.set_state(AdminState.gift_code_max_uses)
+    await message.answer("حداکثر تعداد استفاده را وارد کنید (۰ = نامحدود):")
+
+
+@router.message(AdminState.gift_code_max_uses)
+async def process_gift_code_max_uses(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        max_uses = int(message.text.strip())
+        if max_uses < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("لطفاً یک عدد صحیح وارد کنید:")
+        return
+
+    data = await state.get_data()
+    code = data["gift_code"]
+    amount = data["gift_amount"]
+
+    await add_gift_code(code, amount, max_uses)
+    await state.clear()
+
+    symbol = await get_setting("currency_symbol") or "تومان"
+    max_label = str(max_uses) if max_uses > 0 else "نامحدود"
+    text = (
+        f"✅ <b>کد هدیه ایجاد شد!</b>\n\n"
+        f"  🎁 کد: <code>{code}</code>\n"
+        f"  💰 مبلغ: {amount:,.0f} {symbol}\n"
+        f"  🔢 حداکثر استفاده: {max_label}"
+    )
+    try:
+        await message.answer(text, parse_mode="HTML", reply_markup=await back_to_admin())
+    except Exception:
+        await message.answer(text, parse_mode="HTML", reply_markup=await back_to_admin())
+
+
+@router.callback_query(F.data.startswith("adm_gift_detail_"))
+async def cb_gift_detail(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    if not await is_admin(callback.from_user.id):
+        return
+    code_id = int(callback.data.split("_")[-1])
+    code = await get_gift_code_by_id(code_id)
+    if not code:
+        await callback.answer("کد یافت نشد!", show_alert=True)
+        return
+    symbol = await get_setting("currency_symbol") or "تومان"
+    status = "🟢 فعال" if code["active"] else "🔴 غیرفعال"
+    max_label = str(code["max_uses"]) if code["max_uses"] > 0 else "نامحدود"
+    text = (
+        f"🎁 <b>جزئیات کد هدیه</b>\n\n"
+        f"  🎁 کد: <code>{code['code']}</code>\n"
+        f"  📌 وضعیت: {status}\n"
+        f"  💰 مبلغ: {code['amount']:,.0f} {symbol}\n"
+        f"  🔢 استفاده شده: {code['uses']}/{max_label}"
+    )
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await gift_code_detail_menu(code_id, code["active"]))
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=await gift_code_detail_menu(code_id, code["active"]))
+
+
+@router.callback_query(F.data.startswith("adm_delete_gift_code_"))
+async def cb_delete_gift_code(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    code_id = int(callback.data.split("_")[-1])
+    await delete_gift_code(code_id)
+    await callback.answer("کد حذف شد!", show_alert=True)
+    codes = await get_all_gift_codes()
+    text = "🎁 <b>کدهای هدیه</b>\n\nکد با موفقیت حذف شد."
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await gift_codes_menu(codes))
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=await gift_codes_menu(codes))
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION: Guides Management
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_guides")
+async def cb_guides(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text(
+        "📖 <b>مدیریت راهنماها</b>\n\nپلتفرم مورد نظر را انتخاب کنید:",
+        parse_mode="HTML", reply_markup=await guide_platforms_menu()
+    )
+
+
+@router.callback_query(F.data.startswith("adm_guide_platform_"))
+async def cb_guide_platform_list(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    platform = callback.data.replace("adm_guide_platform_", "")
+    guides = await get_all_guides()
+    platform_guides = [g for g in guides if g["platform"] == platform]
+
+    buttons = []
+    for g in platform_guides[:10]:
+        status = "🟢" if g["active"] else "🔴"
+        label = g["body"][:40] if g["body"] else f"{g['media_type']} #{g['id']}"
+        buttons.append([InlineKeyboardButton(
+            text=f"{status} #{g['id']} — {label}",
+            callback_data=f"adm_guide_item_{g['id']}",
+        )])
+    buttons.append([await _btn("➕ افزودن راهنما", f"adm_add_guide_{platform}", "plus", btn_id="add_guide")])
+    buttons.append([await _btn("🔙 بازگشت", "adm_guides", btn_id="back")])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    text = f"📖 <b>راهنهای {platform}</b> ({len(platform_guides)})"
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("adm_add_guide_"))
+async def cb_add_guide_start(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    platform = callback.data.replace("adm_add_guide_", "")
+    await state.update_data(guide_platform=platform)
+    await state.set_state(AdminState.guide_body)
+    await callback.message.edit_text(
+        f"📖 <b>افزودن راهنما برای {platform}</b>\n\n"
+        f"متن راهنما را ارسال کنید (یا برای ارسال فایل، بنویسید <code>فایل</code>):",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.guide_body)
+async def process_guide_body(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    platform = data["guide_platform"]
+
+    if message.text and message.text.strip() == "فایل":
+        await state.set_state(AdminState.guide_media)
+        await message.answer(
+            "📎 فایل (عکس، ویدیو، یا سند) را ارسال کنید:",
+            reply_markup=await back_to_admin()
+        )
+        return
+
+    body = message.html_text if message.html_text else (message.text or "")
+    if not body.strip():
+        await message.answer("متن نمی‌تواند خالی باشد:")
+        return
+
+    if message.photo:
+        file_id = message.photo[-1].file_id
+        media_type = "PHOTO"
+    elif message.video:
+        file_id = message.video.file_id
+        media_type = "VIDEO"
+    elif message.document:
+        file_id = message.document.file_id
+        media_type = "DOCUMENT"
+    else:
+        file_id = ""
+        media_type = "TEXT"
+
+    await add_guide_item(platform, media_type, body, file_id)
+    await state.clear()
+    await message.answer(
+        f"✅ راهنما برای {platform} اضافه شد!",
+        reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.guide_media)
+async def process_guide_media(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    platform = data["guide_platform"]
+
+    if message.photo:
+        file_id = message.photo[-1].file_id
+        media_type = "PHOTO"
+    elif message.video:
+        file_id = message.video.file_id
+        media_type = "VIDEO"
+    elif message.document:
+        file_id = message.document.file_id
+        media_type = "DOCUMENT"
+    else:
+        await message.answer("لطفاً یک فایل (عکس، ویدیو، یا سند) ارسال کنید:")
+        return
+
+    body = message.caption or ""
+    await add_guide_item(platform, media_type, body, file_id)
+    await state.clear()
+    await message.answer(
+        f"✅ راهنما برای {platform} اضافه شد!",
+        reply_markup=await back_to_admin()
+    )
+
+
+@router.callback_query(F.data.startswith("adm_guide_item_"))
+async def cb_guide_item_detail(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    guide_id = int(callback.data.split("_")[-1])
+    from database import get_db
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM guide_items WHERE id = ?", (guide_id,))
+    row = await cursor.fetchone()
+    await db.close()
+    if not row:
+        await callback.answer("راهنما یافت نشد!", show_alert=True)
+        return
+    guide = dict(row)
+    status = "🟢 فعال" if guide["active"] else "🔴 غیرفعال"
+    body_preview = (guide.get("body") or "")[:100]
+    text = (
+        f"📖 <b>راهنما #{guide['id']}</b>\n\n"
+        f"  📌 وضعیت: {status}\n"
+        f"  📱 پلتفرم: {guide['platform']}\n"
+        f"  📎 نوع: {guide['media_type']}\n"
+        f"  💬 متن: {body_preview or '(خالی)'}"
+    )
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑️ حذف", callback_data=f"adm_delete_guide_{guide_id}")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"adm_guide_platform_{guide['platform']}")],
+    ])
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("adm_delete_guide_"))
+async def cb_delete_guide(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    guide_id = int(callback.data.split("_")[-1])
+    from database import get_db
+    db = await get_db()
+    cursor = await db.execute("SELECT platform FROM guide_items WHERE id = ?", (guide_id,))
+    row = await cursor.fetchone()
+    await db.close()
+    platform = dict(row)["platform"] if row else "android"
+    await delete_guide_item(guide_id)
+    await callback.answer("راهنما حذف شد!", show_alert=True)
+    await callback.message.edit_text(
+        f"📖 <b>مدیریت راهنماها</b>",
+        parse_mode="HTML", reply_markup=await guide_platforms_menu()
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION: Support Message Reply (Admin)
+# ═══════════════════════════════════════════════════════════════
+@router.message(F.reply_to_message)
+async def handle_admin_support_reply(message: Message):
+    if not await is_admin(message.from_user.id):
+        return
+    if not message.reply_to_message:
+        return
+
+    user_id = await get_support_user(message.reply_to_message.message_id)
+    if not user_id:
+        return
+
+    try:
+        if message.text:
+            await message.bot.send_message(
+                chat_id=user_id,
+                text=f"💬 <b>پاسخ پشتیبانی:</b>\n\n{message.text}",
+                parse_mode="HTML",
+            )
+        elif message.photo:
+            await message.bot.send_photo(
+                chat_id=user_id,
+                photo=message.photo[-1].file_id,
+                caption=f"💬 <b>پاسخ پشتیبانی:</b>\n\n{message.caption or ''}",
+                parse_mode="HTML",
+            )
+        elif message.document:
+            await message.bot.send_document(
+                chat_id=user_id,
+                document=message.document.file_id,
+                caption=f"💬 <b>پاسخ پشتیبانی:</b>\n\n{message.caption or ''}",
+                parse_mode="HTML",
+            )
+        else:
+            await message.bot.send_message(
+                chat_id=user_id,
+                text="💬 <b>پاسخ پشتیبانی:</b>\n\n[Unsupported message type]",
+                parse_mode="HTML",
+            )
+        await message.answer("✅ پاسخ ارسال شد.")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Failed to forward support reply: %s %s", type(e).__name__, e)
+        await message.answer("❌ خطا در ارسال پاسخ.")
 
 
 @router.callback_query(F.data.startswith("adm_blacklist_detail_"))

@@ -12,13 +12,15 @@ from database import (
     get_invite_stats, get_active_configs, get_balance,
     add_collab_request, set_user_collaborator,
     is_blacklisted,
+    store_support_message, redeem_gift_code, get_guides_by_platform,
+    wallet_credit,
 )
 from api import panel_api, panel_manager
 from keyboards.user import (
     main_menu, back_to_menu, plans_menu, payment_method_menu, config_detail, name_selection_menu,
     force_join_keyboard, service_detail_keyboard, extra_volume_keyboard,
     regenerate_link_keyboard, sections_menu, view_user_keyboard,
-    my_services_panel_menu, my_services_configs_menu,
+    my_services_panel_menu, my_services_configs_menu, guides_platforms_keyboard,
 )
 from utils.texts import (
     WELCOME_TEXT_DEFAULT, config_list_text, config_created, free_test_config, no_balance,
@@ -199,6 +201,12 @@ class ConfigNameState(StatesGroup):
 
 class DiscountState(StatesGroup):
     waiting_code = State()
+
+
+class UserState(StatesGroup):
+    support_mode = State()
+    waiting_gift_code = State()
+    waiting_phone = State()
 
 
 import json as _json
@@ -477,6 +485,20 @@ async def cmd_start(message: Message, state: FSMContext):
     if not await _is_channel_member(message.bot, message.from_user.id):
         await _send_force_join(message.bot, message.from_user.id)
         return
+
+    phone_enabled = await get_setting("phone_verification_enabled") or "0"
+    if phone_enabled == "1":
+        user = await get_user(message.from_user.id)
+        if user and not user.get("phone"):
+            kb = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="📱 ارسال شماره تلفن", request_contact=True)]],
+                resize_keyboard=True,
+                one_time_keyboard=True,
+            )
+            await message.answer("لطفاً شماره تلفن خود را ارسال کنید.", reply_markup=kb)
+            await state.set_state(UserState.waiting_phone)
+            return
+
     we = await get_setting("welcome_emoji") or ""
     welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
     welcome = welcome.replace("{name}", message.from_user.first_name or "doust aziz")
@@ -510,6 +532,19 @@ async def btn_start(message: Message):
     if not await _is_channel_member(message.bot, message.from_user.id):
         await _send_force_join(message.bot, message.from_user.id)
         return
+
+    phone_enabled = await get_setting("phone_verification_enabled") or "0"
+    if phone_enabled == "1":
+        user = await get_user(message.from_user.id)
+        if user and not user.get("phone"):
+            kb = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="📱 ارسال شماره تلفن", request_contact=True)]],
+                resize_keyboard=True,
+                one_time_keyboard=True,
+            )
+            await message.answer("لطفاً شماره تلفن خود را ارسال کنید.", reply_markup=kb)
+            return
+
     we = await get_setting("welcome_emoji") or ""
     if we:
         try: await message.answer(we)
@@ -518,6 +553,40 @@ async def btn_start(message: Message):
     welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
     welcome = welcome.replace("{name}", message.from_user.first_name or "doust aziz")
     menu_msg = await message.answer(welcome, parse_mode="HTML", reply_markup=await main_menu(message.from_user.id))
+    try:
+        await message.bot.set_message_reaction(
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+            reaction=[{"type": "emoji", "emoji": "🔥"}],
+        )
+    except Exception:
+        pass
+
+
+@router.message(UserState.waiting_phone, F.contact)
+async def handle_contact(message: Message, state: FSMContext):
+    contact = message.contact
+    if contact.user_id != message.from_user.id:
+        await message.answer("لطفاً شماره خودتان را ارسال کنید.")
+        return
+    phone = contact.phone_number
+    from database import get_db
+    db = await get_db()
+    await db.execute("UPDATE users SET phone = ?, phone_verified_at = ? WHERE id = ?",
+                     (phone, datetime.utcnow().isoformat(), message.from_user.id))
+    await db.commit()
+    await db.close()
+    await state.clear()
+    await message.answer("✅ شماره تلفن شما تایید شد.", reply_markup=ReplyKeyboardRemove())
+
+    we = await get_setting("welcome_emoji") or ""
+    welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
+    welcome = welcome.replace("{name}", message.from_user.first_name or "doust aziz")
+    if we:
+        welcome = '<tg-emoji emoji-id="' + we + '"></tg-emoji>\n' + welcome
+    await send_sticker(message.bot, message.chat.id, 'welcome')
+    await message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
+    menu_msg = await message.answer("منوی اصلی", reply_markup=await main_menu(message.from_user.id))
     try:
         await message.bot.set_message_reaction(
             chat_id=message.chat.id,
@@ -616,6 +685,16 @@ async def cb_main_menu(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "free_test")
 async def cb_free_test(callback: CallbackQuery):
+    mode = await get_setting("operating_mode") or "NORMAL"
+    if mode == "MAINTENANCE":
+        msg = await get_setting("maintenance_message") or "ربات در حال بروزرسانی است."
+        await callback.answer(msg, show_alert=True)
+        return
+    if mode == "SALES_PAUSED":
+        msg = await get_setting("sales_paused_message") or "فروش موقتاً متوقف شده."
+        await callback.answer(msg, show_alert=True)
+        return
+
     user_id = callback.from_user.id
     admin = await is_admin(user_id)
     if not admin and await has_free_test(user_id):
@@ -868,6 +947,12 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
         panel_id=plan.get("panel_id"),
     )
 
+    cashback_pct = float(await get_setting("cashback_percent") or "0")
+    if cashback_pct > 0 and pay_price_mk:
+        cashback_amount = pay_price_mk * cashback_pct / 100
+        unique_key = f"cashback_{user_id}_{int(time.time())}"
+        await wallet_credit(user_id, cashback_amount, "CASHBACK", "کش‌بک خرید", unique_key)
+
     await update_balance(user_id, -pay_price_mk)
     symbol = await get_setting("currency_symbol") or "تومان"
     log_purchase(user_id, username, plan["name"], plan["gb"], plan["days"], plan["price"], symbol)
@@ -956,6 +1041,16 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "buy_config")
 async def cb_buy_config(callback: CallbackQuery):
+    mode = await get_setting("operating_mode") or "NORMAL"
+    if mode == "MAINTENANCE":
+        msg = await get_setting("maintenance_message") or "ربات در حال بروزرسانی است."
+        await callback.answer(msg, show_alert=True)
+        return
+    if mode == "SALES_PAUSED":
+        msg = await get_setting("sales_paused_message") or "فروش موقتاً متوقف شده."
+        await callback.answer(msg, show_alert=True)
+        return
+
     shop_open = await get_setting("shop_open") or "1"
     if shop_open == "0":
         msg = await get_setting("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
@@ -1405,6 +1500,12 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
         uuid=result["uuid"], email=email, expire_date=result["expire_date"],
         panel_id=plan.get("panel_id"), config_name=cfg_name,
     )
+
+    cashback_pct = float(await get_setting("cashback_percent") or "0")
+    if cashback_pct > 0 and pay_price:
+        cashback_amount = pay_price * cashback_pct / 100
+        unique_key = f"cashback_{user_id}_{int(time.time())}"
+        await wallet_credit(user_id, cashback_amount, "CASHBACK", "کش‌بک خرید", unique_key)
 
     if disc_code:
         try:
@@ -2422,6 +2523,24 @@ async def cb_copy_link(callback: CallbackQuery):
 
 
 
+@router.callback_query(F.data.startswith("qr_"))
+async def cb_show_qr(callback: CallbackQuery):
+    config_id = int(callback.data.split("_")[-1])
+    cfg = await get_config_by_id(config_id)
+
+    if not cfg or cfg["user_id"] != callback.from_user.id:
+        await callback.answer("سرویس یافت نشد!", show_alert=True)
+        return
+
+    sub_link = cfg["sub_link"]
+    qr_img = generate_qr(sub_link)
+    await callback.answer()
+    await callback.message.answer_photo(
+        photo=qr_img, caption="📱 <b>QR کد لینک اشتراک</b>",
+        parse_mode="HTML",
+    )
+
+
 @router.callback_query(F.data.startswith("view_user_configs_"))
 async def cb_view_user_configs(callback: CallbackQuery):
     try:
@@ -2480,3 +2599,235 @@ async def cb_view_user_configs(callback: CallbackQuery):
         await callback.message.answer("پایان لیست کانفیگ‌ها.", parse_mode="HTML")
     except Exception:
         pass
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION: Support Message Forwarding
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "support")
+async def cb_support(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(UserState.support_mode)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ لغو", callback_data="main_menu")]
+    ])
+    try:
+        await callback.message.edit_text(
+            "💬 <b>پشتیبانی</b>\n\nپیام خود را برای پشتیبانی ارسال کنید:\nبرای لغو /cancel تایپ کنید.",
+            parse_mode="HTML", reply_markup=kb,
+        )
+    except Exception:
+        await callback.message.answer(
+            "💬 <b>پشتیبانی</b>\n\nپیام خود را برای پشتیبانی ارسال کنید:\nبرای لغو /cancel تایپ کنید.",
+            parse_mode="HTML", reply_markup=kb,
+        )
+    await callback.answer()
+
+
+@router.message(UserState.support_mode)
+async def handle_support_message(message: Message, state: FSMContext):
+    channel_id = await get_setting("notification_channel_id") or ""
+    if not channel_id:
+        await message.answer("❌ پشتیبانی در دسترس نیست.", reply_markup=await back_to_menu())
+        await state.clear()
+        return
+
+    user_id = message.from_user.id
+    username = message.from_user.username or "ندارد"
+    first_name = message.from_user.first_name or ""
+
+    header = f"📩 <b>پیام جدید از کاربر</b>\n\n👤 کاربر: <code>{user_id}</code> (@{username})\n📛 نام: {first_name}\n\n━━━━━━━━━━━━━━━━━━━━━━"
+
+    try:
+        if message.text:
+            sent = await message.bot.send_message(
+                chat_id=channel_id,
+                text=f"{header}\n\n💬 {message.text}",
+                parse_mode="HTML",
+            )
+        elif message.photo:
+            sent = await message.bot.send_photo(
+                chat_id=channel_id,
+                photo=message.photo[-1].file_id,
+                caption=f"{header}\n\n📷 {message.caption or ''}",
+                parse_mode="HTML",
+            )
+        elif message.document:
+            sent = await message.bot.send_document(
+                chat_id=channel_id,
+                document=message.document.file_id,
+                caption=f"{header}\n\n📄 {message.caption or ''}",
+                parse_mode="HTML",
+            )
+        elif message.voice:
+            sent = await message.bot.send_voice(
+                chat_id=channel_id,
+                voice=message.voice.file_id,
+                caption=f"{header}",
+                parse_mode="HTML",
+            )
+        elif message.video:
+            sent = await message.bot.send_video(
+                chat_id=channel_id,
+                video=message.video.file_id,
+                caption=f"{header}\n\n🎬 {message.caption or ''}",
+                parse_mode="HTML",
+            )
+        else:
+            sent = await message.bot.send_message(
+                chat_id=channel_id,
+                text=f"{header}\n\n📎 [Unsupported message type]",
+                parse_mode="HTML",
+            )
+
+        await store_support_message(sent.message_id, user_id)
+        await message.answer(
+            "✅ پیام شما ارسال شد. پاسخ ادمین را منتظر باشید.",
+            reply_markup=await back_to_menu(),
+        )
+        await state.clear()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Failed to forward support message: %s %s", type(e).__name__, e)
+        await message.answer(
+            "❌ خطا در ارسال پیام. لطفاً دوباره تلاش کنید.",
+            reply_markup=await back_to_menu(),
+        )
+        await state.clear()
+
+
+@router.message(Command("cancel"), UserState.support_mode)
+async def cmd_cancel_support(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ پشتیبانی لغو شد.", reply_markup=await main_menu(message.from_user.id))
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION: Gift Code Redemption
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "redeem_gift")
+async def cb_redeem_gift(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(UserState.waiting_gift_code)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ لغو", callback_data="main_menu")]
+    ])
+    try:
+        await callback.message.edit_text(
+            "🎁 <b>کد هدیه</b>\n\nکد هدیه خود را وارد کنید:",
+            parse_mode="HTML", reply_markup=kb,
+        )
+    except Exception:
+        await callback.message.answer(
+            "🎁 <b>کد هدیه</b>\n\nکد هدیه خود را وارد کنید:",
+            parse_mode="HTML", reply_markup=kb,
+        )
+    await callback.answer()
+
+
+@router.message(UserState.waiting_gift_code)
+async def handle_gift_code(message: Message, state: FSMContext):
+    if not message.text:
+        await message.answer("لطفاً کد هدیه را به صورت متنی وارد کنید:")
+        return
+
+    code = message.text.strip().upper()
+    user_id = message.from_user.id
+    symbol = await get_setting("currency_symbol") or "تومان"
+
+    amount = await redeem_gift_code(code, user_id)
+    await state.clear()
+
+    if amount > 0:
+        await update_balance(user_id, amount)
+        user = await get_user(user_id)
+        new_balance = user["balance"] if user else 0
+        await message.answer(
+            f"✅ <b>کد هدیه با موفقیت اعمال شد!</b>\n\n"
+            f"💰 مبلغ: <b>{amount:,.0f} {symbol}</b>\n"
+            f"💰 موجودی جدید: <b>{new_balance:,.0f} {symbol}</b>",
+            parse_mode="HTML", reply_markup=await back_to_menu(),
+        )
+    else:
+        await message.answer(
+            "❌ کد هدیه نامعتبر است، منقضی شده یا قبلاً استفاده شده است.",
+            reply_markup=await back_to_menu(),
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION: Connection Guides
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "guides")
+async def cb_guides(callback: CallbackQuery):
+    from keyboards.user import guides_platforms_keyboard
+    try:
+        await callback.message.edit_text(
+            "📖 <b>راهنمای اتصال</b>\n\nپلتفرم مورد نظر را انتخاب کنید:",
+            parse_mode="HTML", reply_markup=await guides_platforms_keyboard(),
+        )
+    except Exception:
+        await callback.message.answer(
+            "📖 <b>راهنمای اتصال</b>\n\nپلتفرم مورد نظر را انتخاب کنید:",
+            parse_mode="HTML", reply_markup=await guides_platforms_keyboard(),
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("guide_platform_"))
+async def cb_guide_platform(callback: CallbackQuery):
+    platform = callback.data.replace("guide_platform_", "")
+    guides = await get_guides_by_platform(platform)
+
+    if not guides:
+        try:
+            await callback.message.edit_text(
+                f"📖 <b>راهنمای {platform}</b>\n\nهنوز راهنمایی برای این پلتفرم اضافه نشده است.",
+                parse_mode="HTML", reply_markup=await back_to_menu(),
+            )
+        except Exception:
+            await callback.message.answer(
+                f"📖 <b>راهنمای {platform}</b>\n\nهنوز راهنمایی برای این پلتفرم اضافه نشده است.",
+                parse_mode="HTML", reply_markup=await back_to_menu(),
+            )
+        await callback.answer()
+        return
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    for guide in guides:
+        if guide["media_type"] == "TEXT" and guide.get("body"):
+            await callback.message.answer(
+                guide["body"],
+                parse_mode="HTML",
+            )
+        elif guide["media_type"] == "PHOTO" and guide.get("file_id"):
+            await callback.message.answer_photo(
+                photo=guide["file_id"],
+                caption=guide.get("body") or "",
+                parse_mode="HTML" if guide.get("body") else None,
+            )
+        elif guide["media_type"] == "VIDEO" and guide.get("file_id"):
+            await callback.message.answer_video(
+                video=guide["file_id"],
+                caption=guide.get("body") or "",
+                parse_mode="HTML" if guide.get("body") else None,
+            )
+        elif guide["media_type"] == "DOCUMENT" and guide.get("file_id"):
+            await callback.message.answer_document(
+                document=guide["file_id"],
+                caption=guide.get("body") or "",
+                parse_mode="HTML" if guide.get("body") else None,
+            )
+
+    from keyboards.user import _btn
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [await _btn("📖 انتخاب پلتفرم دیگر", "guides", "link", btn_id="back")],
+        [await _btn("🏠 بازگشت به منو", "main_menu", btn_id="back")],
+    ])
+    await callback.message.answer(
+        "✅ پایان راهنما",
+        reply_markup=kb,
+    )
+    await callback.answer()
