@@ -7,32 +7,28 @@ from keyboards.user import _btn
 async def admin_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            await _btn("📊 آمار و گزارش‌ها", "adm_stats", "stats", btn_id="admin_stats"),
-            await _btn("👥 مدیریت کاربران", "adm_users", "users", btn_id="admin_users"),
+            await _btn("📊 آمار", "adm_stats", "stats", btn_id="admin_stats"),
+            await _btn("👥 کاربران", "adm_users", "users", btn_id="admin_users"),
+            await _btn("📦 پلن‌ها", "adm_plans", "package", btn_id="admin_plans"),
         ],
         [
-            await _btn("📦 مدیریت پلن‌ها", "adm_plans", "package", btn_id="admin_plans"),
-            await _btn("📋 مدیریت رسیدها", "adm_receipts_menu", "receipts", btn_id="admin_receipts"),
+            await _btn("📋 رسیدها", "adm_receipts_menu", "receipts", btn_id="admin_receipts"),
+            await _btn("🔑 کانفیگ‌ها", "adm_configs", "link", btn_id="admin_configs"),
+            await _btn("🛡️ ادمین‌ها", "adm_admins", "owner", btn_id="admin_admins"),
         ],
         [
-            await _btn("🔑 مدیریت کانفیگ‌ها", "adm_configs", "link", btn_id="admin_configs"),
-            await _btn("🛡️ مدیریت ادمین‌ها", "adm_admins", "owner", btn_id="admin_admins"),
+            await _btn("📡 پنل‌ها", "adm_panels", "gear", btn_id="admin_panels"),
+            await _btn("⚙️ تنظیمات", "adm_settings", "gear", btn_id="admin_settings"),
         ],
         [
-            await _btn("📡 مدیریت پنل‌ها", "adm_panels", "gear", btn_id="admin_panels"),
-            await _btn("⚙️ تنظیمات ربات", "adm_settings", "gear", btn_id="admin_settings"),
-        ],
-        [
+            await _btn("📢 همگانی", "adm_broadcast", "list", btn_id="admin_broadcast"),
             await _btn("🎛️ کنترل‌پنل", "adm_control", "gear", btn_id="admin_control"),
-            await _btn("📢 ارسال همگانی", "adm_broadcast", "list", btn_id="admin_broadcast"),
         ],
         [
             await _btn("📱 ویرایش منو", "adm_menu_editor", "gear", btn_id="admin_menu_editor"),
+            await _btn("🏷️ تخفیف‌ها", "adm_discounts", "link", btn_id="admin_discounts"),
         ],
-        [
-            await _btn("🏷️ کدهای تخفیف", "adm_discounts", "link", btn_id="admin_discounts"),
-            await _btn("⛔ Blacklist", "adm_blacklist", "ban", btn_id="admin_blacklist"),
-        ],
+        [await _btn("⛔ لیست سیاه", "adm_blacklist", "ban", btn_id="admin_blacklist")],
     ])
 
 
@@ -269,41 +265,42 @@ async def admins_menu(admins: list) -> InlineKeyboardMarkup:
 # ─── Section 7: Settings ─────────────────────────────────────
 async def settings_menu() -> InlineKeyboardMarkup:
     shop_open = await get_setting("shop_open") or "1"
-    shop_status = "🟢 باز" if shop_open == "1" else "🔴 بسته"
+    shop_icon = "🟢" if shop_open == "1" else "🔴"
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"─── 📝 محتوا ───", callback_data="noop")],
         [
             await _btn("📝 متن خوش‌آمدگویی", "adm_edit_welcome", "gear"),
-            await _btn("💳 اطلاعات پرداخت", "adm_edit_payment", "card"),
+            await _btn("🎯 ایموجی خوش‌آمد", "adm_edit_welcome_emoji", "gear"),
         ],
+        [
+            await _btn("📝 متن‌های ربات", "adm_edit_bot_texts", "gear"),
+            await _btn("🎨 ویرایش دکمه‌ها", "adm_edit_buttons", "gear"),
+        ],
+        [InlineKeyboardButton(text=f"─── ⚙️ امکانات ───", callback_data="noop")],
         [
             await _btn("🧪 تست رایگان", "adm_edit_free_test", "gear"),
             await _btn("✅ تایید خودکار", "adm_edit_auto_approve", "gear"),
         ],
         [
-            await _btn("🎨 ویرایش دکمه‌ها", "adm_edit_buttons", "gear"),
-            await _btn("📝 متن‌های ربات", "adm_edit_bot_texts", "gear"),
+            await _btn("🔗 عضویت اجباری", "adm_edit_force_join", "gear"),
+            await _btn("👥 زیرمجموعه‌گیری", "adm_edit_invite", "link"),
         ],
+        [
+            await _btn("🤝 همکاری", "adm_edit_collab", "link"),
+            await _btn(f"{shop_icon} فروشگاه", "adm_toggle_shop", "gear"),
+        ],
+        [InlineKeyboardButton(text=f"─── 💳 مالی ───", callback_data="noop")],
+        [
+            await _btn("💳 اطلاعات پرداخت", "adm_edit_payment", "card"),
+            await _btn("💱 تنظیمات ارز", "adm_edit_currency", "money"),
+        ],
+        [InlineKeyboardButton(text=f"─── 🎨 نمایش ───", callback_data="noop")],
         [
             await _btn("🎭 ایموجی‌های پرمیوم", "adm_edit_premium_emojis", "star"),
-            await _btn("🔗 عضویت اجباری", "adm_edit_force_join", "gear"),
-        ],
-        [
-            await _btn("👥 زیرمجموعه گیری", "adm_edit_invite", "link"),
-        ],
-        [
-            await _btn("🤝 درخواست همکاری", "adm_edit_collab", "link"),
-        ],
-        [
-            await _btn(f"🏪 وضعیت فروشگاه: {shop_status}", "adm_toggle_shop", "gear"),
-            await _btn("🎯 ایموجی خوش‌آمدگویی", "adm_edit_welcome_emoji", "gear"),
-        ],
-        [
-            await _btn("📡 مدیریت پنل‌ها", "adm_panels", "gear"),
-            await _btn("💱 تنظیمات ارز", "adm_edit_currency", "money"),
+            await _btn("📷 پس‌زمینه QR", "adm_qr_bg_info", "gear"),
         ],
         [
             await _btn("🔔 یادآوری انقضا", "adm_toggle_expiry_reminder", "gear"),
-            await _btn("📷 پس‌زمینه QR", "adm_qr_bg_info", "gear"),
         ],
         [await _btn("🔙 بازگشت", "adm_menu", btn_id="back")],
     ])
