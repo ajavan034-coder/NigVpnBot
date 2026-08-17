@@ -59,15 +59,18 @@ async def main_menu(user_id: int = 0) -> InlineKeyboardMarkup:
     if not layout:
         default_order = [
             {"type": "builtin", "id": "wallet", "enabled": True},
-            {"type": "row_break"},
-            {"type": "builtin", "id": "free_test", "enabled": True},
             {"type": "builtin", "id": "buy_config", "enabled": True},
             {"type": "row_break"},
+            {"type": "builtin", "id": "free_test", "enabled": True},
             {"type": "builtin", "id": "my_configs", "enabled": True},
+            {"type": "row_break"},
+            {"type": "builtin", "id": "guides", "enabled": True},
+            {"type": "builtin", "id": "redeem_gift", "enabled": True},
+            {"type": "row_break"},
             {"type": "builtin", "id": "invite", "enabled": True},
             {"type": "builtin", "id": "collab", "enabled": True},
             {"type": "row_break"},
-            {"type": "builtin", "id": "webapp", "enabled": True},
+            {"type": "builtin", "id": "support", "enabled": True},
             {"type": "builtin", "id": "admin", "enabled": True},
         ]
         layout = default_order

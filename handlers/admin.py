@@ -2328,6 +2328,18 @@ async def cb_toggle_phone_verification(callback: CallbackQuery):
     await callback.message.edit_text("⚙️ <b>تنظیمات ربات</b>", parse_mode="HTML", reply_markup=await settings_menu())
 
 
+@router.callback_query(F.data == "adm_toggle_service_monitor")
+async def cb_toggle_service_monitor(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("service_monitor_enabled") or "0"
+    new_val = "0" if current == "1" else "1"
+    await set_setting("service_monitor_enabled", new_val)
+    status = "فعال شد ✅" if new_val == "1" else "غیرفعال شد ❌"
+    await callback.answer(f"مانیتور سرویس {status}", show_alert=True)
+    await callback.message.edit_text("⚙️ <b>تنظیمات ربات</b>", parse_mode="HTML", reply_markup=await settings_menu())
+
+
 @router.callback_query(F.data == "adm_toggle_expiry_reminder")
 async def cb_toggle_expiry_reminder(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):

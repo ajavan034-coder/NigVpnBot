@@ -299,6 +299,10 @@ async def settings_menu() -> InlineKeyboardMarkup:
         [
             await _btn("📱 تایید شماره", "adm_toggle_phone_verification", "gear"),
         ],
+        [InlineKeyboardButton(text=f"─── 🖥️ سرویس‌دهی ───", callback_data="noop")],
+        [
+            await _btn("🔍 مانیتور سرویس", "adm_toggle_service_monitor", "gear"),
+        ],
         [InlineKeyboardButton(text=f"─── 💳 مالی ───", callback_data="noop")],
         [
             await _btn("💳 اطلاعات پرداخت", "adm_edit_payment", "card"),
