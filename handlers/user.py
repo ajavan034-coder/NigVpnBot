@@ -3,8 +3,11 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardB
 from aiogram.filters import CommandStart, Command, BaseFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+import logging
 import time
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 from database import (
     add_user, get_user, get_user_configs, has_free_test, add_config,
     get_setting, is_admin, get_plan, add_receipt, get_admins, update_balance,
@@ -794,30 +797,29 @@ async def cb_free_test_select(callback: CallbackQuery):
             panel_user=ft_panel["username"],
             panel_pass=ft_panel["password"],
         )
-        try:
-            login_ok = await pg_api.login()
-            if not login_ok:
-                await callback.message.edit_text(
-                    "ورود به پنل PasarGuard ناموفق بود.", reply_markup=await back_to_menu()
-                )
-                return
-            pg_username = f"free_{user_id}"
-            ft_data_limit_gb = (free_test_mb / 1024) if free_test_mb else 0
-            pg_result = await pg_api.create_user(
-                username=pg_username,
-                data_limit_gb=ft_data_limit_gb,
-                expire_days=free_test_days,
-            )
-            if not pg_result:
-                await callback.message.edit_text(
-                    "ساخت کانفیگ PasarGuard ناموفق بود.", reply_markup=await back_to_menu()
-                )
-                return
-            sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
-            expire_date = (datetime.utcnow() + timedelta(days=free_test_days)).isoformat()
-            result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
-        finally:
+        login_ok = await pg_api.login()
+        if not login_ok:
             await pg_api.close()
+            await callback.message.edit_text(
+                "ورود به پنل PasarGuard ناموفق بود.", reply_markup=await back_to_menu()
+            )
+            return
+        pg_username = f"free_{user_id}"
+        ft_data_limit_gb = (free_test_mb / 1024) if free_test_mb else 0
+        pg_result = await pg_api.create_user(
+            username=pg_username,
+            data_limit_gb=ft_data_limit_gb,
+            expire_days=free_test_days,
+        )
+        if not pg_result:
+            await pg_api.close()
+            await callback.message.edit_text(
+                "ساخت کانفیگ PasarGuard ناموفق بود.", reply_markup=await back_to_menu()
+            )
+            return
+        sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
+        expire_date = (datetime.utcnow() + timedelta(days=free_test_days)).isoformat()
+        result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
     else:
         ft_panel_api = panel_manager.get(ft_panel["id"]) or panel_api
         result = await ft_panel_api.create_test_config(email, total_mb=free_test_mb, days=free_test_days, custom_inbound_ids=free_test_inbound_ids)
@@ -864,6 +866,31 @@ async def cb_free_test_select(callback: CallbackQuery):
         if qr_bytes:
             qr_file = BufferedInputFile(qr_bytes, filename=f"{result['uuid']}_qr.png")
             await callback.message.answer_photo(photo=qr_file, caption=f"📷 QR کد کانفیگ")
+    elif ft_panel_type == "pasarguard":
+        from aiogram.types import BufferedInputFile
+        conf_content = None
+        try:
+            conf_content = await pg_api.download_wireguard_config(result["sub_link"])
+        except Exception as e:
+            logger.error(f"PasarGuard free test config download error: {e}")
+        finally:
+            await pg_api.close()
+
+        pg_text = (
+            "✅ <b>تست رایگان PasarGuard ساخته شد!</b>\n\n"
+            f"📊 حجم: <b>{free_test_mb // 1024 if free_test_mb >= 1024 else free_test_mb} {'GB' if free_test_mb >= 1024 else 'MB'}</b>\n"
+            f"📅 مدت: <b>{free_test_days} روز</b>\n\n"
+            f"🔗 لینک اشتراک:\n<code>{result['sub_link']}</code>\n\n"
+        )
+        if conf_content:
+            pg_text += "📄 فایل تنظیمات در ادامه ارسال شد."
+        else:
+            pg_text += "⚠️ خطا در دانلود فایل تنظیمات. از لینک اشتراک استفاده کنید."
+        await callback.message.answer(pg_text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+        if conf_content:
+            conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"{result['uuid']}.conf")
+            await callback.message.answer_document(document=conf_file, caption=f"📄 فایل تنظیمات")
     else:
         text = await free_test_config(result["sub_link"], free_test_days)
         qr_img = generate_qr(result["sub_link"])
@@ -981,27 +1008,27 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
             panel_user=plan_panel_data["username"],
             panel_pass=plan_panel_data["password"],
         )
-        try:
-            login_ok = await pg_api.login()
-            if not login_ok:
-                await callback.message.edit_text("ورود به پنل PasarGuard ناموفق بود.", reply_markup=await back_to_menu())
-                return
-            import random, string
-            rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-            pg_username = f"nig_{user_id}_{rand_suffix}"
-            pg_result = await pg_api.create_user(
-                username=pg_username,
-                data_limit_gb=plan["gb"],
-                expire_days=plan["days"],
-            )
-            if not pg_result:
-                await callback.message.edit_text("ساخت کانفیگ PasarGuard ناموفق بود.", reply_markup=await back_to_menu())
-                return
-            sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
-            expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
-            result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
-        finally:
+        login_ok = await pg_api.login()
+        if not login_ok:
             await pg_api.close()
+            await callback.message.edit_text("ورود به پنل PasarGuard ناموفق بود.", reply_markup=await back_to_menu())
+            return
+        import random, string
+        rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        pg_username = f"nig_{user_id}_{rand_suffix}"
+        pg_result = await pg_api.create_user(
+            username=pg_username,
+            data_limit_gb=plan["gb"],
+            expire_days=plan["days"],
+        )
+        if not pg_result:
+            await pg_api.close()
+            await callback.message.edit_text("ساخت کانفیگ PasarGuard ناموفق بود.", reply_markup=await back_to_menu())
+            return
+        sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
+        expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
+        result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
+        # pg_api stays open for config download below
     else:
         # V2Ray config creation (existing flow)
         plan_inbound_ids = None
@@ -1068,6 +1095,37 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
             await callback.message.answer_photo(
                 photo=qr_file,
                 caption=f"📷 QR کد کانفیگ {result['uuid']}",
+            )
+    elif service_type == "pasarguard":
+        from aiogram.types import BufferedInputFile
+        conf_content = None
+        try:
+            conf_content = await pg_api.download_wireguard_config(result["sub_link"])
+        except Exception as e:
+            logger.error(f"PasarGuard config download error: {e}")
+        finally:
+            await pg_api.close()
+
+        pg_text = (
+            "✅ <b>کانفیگ PasarGuard ساخته شد!</b>\n\n"
+            f"📦 پلن: <b>{plan['name']}</b>\n"
+            f"📊 حجم: <b>{plan['gb']} GB</b>\n"
+            f"📅 مدت: <b>{plan['days']} روز</b>\n"
+            f"💰 پرداخت: <b>{plan['price']:,} {symbol}</b>\n"
+            f"📅 انقضا: <b>{result['expire_date'][:10]}</b>\n\n"
+            f"🔗 لینک اشتراک:\n<code>{result['sub_link']}</code>\n\n"
+        )
+        if conf_content:
+            pg_text += "📄 فایل تنظیمات در ادامه ارسال شد."
+        else:
+            pg_text += "⚠️ خطا در دانلود فایل تنظیمات. از لینک اشتراک استفاده کنید."
+        await callback.message.answer(pg_text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+        if conf_content:
+            conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"{result['uuid']}.conf")
+            await callback.message.answer_document(
+                document=conf_file,
+                caption=f"📄 فایل تنظیمات {result['uuid']}",
             )
     else:
         # V2Ray: existing flow
@@ -1580,43 +1638,42 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
             panel_user=plan_panel_data["username"],
             panel_pass=plan_panel_data["password"],
         )
-        try:
-            login_ok = await pg_api.login()
-            if not login_ok:
-                await update_balance(user_id, pay_price)
-                try:
-                    await callback.message.edit_text(
-                        "ورود به پنل PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
-                    )
-                except Exception:
-                    await callback.message.answer(
-                        "ورود به پنل PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
-                    )
-                return
-            import random, string
-            rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-            pg_username = f"nig_{user_id}_{rand_suffix}"
-            pg_result = await pg_api.create_user(
-                username=pg_username,
-                data_limit_gb=plan["gb"],
-                expire_days=plan["days"],
-            )
-            if not pg_result:
-                await update_balance(user_id, pay_price)
-                try:
-                    await callback.message.edit_text(
-                        "ساخت کانفیگ PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
-                    )
-                except Exception:
-                    await callback.message.answer(
-                        "ساخت کانفیگ PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
-                    )
-                return
-            sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
-            expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
-            result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
-        finally:
+        login_ok = await pg_api.login()
+        if not login_ok:
             await pg_api.close()
+            await update_balance(user_id, pay_price)
+            try:
+                await callback.message.edit_text(
+                    "ورود به پنل PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                )
+            except Exception:
+                await callback.message.answer(
+                    "ورود به پنل PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                )
+            return
+        import random, string
+        rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        pg_username = f"nig_{user_id}_{rand_suffix}"
+        pg_result = await pg_api.create_user(
+            username=pg_username,
+            data_limit_gb=plan["gb"],
+            expire_days=plan["days"],
+        )
+        if not pg_result:
+            await pg_api.close()
+            await update_balance(user_id, pay_price)
+            try:
+                await callback.message.edit_text(
+                    "ساخت کانفیگ PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                )
+            except Exception:
+                await callback.message.answer(
+                    "ساخت کانفیگ PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                )
+            return
+        sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
+        expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
+        result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
     else:
         plan_inbound_ids = None
         if plan.get("inbound_ids"):
@@ -1693,6 +1750,37 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
             await callback.message.answer_photo(
                 photo=qr_file,
                 caption=f"📷 QR کد کانفیگ {result['uuid']}",
+            )
+    elif service_type == "pasarguard":
+        from aiogram.types import BufferedInputFile
+        conf_content = None
+        try:
+            conf_content = await pg_api.download_wireguard_config(result["sub_link"])
+        except Exception as e:
+            logger.error(f"PasarGuard config download error: {e}")
+        finally:
+            await pg_api.close()
+
+        pg_text = (
+            "✅ <b>کانفیگ PasarGuard ساخته شد!</b>\n\n"
+            f"📦 پلن: <b>{plan['name']}</b>\n"
+            f"📊 حجم: <b>{plan['gb']} GB</b>\n"
+            f"📅 مدت: <b>{plan['days']} روز</b>\n"
+            f"💰 پرداخت: <b>{pay_price:,} {symbol}</b>\n"
+            f"📅 انقضا: <b>{result['expire_date'][:10]}</b>\n\n"
+            f"🔗 لینک اشتراک:\n<code>{result['sub_link']}</code>\n\n"
+        )
+        if conf_content:
+            pg_text += "📄 فایل تنظیمات در ادامه ارسال شد."
+        else:
+            pg_text += "⚠️ خطا در دانلود فایل تنظیمات. از لینک اشتراک استفاده کنید."
+        await callback.message.answer(pg_text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+        if conf_content:
+            conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"{result['uuid']}.conf")
+            await callback.message.answer_document(
+                document=conf_file,
+                caption=f"📄 فایل تنظیمات {result['uuid']}",
             )
     else:
         text = await config_created(result["sub_link"], result["expire_date"][:10], pay_price, plan["name"], plan["gb"], plan["days"], symbol)

@@ -5,6 +5,8 @@ import json
 import logging
 import aiohttp
 import uuid
+import zipfile
+import io
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -253,6 +255,62 @@ class PasarGuardAPI:
         sub_url = user_data.get("subscription_url")
         if sub_url:
             return sub_url
+        return None
+
+    async def download_wireguard_config(self, subscription_url: str) -> str | None:
+        """Download WireGuard config from subscription URL. Returns .conf content or None."""
+        session = await self._get_session()
+        # Ensure URL ends with /wireguard/
+        url = subscription_url.rstrip("/")
+        if not url.endswith("/wireguard"):
+            url = url + "/wireguard"
+        if not url.endswith("/"):
+            url = url + "/"
+        try:
+            resp = await session.get(
+                url,
+                headers={"Accept": "application/zip"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            )
+            if resp.status != 200:
+                body = await resp.text()
+                logger.error(f"PasarGuard WG download {resp.status}: {url} -> {body[:200]}")
+                return None
+            data = await resp.read()
+            # The response is a ZIP file containing .conf files
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                for name in zf.namelist():
+                    if name.endswith(".conf"):
+                        return zf.read(name).decode("utf-8")
+                # If no .conf file, try the first file
+                if zf.namelist():
+                    return zf.read(zf.namelist()[0]).decode("utf-8")
+        except zipfile.BadZipFile:
+            logger.error("PasarGuard WG download: invalid ZIP file")
+        except Exception as e:
+            logger.error(f"PasarGuard WG download error: {e}")
+        return None
+
+    async def download_subscription_content(self, subscription_url: str, client_type: str = "links") -> str | None:
+        """Download subscription content (links, xray json, etc)."""
+        session = await self._get_session()
+        url = subscription_url.rstrip("/")
+        if not url.endswith(f"/{client_type}"):
+            url = url + f"/{client_type}"
+        if not url.endswith("/"):
+            url = url + "/"
+        try:
+            resp = await session.get(
+                url,
+                timeout=aiohttp.ClientTimeout(total=30),
+            )
+            if resp.status != 200:
+                body = await resp.text()
+                logger.error(f"PasarGuard sub download {resp.status}: {url} -> {body[:200]}")
+                return None
+            return await resp.text()
+        except Exception as e:
+            logger.error(f"PasarGuard sub download error: {e}")
         return None
 
     async def get_subscription_info(self, token: str) -> dict | None:
