@@ -113,7 +113,8 @@ async def cb_panel_detail(callback: CallbackQuery):
     volume_text = f"{volume_gb} GB" if volume_gb > 0 else "نامحدود"
 
     ptype = panel.get("panel_type", "v2ray")
-    type_label = "🛡️ Azumi (Wireguard)" if ptype == "wireguard" else "🔗 3x-ui (V2Ray/Xray)"
+    type_labels = {"wireguard": "🛡️ Azumi (Wireguard)", "pasarguard": "🛡️ PasarGuard", "3xui": "🔗 3x-ui (V2Ray/Xray)"}
+    type_label = type_labels.get(ptype, "🔗 3x-ui (V2Ray/Xray)")
 
     text = (
         "📋 جزئیات پنل\n\n"
@@ -123,11 +124,16 @@ async def cb_panel_detail(callback: CallbackQuery):
         "وضعیت: " + status + "\n"
         "حجم فروش: " + volume_text + "\n"
     )
-    if ptype != "wireguard":
+    if ptype == "3xui":
         text += (
             "نام کاربری: " + panel['username'] + "\n"
             "اینبوندها: " + str(inbound_count) + "\n"
             "قالب لینک: " + (panel.get('sub_link_template') or 'خودکار') + "\n"
+        )
+    elif ptype == "pasarguard":
+        text += (
+            "نام کاربری: " + panel['username'] + "\n"
+            "مسیر اشتراک: sub\n"
         )
     text += "پلن‌ها: " + str(plans_count) + " | کانفیگ‌ها: " + str(configs_count)
 
@@ -147,7 +153,7 @@ async def cb_panel_detail(callback: CallbackQuery):
             InlineKeyboardButton(text="📋 پلن‌ها", callback_data=f"adm_panel_plans_{panel_id}"),
         ],
     ]
-    if ptype != "wireguard":
+    if ptype == "3xui":
         kb_rows.append([
             InlineKeyboardButton(text="📥 اینبوندها", callback_data=f"adm_panel_inbounds_{panel_id}"),
             InlineKeyboardButton(text="👥 کلاینت‌ها", callback_data=f"adm_panel_clients_{panel_id}"),
@@ -417,6 +423,7 @@ async def process_panel_name(message: Message, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔗 3x-ui (V2Ray/Xray)", callback_data="adm_panel_type_3xui")],
         [InlineKeyboardButton(text="🛡️ Azumi (Wireguard)", callback_data="adm_panel_type_wireguard")],
+        [InlineKeyboardButton(text="🛡️ PasarGuard", callback_data="adm_panel_type_pasarguard")],
         [InlineKeyboardButton(text="❌ لغو", callback_data="adm_panels")],
     ])
     await message.answer(text, reply_markup=kb, parse_mode="Markdown")
@@ -437,6 +444,15 @@ async def cb_select_panel_type(callback: CallbackQuery, state: FSMContext):
             "آدرس پنل Wireguard را وارد کنید:\n"
             "(مثال: `http://panel.example.com:8085`)\n\n"
             "_پنل Wireguard نیازی به نام کاربری و رمز عبور ندارد._"
+        )
+    elif panel_type == "pasarguard":
+        await state.set_state(PanelState.waiting_url)
+        text = (
+            f"➕ **افزودن پنل: {name}** (مرحله ۳ از ۵)\n\n"
+            "🛡️ **پنل PasarGuard**\n\n"
+            "آدرس پنل PasarGuard را وارد کنید:\n"
+            "(مثال: `https://panel.example.com`)\n\n"
+            "_پس از وارد کردن آدرس، نام کاربری و رمز عبور پرسیده می‌شود._"
         )
     else:
         await state.set_state(PanelState.waiting_url)
@@ -489,6 +505,17 @@ async def process_panel_url(message: Message, state: FSMContext):
             "(۰ = بدون محدودیت)"
         )
         return
+    if panel_type == "pasarguard":
+        await state.set_state(PanelState.waiting_username)
+        text = (
+            f"➕ **افزودن پنل: {data['panel_name']}** (مرحله ۴ از ۵)\n\n"
+            "نام کاربری پنل PasarGuard را وارد کنید:"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ لغو", callback_data="adm_panels")]
+        ])
+        await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+        return
     await state.set_state(PanelState.waiting_username)
     text = (
         f"➕ **افزودن پنل: {data['panel_name']}** (مرحله ۳ از ۶)\n\n"
@@ -531,7 +558,39 @@ async def process_panel_password(message: Message, state: FSMContext):
     await state.update_data(panel_password=password)
     data = await state.get_data()
 
-    loading_msg = await message.answer("⏳ در حال تست ا 연결...")
+    loading_msg = await message.answer("⏳ در حال تست اتصال...")
+
+    if data.get("panel_type") == "pasarguard":
+        from pasarguard_api import PasarGuardAPI
+        temp_pg = PasarGuardAPI(
+            panel_url=data["panel_url"],
+            panel_user=data["panel_username"],
+            panel_pass=password,
+        )
+        try:
+            ok = await temp_pg.login()
+        except Exception:
+            ok = False
+        finally:
+            await temp_pg.close()
+
+        if not ok:
+            text = "❌ خطا در اتصال به پنل PasarGuard\n\nآیا می‌خواهید دوباره تلاش کنید?"
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 تلاش مجدد", callback_data="adm_retry_panel_password")],
+                [InlineKeyboardButton(text="❌ لغو", callback_data="adm_panels")],
+            ])
+            await loading_msg.edit_text(text, reply_markup=kb)
+            return
+
+        await state.update_data(panel_inbound_ids="", panel_sub_template="")
+        await state.set_state(PanelState.waiting_volume)
+        await loading_msg.edit_text(
+            "✅ اتصال به پنل PasarGuard موفق!\n\n"
+            "حجم کل فروش پنل را به گیگابایت وارد کنید:\n"
+            "(۰ = بدون محدودیت)"
+        )
+        return
 
     result = await panel_manager.test_connection_with_creds(
         url=data["panel_url"],
@@ -1010,7 +1069,7 @@ async def cb_test_panel(callback: CallbackQuery):
         [InlineKeyboardButton(text="🔄 تست مجدد", callback_data=f"adm_test_panel_{panel_id}")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"adm_panel_detail_{panel_id}")],
     ]
-    if ptype != "wireguard":
+    if ptype == "3xui":
         kb_rows.insert(0, [InlineKeyboardButton(text="📥 مشاهده اینبوندها", callback_data=f"adm_panel_inbounds_{panel_id}")])
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
@@ -1158,22 +1217,29 @@ async def cb_edit_panel(callback: CallbackQuery):
         f"✏️ **ویرایش پنل: {panel['name']}**\n\n"
         f"URL: `{panel['url']}`\n"
     )
-    if ptype != "wireguard":
+    if ptype == "3xui":
         text += (
             f"نام کاربری: `{panel['username']}`\n"
             f"قالب لینک: {'✅' if panel.get('sub_link_template') else '❌ خودکار'}\n"
         )
+    elif ptype == "pasarguard":
+        text += f"نام کاربری: `{panel['username']}`\n"
     text += "\nفیلد مورد نظر برای ویرایش را انتخاب کنید:"
     kb_rows = [
         [InlineKeyboardButton(text="🔗 آدرس پنل", callback_data=f"adm_panel_edit_menu_fld_url_{panel_id}")],
     ]
-    if ptype != "wireguard":
+    if ptype == "3xui":
         kb_rows.extend([
             [InlineKeyboardButton(text="👤 نام کاربری", callback_data=f"adm_panel_edit_menu_fld_username_{panel_id}")],
             [InlineKeyboardButton(text="🔒 رمز عبور", callback_data=f"adm_panel_edit_menu_fld_password_{panel_id}")],
             [InlineKeyboardButton(text="📝 قالب لینک", callback_data=f"adm_panel_edit_menu_fld_template_{panel_id}")],
             [InlineKeyboardButton(text="🧪 تست قالب", callback_data=f"adm_test_sub_template_{panel_id}")],
             [InlineKeyboardButton(text="📥 اینبوندها", callback_data=f"adm_panel_edit_menu_ib_{panel_id}")],
+        ])
+    elif ptype == "pasarguard":
+        kb_rows.extend([
+            [InlineKeyboardButton(text="👤 نام کاربری", callback_data=f"adm_panel_edit_menu_fld_username_{panel_id}")],
+            [InlineKeyboardButton(text="🔒 رمز عبور", callback_data=f"adm_panel_edit_menu_fld_password_{panel_id}")],
         ])
     kb_rows.append([InlineKeyboardButton(text="🎯 ایموجی پنل", callback_data=f"adm_panel_emoji_{panel_id}")])
     kb_rows.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"adm_panel_detail_{panel_id}")])
@@ -1624,6 +1690,12 @@ async def process_panel_plan_ip_limit(message: Message, state: FSMContext):
 async def _finalize_panel_plan(target, state: FSMContext, panel_id: int, ip_limit: int):
     data = await state.get_data()
     import database as db
+    panel = await db.get_panel(panel_id)
+    svc_type = "v2ray"
+    if panel and panel.get("panel_type") == "wireguard":
+        svc_type = "wireguard"
+    elif panel and panel.get("panel_type") == "pasarguard":
+        svc_type = "pasarguard"
     plan_id = await db.add_plan(
         name=data["panel_plan_name"],
         gb=data["panel_plan_gb"],
@@ -1632,6 +1704,7 @@ async def _finalize_panel_plan(target, state: FSMContext, panel_id: int, ip_limi
         inbound_ids="",
         ip_limit=ip_limit,
         panel_id=panel_id,
+        service_type=svc_type,
     )
     await state.clear()
     from database import get_setting

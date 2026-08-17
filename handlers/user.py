@@ -13,7 +13,7 @@ from database import (
     add_collab_request, set_user_collaborator,
     is_blacklisted,
     store_support_message, redeem_gift_code, get_guides_by_platform,
-    wallet_credit,
+    wallet_credit, get_panel,
 )
 from api import panel_api, panel_manager
 from keyboards.user import (
@@ -787,6 +787,32 @@ async def cb_free_test_select(callback: CallbackQuery):
         sub_link = wg_result.get("short_link", "") or f"wireguard:{peer_name}"
         expire_date = (datetime.utcnow() + timedelta(days=free_test_days)).isoformat()
         result = {"sub_link": sub_link, "uuid": peer_name, "expire_date": expire_date}
+    elif ft_panel_type == "pasarguard":
+        from pasarguard_api import PasarGuardAPI
+        pg_api = PasarGuardAPI(
+            panel_url=ft_panel["url"],
+            panel_user=ft_panel["username"],
+            panel_pass=ft_panel["password"],
+        )
+        try:
+            await pg_api.login()
+            pg_username = f"free_{user_id}"
+            ft_data_limit_gb = (free_test_mb / 1024) if free_test_mb else 0
+            pg_result = await pg_api.create_user(
+                username=pg_username,
+                data_limit_gb=ft_data_limit_gb,
+                expire_days=free_test_days,
+            )
+            if not pg_result:
+                await callback.message.edit_text(
+                    "ساخت کانفیگ PasarGuard ناموفق بود.", reply_markup=await back_to_menu()
+                )
+                return
+            sub_link = pg_api.get_subscription_url(pg_username)
+            expire_date = (datetime.utcnow() + timedelta(days=free_test_days)).isoformat()
+            result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
+        finally:
+            await pg_api.close()
     else:
         ft_panel_api = panel_manager.get(ft_panel["id"]) or panel_api
         result = await ft_panel_api.create_test_config(email, total_mb=free_test_mb, days=free_test_days, custom_inbound_ids=free_test_inbound_ids)
@@ -908,6 +934,15 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
     
     service_type = plan.get("service_type", "v2ray")
     
+    # Auto-detect pasarguard from panel type if service_type is v2ray
+    if service_type == "v2ray" and plan.get("panel_id"):
+        try:
+            _plan_panel = await get_panel(plan["panel_id"])
+            if _plan_panel and _plan_panel.get("panel_type") == "pasarguard":
+                service_type = "pasarguard"
+        except Exception:
+            pass
+    
     if service_type == "wireguard":
         # Wireguard config creation
         if not wireguard_api:
@@ -927,6 +962,38 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
         sub_link = wg_result.get("short_link", "") or f"wireguard:{peer_name}"
         expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
         result = {"sub_link": sub_link, "uuid": peer_name, "expire_date": expire_date}
+    elif service_type == "pasarguard":
+        # PasarGuard config creation
+        plan_panel_data = None
+        if plan.get("panel_id"):
+            plan_panel_data = await get_panel(plan["panel_id"])
+        if not plan_panel_data:
+            await callback.message.edit_text("پنل PasarGuard یافت نشد. لطفاً دوباره تلاش کنید.", reply_markup=await back_to_menu())
+            return
+        from pasarguard_api import PasarGuardAPI
+        pg_api = PasarGuardAPI(
+            panel_url=plan_panel_data["url"],
+            panel_user=plan_panel_data["username"],
+            panel_pass=plan_panel_data["password"],
+        )
+        try:
+            await pg_api.login()
+            import random, string
+            rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+            pg_username = f"nig_{user_id}_{rand_suffix}"
+            pg_result = await pg_api.create_user(
+                username=pg_username,
+                data_limit_gb=plan["gb"],
+                expire_days=plan["days"],
+            )
+            if not pg_result:
+                await callback.message.edit_text("ساخت کانفیگ PasarGuard ناموفق بود.", reply_markup=await back_to_menu())
+                return
+            sub_link = pg_api.get_subscription_url(pg_username)
+            expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
+            result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
+        finally:
+            await pg_api.close()
     else:
         # V2Ray config creation (existing flow)
         plan_inbound_ids = None
@@ -1447,6 +1514,15 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
     
     service_type = plan.get("service_type", "v2ray")
     
+    # Auto-detect pasarguard from panel type if service_type is v2ray
+    if service_type == "v2ray" and plan.get("panel_id"):
+        try:
+            _plan_panel = await get_panel(plan["panel_id"])
+            if _plan_panel and _plan_panel.get("panel_type") == "pasarguard":
+                service_type = "pasarguard"
+        except Exception:
+            pass
+    
     if service_type == "wireguard":
         if not wireguard_api:
             await update_balance(user_id, pay_price)
@@ -1474,6 +1550,54 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
         sub_link = wg_result.get("short_link", "") or f"wireguard:{peer_name}"
         expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
         result = {"sub_link": sub_link, "uuid": peer_name, "expire_date": expire_date}
+    elif service_type == "pasarguard":
+        plan_panel_data = None
+        if plan.get("panel_id"):
+            from database import get_panel
+            plan_panel_data = await get_panel(plan["panel_id"])
+        if not plan_panel_data:
+            await update_balance(user_id, pay_price)
+            try:
+                await callback.message.edit_text(
+                    "پنل PasarGuard یافت نشد. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                )
+            except Exception:
+                await callback.message.answer(
+                    "پنل PasarGuard یافت نشد. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                )
+            return
+        from pasarguard_api import PasarGuardAPI
+        pg_api = PasarGuardAPI(
+            panel_url=plan_panel_data["url"],
+            panel_user=plan_panel_data["username"],
+            panel_pass=plan_panel_data["password"],
+        )
+        try:
+            await pg_api.login()
+            import random, string
+            rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+            pg_username = f"nig_{user_id}_{rand_suffix}"
+            pg_result = await pg_api.create_user(
+                username=pg_username,
+                data_limit_gb=plan["gb"],
+                expire_days=plan["days"],
+            )
+            if not pg_result:
+                await update_balance(user_id, pay_price)
+                try:
+                    await callback.message.edit_text(
+                        "ساخت کانفیگ PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                    )
+                except Exception:
+                    await callback.message.answer(
+                        "ساخت کانفیگ PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                    )
+                return
+            sub_link = pg_api.get_subscription_url(pg_username)
+            expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
+            result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
+        finally:
+            await pg_api.close()
     else:
         plan_inbound_ids = None
         if plan.get("inbound_ids"):
