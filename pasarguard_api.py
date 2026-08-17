@@ -186,8 +186,36 @@ class PasarGuardAPI:
         expire_days: int = 0,
         group_ids: list[int] = None,
         note: str = "",
+        retries: int = 3,
     ) -> dict | None:
-        """Create a new user on PasarGuard panel."""
+        """Create a new user on PasarGuard panel. Retries with new username on 409."""
+        import random, string
+        for attempt in range(retries):
+            result = await self._create_user_once(
+                username, data_limit_gb, expire_days, group_ids, note
+            )
+            if result is not None:
+                return result
+            # 409 means username exists - try again with new suffix
+            if attempt < retries - 1:
+                rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+                username_parts = username.rsplit('_', 1)
+                if len(username_parts) == 2:
+                    username = f"{username_parts[0]}_{rand_suffix}"
+                else:
+                    username = f"{username}_{rand_suffix}"
+                logger.warning(f"PasarGuard: username collision, retrying with '{username}'")
+        return None
+
+    async def _create_user_once(
+        self,
+        username: str,
+        data_limit_gb: float = 0,
+        expire_days: int = 0,
+        group_ids: list[int] = None,
+        note: str = "",
+    ) -> dict | None:
+        """Create a new user on PasarGuard panel (single attempt)."""
         payload = {
             "username": username,
             "status": "active",
@@ -216,7 +244,7 @@ class PasarGuardAPI:
 
         result = await self._post("/api/user", payload)
         if result:
-            logger.info(f"PasarGuard user '{username}' created: {result}")
+            logger.info(f"PasarGuard user '{username}' created: id={result.get('id')}")
         return result
 
     async def get_user(self, username: str) -> dict | None:

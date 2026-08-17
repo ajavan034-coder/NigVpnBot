@@ -1018,6 +1018,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
         import random, string
         rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
         pg_username = f"nig_{user_id}_{rand_suffix}"
+        logger.info(f"PasarGuard: creating user '{pg_username}' for plan '{plan['name']}' ({plan['gb']}GB, {plan['days']}d)")
         pg_result = await pg_api.create_user(
             username=pg_username,
             data_limit_gb=plan["gb"],
@@ -1025,14 +1026,17 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
         )
         if not pg_result:
             await pg_api.close()
-            await callback.message.edit_text("ساخت کانفیگ PasarGuard ناموفق بود.", reply_markup=await back_to_menu())
+            await callback.message.edit_text("ساخت کانفیگ PasarGuard ناموفق بود. لطفاً دوباره تلاش کنید.", reply_markup=await back_to_menu())
             return
+        actual_username = pg_result.get("username", pg_username)
+        logger.info(f"PasarGuard: user '{actual_username}' created successfully (id={pg_result.get('id')})")
         # Fetch the user to get the actual subscription URL (with UUID token)
-        sub_link = await pg_api.get_subscription_url_for_user(pg_username)
+        sub_link = await pg_api.get_subscription_url_for_user(actual_username)
         if not sub_link:
-            sub_link = pg_api.build_subscription_url(pg_username)
+            sub_link = pg_api.build_subscription_url(actual_username)
+        logger.info(f"PasarGuard: subscription URL = {sub_link}")
         expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
-        result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
+        result = {"sub_link": sub_link, "uuid": actual_username, "expire_date": expire_date}
         # pg_api stays open for config download below
     else:
         # V2Ray config creation (existing flow)
@@ -1104,6 +1108,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
     elif service_type == "pasarguard":
         from aiogram.types import BufferedInputFile
         conf_content = None
+        logger.info(f"PasarGuard: downloading config from {result['sub_link']}")
         try:
             conf_content = await pg_api.download_wireguard_config(result["sub_link"])
         except Exception as e:
@@ -1121,8 +1126,10 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
             f"🔗 لینک اشتراک:\n<code>{result['sub_link']}</code>\n\n"
         )
         if conf_content:
+            logger.info(f"PasarGuard: config downloaded successfully ({len(conf_content)} chars)")
             pg_text += "📄 فایل تنظیمات در ادامه ارسال شد."
         else:
+            logger.warning("PasarGuard: config download returned None")
             pg_text += "⚠️ خطا در دانلود فایل تنظیمات. از لینک اشتراک استفاده کنید."
         await callback.message.answer(pg_text, parse_mode="HTML", reply_markup=await back_to_menu())
 
@@ -1761,6 +1768,7 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
     elif service_type == "pasarguard":
         from aiogram.types import BufferedInputFile
         conf_content = None
+        logger.info(f"PasarGuard (C2C): downloading config from {result['sub_link']}")
         try:
             conf_content = await pg_api.download_wireguard_config(result["sub_link"])
         except Exception as e:
@@ -1778,8 +1786,10 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
             f"🔗 لینک اشتراک:\n<code>{result['sub_link']}</code>\n\n"
         )
         if conf_content:
+            logger.info(f"PasarGuard (C2C): config downloaded successfully ({len(conf_content)} chars)")
             pg_text += "📄 فایل تنظیمات در ادامه ارسال شد."
         else:
+            logger.warning("PasarGuard (C2C): config download returned None")
             pg_text += "⚠️ خطا در دانلود فایل تنظیمات. از لینک اشتراک استفاده کنید."
         await callback.message.answer(pg_text, parse_mode="HTML", reply_markup=await back_to_menu())
 
