@@ -242,53 +242,79 @@ class PasarGuardAPI:
 
     # ── Subscription ─────────────────────────────────────────
 
-    def get_subscription_url(self, username: str, token: str = None) -> str:
-        """Build subscription URL for a user. Prefer token-based URL if available."""
-        if token:
-            return f"{self.panel_url}/{self.sub_path}/{token}/"
+    def build_subscription_url(self, username: str) -> str:
+        """Build subscription URL using username as fallback token."""
         return f"{self.panel_url}/{self.sub_path}/{username}/"
 
-    def extract_subscription_url(self, user_data: dict) -> str | None:
-        """Extract subscription_url from a user creation response."""
+    async def get_subscription_url_for_user(self, username: str) -> str | None:
+        """Get the subscription URL for a user by fetching their data.
+        PasarGuard uses a UUID token, not the username, for subscriptions."""
+        user_data = await self.get_user(username)
         if not user_data:
+            logger.warning(f"PasarGuard: could not fetch user '{username}' for subscription URL")
             return None
+        # The response should contain subscription_url
         sub_url = user_data.get("subscription_url")
         if sub_url:
+            # Make absolute if relative
+            if sub_url.startswith("/"):
+                return f"{self.panel_url}{sub_url}"
             return sub_url
+        # Fallback: try to find a subscription_token or uuid field
+        for key in ("subscription_token", "token", "uuid", "sub_token"):
+            val = user_data.get(key)
+            if val:
+                return f"{self.panel_url}/{self.sub_path}/{val}/"
+        logger.warning(f"PasarGuard: no subscription URL/token found for user '{username}'")
         return None
 
     async def download_wireguard_config(self, subscription_url: str) -> str | None:
         """Download WireGuard config from subscription URL. Returns .conf content or None."""
-        session = await self._get_session()
+        # Use a clean session for subscription (no auth cookies needed)
+        clean_session = aiohttp.ClientSession()
         # Ensure URL ends with /wireguard/
         url = subscription_url.rstrip("/")
         if not url.endswith("/wireguard"):
             url = url + "/wireguard"
         if not url.endswith("/"):
             url = url + "/"
+        logger.info(f"PasarGuard: downloading WireGuard config from {url}")
+        data = None
+        content_type = ""
         try:
-            resp = await session.get(
+            resp = await clean_session.get(
                 url,
-                headers={"Accept": "application/zip"},
                 timeout=aiohttp.ClientTimeout(total=30),
             )
+            content_type = resp.headers.get("content-type", "")
+            logger.info(f"PasarGuard: WG download response status={resp.status}, content-type={content_type}")
             if resp.status != 200:
                 body = await resp.text()
-                logger.error(f"PasarGuard WG download {resp.status}: {url} -> {body[:200]}")
+                logger.error(f"PasarGuard WG download {resp.status}: {url} -> {body[:300]}")
                 return None
             data = await resp.read()
-            # The response is a ZIP file containing .conf files
-            with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                for name in zf.namelist():
-                    if name.endswith(".conf"):
-                        return zf.read(name).decode("utf-8")
-                # If no .conf file, try the first file
-                if zf.namelist():
-                    return zf.read(zf.namelist()[0]).decode("utf-8")
-        except zipfile.BadZipFile:
-            logger.error("PasarGuard WG download: invalid ZIP file")
+            if not data:
+                logger.error("PasarGuard WG download: empty response body")
+                return None
+            # If it's already text-based (plain config), return directly
+            if "text" in content_type or "x-conf" in content_type:
+                return data.decode("utf-8")
+            # Try to unzip
+            try:
+                with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                    for name in zf.namelist():
+                        if name.endswith(".conf"):
+                            return zf.read(name).decode("utf-8")
+                    if zf.namelist():
+                        return zf.read(zf.namelist()[0]).decode("utf-8")
+                logger.error(f"PasarGuard WG download: no .conf in ZIP ({zf.namelist()})")
+            except zipfile.BadZipFile:
+                logger.warning("PasarGuard WG download: not a ZIP, trying as raw text")
+                return data.decode("utf-8")
         except Exception as e:
             logger.error(f"PasarGuard WG download error: {e}")
+        finally:
+            await clean_session.close()
         return None
 
     async def download_subscription_content(self, subscription_url: str, client_type: str = "links") -> str | None:

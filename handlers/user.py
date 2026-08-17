@@ -817,7 +817,9 @@ async def cb_free_test_select(callback: CallbackQuery):
                 "ساخت کانفیگ PasarGuard ناموفق بود.", reply_markup=await back_to_menu()
             )
             return
-        sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
+        sub_link = await pg_api.get_subscription_url_for_user(pg_username)
+        if not sub_link:
+            sub_link = pg_api.build_subscription_url(pg_username)
         expire_date = (datetime.utcnow() + timedelta(days=free_test_days)).isoformat()
         result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
     else:
@@ -1025,7 +1027,10 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
             await pg_api.close()
             await callback.message.edit_text("ساخت کانفیگ PasarGuard ناموفق بود.", reply_markup=await back_to_menu())
             return
-        sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
+        # Fetch the user to get the actual subscription URL (with UUID token)
+        sub_link = await pg_api.get_subscription_url_for_user(pg_username)
+        if not sub_link:
+            sub_link = pg_api.build_subscription_url(pg_username)
         expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
         result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
         # pg_api stays open for config download below
@@ -1671,7 +1676,9 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                     "ساخت کانفیگ PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
                 )
             return
-        sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
+        sub_link = await pg_api.get_subscription_url_for_user(pg_username)
+        if not sub_link:
+            sub_link = pg_api.build_subscription_url(pg_username)
         expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
         result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
     else:
