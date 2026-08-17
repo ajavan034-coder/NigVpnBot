@@ -770,7 +770,7 @@ async def process_volume(message: Message, state: FSMContext):
         return
     await state.update_data(panel_volume_gb=volume)
     panel_type = (await state.get_data()).get("panel_type", "3xui")
-    if panel_type == "wireguard":
+    if panel_type in ("wireguard", "pasarguard"):
         await _finalize_panel_add(message, state)
         return
     await state.set_state(PanelState.waiting_wizard_ft_enabled)
@@ -1035,6 +1035,41 @@ async def cb_test_panel(callback: CallbackQuery):
             text = (
                 f"❌ **گزارش اتصال پنل Wireguard**\n\n"
                 f"🔗 وضعیت: 🔴 غیرفعال\n"
+                f"❌ خطا: اتصال به پنل برقرار نشد"
+            )
+    elif ptype == "pasarguard":
+        from pasarguard_api import PasarGuardAPI
+        temp_api = PasarGuardAPI(
+            panel_url=panel["url"],
+            panel_user=panel["username"],
+            panel_pass=panel["password"],
+        )
+        try:
+            login_ok = await temp_api.login()
+            groups = await temp_api.get_groups() if login_ok else []
+            users_data = await temp_api._get("/api/users") if login_ok else None
+            user_count = len(users_data.get("users", [])) if isinstance(users_data, dict) else 0
+        except Exception as e:
+            login_ok = False
+            groups = []
+            user_count = 0
+            logger.error(f"PasarGuard test error: {e}")
+        finally:
+            await temp_api.close()
+
+        if login_ok:
+            text = (
+                f"✅ **گزارش اتصال پنل PasarGuard**\n\n"
+                f"🔗 وضعیت: 🟢 فعال\n"
+                f"🔐 ورود: 🟢 موفق\n"
+                f"👥 کاربران: {user_count}\n"
+                f"📂 گروه‌ها: {len(groups)}"
+            )
+        else:
+            text = (
+                f"❌ **گزارش اتصال پنل PasarGuard**\n\n"
+                f"🔗 وضعیت: 🔴 غیرفعال\n"
+                f"🔐 ورود: 🔴 ناموفق\n"
                 f"❌ خطا: اتصال به پنل برقرار نشد"
             )
     else:

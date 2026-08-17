@@ -168,6 +168,13 @@ class PasarGuardAPI:
             return result["inbounds"]
         return []
 
+    async def get_first_group_id(self) -> int | None:
+        """Get the first available group ID. PasarGuard requires at least one group."""
+        groups = await self.get_groups()
+        if groups and len(groups) > 0:
+            return groups[0].get("id")
+        return None
+
     # ── User Management ──────────────────────────────────────
 
     async def create_user(
@@ -182,8 +189,7 @@ class PasarGuardAPI:
         payload = {
             "username": username,
             "status": "active",
-            "note": note or f"Created by NigVpnBot",
-            "group_ids": group_ids or [],
+            "note": note or "Created by NigVpnBot",
         }
 
         if data_limit_gb > 0:
@@ -196,6 +202,15 @@ class PasarGuardAPI:
             payload["expire"] = expire_dt.isoformat() + "Z"
         else:
             payload["expire"] = 0
+
+        if group_ids:
+            payload["group_ids"] = group_ids
+        else:
+            first_gid = await self.get_first_group_id()
+            if first_gid is not None:
+                payload["group_ids"] = [first_gid]
+            else:
+                logger.warning("PasarGuard: no groups found, user may fail to create")
 
         result = await self._post("/api/user", payload)
         if result:
@@ -226,10 +241,19 @@ class PasarGuardAPI:
     # ── Subscription ─────────────────────────────────────────
 
     def get_subscription_url(self, username: str, token: str = None) -> str:
-        """Build subscription URL for a user."""
+        """Build subscription URL for a user. Prefer token-based URL if available."""
         if token:
             return f"{self.panel_url}/{self.sub_path}/{token}/"
         return f"{self.panel_url}/{self.sub_path}/{username}/"
+
+    def extract_subscription_url(self, user_data: dict) -> str | None:
+        """Extract subscription_url from a user creation response."""
+        if not user_data:
+            return None
+        sub_url = user_data.get("subscription_url")
+        if sub_url:
+            return sub_url
+        return None
 
     async def get_subscription_info(self, token: str) -> dict | None:
         return await self._get(f"/{self.sub_path}/{token}/info")

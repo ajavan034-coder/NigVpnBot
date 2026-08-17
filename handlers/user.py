@@ -795,7 +795,12 @@ async def cb_free_test_select(callback: CallbackQuery):
             panel_pass=ft_panel["password"],
         )
         try:
-            await pg_api.login()
+            login_ok = await pg_api.login()
+            if not login_ok:
+                await callback.message.edit_text(
+                    "ورود به پنل PasarGuard ناموفق بود.", reply_markup=await back_to_menu()
+                )
+                return
             pg_username = f"free_{user_id}"
             ft_data_limit_gb = (free_test_mb / 1024) if free_test_mb else 0
             pg_result = await pg_api.create_user(
@@ -808,7 +813,7 @@ async def cb_free_test_select(callback: CallbackQuery):
                     "ساخت کانفیگ PasarGuard ناموفق بود.", reply_markup=await back_to_menu()
                 )
                 return
-            sub_link = pg_api.get_subscription_url(pg_username)
+            sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
             expire_date = (datetime.utcnow() + timedelta(days=free_test_days)).isoformat()
             result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
         finally:
@@ -977,7 +982,10 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
             panel_pass=plan_panel_data["password"],
         )
         try:
-            await pg_api.login()
+            login_ok = await pg_api.login()
+            if not login_ok:
+                await callback.message.edit_text("ورود به پنل PasarGuard ناموفق بود.", reply_markup=await back_to_menu())
+                return
             import random, string
             rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
             pg_username = f"nig_{user_id}_{rand_suffix}"
@@ -989,7 +997,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
             if not pg_result:
                 await callback.message.edit_text("ساخت کانفیگ PasarGuard ناموفق بود.", reply_markup=await back_to_menu())
                 return
-            sub_link = pg_api.get_subscription_url(pg_username)
+            sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
             expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
             result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
         finally:
@@ -1573,7 +1581,18 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
             panel_pass=plan_panel_data["password"],
         )
         try:
-            await pg_api.login()
+            login_ok = await pg_api.login()
+            if not login_ok:
+                await update_balance(user_id, pay_price)
+                try:
+                    await callback.message.edit_text(
+                        "ورود به پنل PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                    )
+                except Exception:
+                    await callback.message.answer(
+                        "ورود به پنل PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                    )
+                return
             import random, string
             rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
             pg_username = f"nig_{user_id}_{rand_suffix}"
@@ -1593,7 +1612,7 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                         "ساخت کانفیگ PasarGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
                     )
                 return
-            sub_link = pg_api.get_subscription_url(pg_username)
+            sub_link = pg_api.extract_subscription_url(pg_result) or pg_api.get_subscription_url(pg_username)
             expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
             result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
         finally:
