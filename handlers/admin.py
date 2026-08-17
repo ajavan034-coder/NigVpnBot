@@ -21,6 +21,7 @@ from database import (
     reset_free_test, get_free_test_users, reset_all_free_tests,
     add_collab_request, get_collab_request, get_pending_collab_requests,
     update_collab_request, set_user_collaborator,
+    is_blacklisted, add_to_blacklist, remove_from_blacklist, get_blacklisted_users,
 )
 from api import panel_api
 from keyboards.admin import (
@@ -36,7 +37,7 @@ from keyboards.admin import (
     control_panel_menu, backup_list_keyboard,
     broadcast_menu, broadcast_destination_keyboard, broadcast_button_keyboard, broadcast_pin_keyboard, menu_editor_menu, confirm_action,
     discount_codes_menu, discount_code_detail_menu,
-    trial_management_menu,
+    trial_management_menu, blacklist_keyboard,
 )
 from keyboards.user import _btn
 
@@ -98,6 +99,9 @@ class AdminState(StatesGroup):
     edit_collab_channel = State()
     edit_collab_btn_text = State()
     collab_reject_reason = State()
+    edit_shop_message = State()
+    blacklist_add_id = State()
+    blacklist_add_reason = State()
 
 
 # ─── Entry Point ─────────────────────────────────────────────
@@ -2090,6 +2094,69 @@ async def process_edit_force_join_fail_text(message: Message, state: FSMContext)
 
 
 # ═══════════════════════════════════════════════════════════════
+# Shop Open/Close Settings
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_toggle_shop")
+async def cb_toggle_shop(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("shop_open") or "1"
+    new_val = "0" if current == "1" else "1"
+    await set_setting("shop_open", new_val)
+    if new_val == "0":
+        msg = await get_setting("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
+        await callback.answer("فروشگاه بسته شد 🔴", show_alert=True)
+        await callback.message.edit_text(
+            f"🏪 <b>وضعیت فروشگاه</b>\n\n"
+            f"🔴 <b>بسته</b>\n\n"
+            f"متن نمایشی به کاربران:\n<code>{msg}</code>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🟢 باز کردن فروشگاه", callback_data="adm_toggle_shop")],
+                [InlineKeyboardButton(text="✏️ ویرایش متن بسته بودن", callback_data="adm_edit_shop_message")],
+                [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm_settings")],
+            ]),
+        )
+    else:
+        await callback.answer("فروشگاه باز شد 🟢", show_alert=True)
+        await callback.message.edit_text(
+            f"🏪 <b>وضعیت فروشگاه</b>\n\n"
+            f"🟢 <b>باز</b>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔴 بستن فروشگاه", callback_data="adm_toggle_shop")],
+                [InlineKeyboardButton(text="✏️ ویرایش متن بسته بودن", callback_data="adm_edit_shop_message")],
+                [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm_settings")],
+            ]),
+        )
+
+
+@router.callback_query(F.data == "adm_edit_shop_message")
+async def cb_edit_shop_message(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
+    await state.set_state(AdminState.edit_shop_message)
+    await callback.message.edit_text(
+        f"✏️ <b>متن بسته بودن فروشگاه</b>\n\n"
+        f"متن فعلی:\n<code>{current}</code>\n\n"
+        f"متن جدید را ارسال کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.edit_shop_message)
+async def process_edit_shop_message(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    await set_setting("shop_close_message", message.text)
+    await state.clear()
+    await message.answer("✅ متن بسته بودن فروشگاه به‌روزرسانی شد!", reply_markup=await settings_menu())
+
+
+
+
+# ═══════════════════════════════════════════════════════════════
 # Invite/Referral Settings
 # ═══════════════════════════════════════════════════════════════
 @router.callback_query(F.data == "adm_edit_invite")
@@ -3041,4 +3108,166 @@ async def cb_adm_delete_discount(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await discount_codes_menu(codes))
     except Exception:
         await callback.message.answer(text, parse_mode="HTML", reply_markup=await discount_codes_menu(codes))
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION: Blacklist Management
+# ═══════════════════════════════════════════════════════════════
+@router.callback_query(F.data == "adm_blacklist")
+async def cb_blacklist(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    users = await get_blacklisted_users()
+    text = (
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "  ⛔ <b>لیست سیاه (Blacklist)</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  👥 تعداد مسدود شده: <b>{len(users)}</b>\n"
+    )
+    if not users:
+        text += "\n  هیچ کاربری مسدود نشده است."
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await blacklist_keyboard(users))
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=await blacklist_keyboard(users))
+
+
+@router.callback_query(F.data == "adm_blacklist_add")
+async def cb_blacklist_add(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.blacklist_add_id)
+    await callback.message.edit_text(
+        "⛔ <b>مسدود کردن کاربر</b>\n\nآیدی عددی کاربر را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.blacklist_add_id)
+async def process_blacklist_add_id(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        user_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ آیدی نامعتبر. یک عدد وارد کنید:")
+        return
+    user = await get_user(user_id)
+    if not user:
+        await message.answer("❌ کاربر یافت نشد.", reply_markup=await back_to_admin())
+        return
+    await state.update_data(blacklist_target=user_id)
+    await state.set_state(AdminState.blacklist_add_reason)
+    uname = f"@{user.get('username', 'ندارد')}" if user.get("username") else str(user_id)
+    await message.answer(
+        f"👤 کاربر: {uname} (<code>{user_id}</code>)\n\n"
+        f"📝 دلیل مسدودی را وارد کنید (اختیاری، برای رد کردن بنویسید <code>-</code>):",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.blacklist_add_reason)
+async def process_blacklist_add_reason(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    user_id = data.get("blacklist_target")
+    reason = "" if message.text.strip() == "-" else message.text.strip()
+    await add_to_blacklist(user_id, reason)
+    await state.clear()
+    try:
+        await message.bot.send_message(
+            chat_id=user_id,
+            text="⛔ شما از استفاده از ربات محروم شده‌اید.",
+        )
+    except Exception:
+        pass
+    await message.answer(
+        f"✅ کاربر <code>{user_id}</code> مسدود شد.",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.callback_query(F.data.startswith("adm_blacklist_detail_"))
+async def cb_blacklist_detail(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    user_id = int(callback.data.split("_")[-1])
+    user = await get_user(user_id)
+    uname = f"@{user.get('username', 'ندارد')}" if user else str(user_id)
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔓 رفع مسدودی", callback_data=f"adm_blacklist_remove_{user_id}")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm_blacklist")],
+    ])
+    await callback.message.edit_text(
+        f"⛔ <b>کاربر مسدود شده</b>\n\n"
+        f"  👤 کاربر: {uname}\n"
+        f"  🔢 آیدی: <code>{user_id}</code>",
+        parse_mode="HTML", reply_markup=kb
+    )
+
+
+@router.callback_query(F.data.startswith("adm_blacklist_remove_"))
+async def cb_blacklist_remove(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    user_id = int(callback.data.split("_")[-1])
+    await remove_from_blacklist(user_id)
+    try:
+        await callback.bot.send_message(
+            chat_id=user_id,
+            text="✅ مسدودی شما رفع شد. اکنون می‌توانید از ربات استفاده کنید.",
+        )
+    except Exception:
+        pass
+    await callback.answer("✅ کاربر از لیست سیاه خارج شد!", show_alert=True)
+    users = await get_blacklisted_users()
+    text = (
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "  ⛔ <b>لیست سیاه (Blacklist)</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"  👥 تعداد مسدود شده: <b>{len(users)}</b>\n"
+    )
+    if not users:
+        text += "\n  هیچ کاربری مسدود نشده است."
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await blacklist_keyboard(users))
+
+
+@router.message(Command("save"))
+async def cmd_save(message: Message):
+    if not await is_admin(message.from_user.id):
+        return
+    import sqlite3
+    db_path = os.path.join(os.path.dirname(__file__), '..', 'bot_database.db')
+    try:
+        conn = sqlite3.connect(db_path)
+        result = conn.execute("PRAGMA integrity_check").fetchone()
+        conn.close()
+        if result[0] == 'ok':
+            await message.answer("✅ Database integrity OK.\n💾 All data saved successfully.")
+        else:
+            await message.answer(f"⚠️ Database integrity issue: {result[0]}")
+    except Exception as e:
+        await message.answer(f"❌ Error: {e}")
+
+
+@router.message(Command("dbstatus"))
+async def cmd_dbstatus(message: Message):
+    if not await is_admin(message.from_user.id):
+        return
+    import sqlite3
+    db_path = os.path.join(os.path.dirname(__file__), '..', 'bot_database.db')
+    size = os.path.getsize(db_path)
+    conn = sqlite3.connect(db_path)
+    tables = ['users', 'plans', 'configs', 'receipts', 'panels', 'blacklist']
+    lines = [f"📊 <b>Database Status</b>\n📦 Size: {size:,} bytes\n"]
+    for t in tables:
+        try:
+            count = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            lines.append(f"  {t}: {count} rows")
+        except Exception:
+            lines.append(f"  {t}: N/A")
+    conn.close()
+    await message.answer("\n".join(lines), parse_mode="HTML")
 

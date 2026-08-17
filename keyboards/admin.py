@@ -31,6 +31,7 @@ async def admin_menu() -> InlineKeyboardMarkup:
         ],
         [
             await _btn("🏷️ کدهای تخفیف", "adm_discounts", "link", btn_id="admin_discounts"),
+            await _btn("⛔ Blacklist", "adm_blacklist", "ban", btn_id="admin_blacklist"),
         ],
     ])
 
@@ -267,6 +268,8 @@ async def admins_menu(admins: list) -> InlineKeyboardMarkup:
 
 # ─── Section 7: Settings ─────────────────────────────────────
 async def settings_menu() -> InlineKeyboardMarkup:
+    shop_open = await get_setting("shop_open") or "1"
+    shop_status = "🟢 باز" if shop_open == "1" else "🔴 بسته"
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             await _btn("📝 متن خوش‌آمدگویی", "adm_edit_welcome", "gear"),
@@ -291,6 +294,7 @@ async def settings_menu() -> InlineKeyboardMarkup:
             await _btn("🤝 درخواست همکاری", "adm_edit_collab", "link"),
         ],
         [
+            await _btn(f"🏪 وضعیت فروشگاه: {shop_status}", "adm_toggle_shop", "gear"),
             await _btn("🎯 ایموجی خوش‌آمدگویی", "adm_edit_welcome_emoji", "gear"),
         ],
         [
@@ -510,6 +514,22 @@ async def trial_management_menu() -> InlineKeyboardMarkup:
         [await _btn("🔄 ریست همه کاربران", "adm_trial_reset_all", "gear")],
         [await _btn("🔙 بازگشت", "adm_settings", btn_id="back")],
     ])
+
+
+async def blacklist_keyboard(users: list) -> InlineKeyboardMarkup:
+    buttons = []
+    for u in users:
+        uid = u["user_id"]
+        uname = f"@{u.get('username', 'ندارد')}" if u.get("username") else str(uid)
+        reason = u.get("reason", "")
+        reason_short = f" — {reason[:20]}" if reason else ""
+        buttons.append([InlineKeyboardButton(
+            text=f"👤 {uname} ({uid}){reason_short}",
+            callback_data=f"adm_blacklist_detail_{uid}",
+        )])
+    buttons.append([await _btn("➕ مسدود کردن کاربر", "adm_blacklist_add", "plus", "danger")])
+    buttons.append([await _btn("🔙 بازگشت", "adm_menu", btn_id="back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 # ─── Confirm Dialogs ─────────────────────────────────────────

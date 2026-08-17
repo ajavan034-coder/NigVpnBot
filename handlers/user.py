@@ -11,6 +11,7 @@ from database import (
     get_config_by_id, update_config_sub_link, get_plan_name,
     get_invite_stats, get_active_configs, get_balance,
     add_collab_request, set_user_collaborator,
+    is_blacklisted,
 )
 from api import panel_api, panel_manager
 from keyboards.user import (
@@ -26,6 +27,7 @@ from utils.texts import (
     volume_detail_text, extract_configs_text,
 )
 from utils.premium_emoji import pe, get_button_emoji_id
+from utils.stickers import send_sticker
 from utils.qr_generator import generate_qr
 from io import BytesIO
 from data_tracker import log_bot_user, update_user_balance, log_purchase
@@ -151,6 +153,22 @@ class ForceJoinMiddleware(BaseMiddleware):
 router.callback_query.middleware(ForceJoinMiddleware())
 
 
+class BlacklistMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event, data: dict):
+        user_id = event.from_user.id
+        if await is_blacklisted(user_id):
+            if isinstance(event, CallbackQuery):
+                await event.answer("⛔ شما از استفاده از ربات محروم شده‌اید.", show_alert=True)
+            elif isinstance(event, Message):
+                await event.answer("⛔ شما از استفاده از ربات محروم شده‌اید.")
+            return
+        return await handler(event, data)
+
+
+router.message.middleware(BlacklistMiddleware())
+router.callback_query.middleware(BlacklistMiddleware())
+
+
 class _StartBtnFilter(BaseFilter):
     async def __call__(self, message) -> bool:
         try:
@@ -216,6 +234,9 @@ async def handle_web_app_data(message: Message, state: FSMContext):
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
+    if await is_blacklisted(message.from_user.id):
+        await message.answer("⛔ شما از استفاده از ربات محروم شده‌اید.")
+        return
     args = message.text.split(maxsplit=1)
     param = args[1] if len(args) > 1 else None
 
@@ -263,6 +284,7 @@ async def cmd_start(message: Message, state: FSMContext):
                     reward = float(await get_setting("invite_reward_amount") or "0")
                     if reward > 0:
                         await update_balance(referrer["id"], reward)
+                        await send_sticker(message.bot, message.chat.id, 'referral')
 
                 channel_id = await get_setting("notification_channel_id") or ""
                 if channel_id:
@@ -460,6 +482,7 @@ async def cmd_start(message: Message, state: FSMContext):
     welcome = welcome.replace("{name}", message.from_user.first_name or "doust aziz")
     if we:
         welcome = '<tg-emoji emoji-id="' + we + '"></tg-emoji>\n' + welcome
+    await send_sticker(message.bot, message.chat.id, 'welcome')
     await message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
     menu_msg = await message.answer("منوی اصلی", reply_markup=await main_menu(message.from_user.id))
     try:
@@ -474,6 +497,9 @@ async def cmd_start(message: Message, state: FSMContext):
 
 @router.message(_start_btn_match)
 async def btn_start(message: Message):
+    if await is_blacklisted(message.from_user.id):
+        await message.answer("⛔ شما از استفاده از ربات محروم شده‌اید.")
+        return
     is_new = await add_user(
         message.from_user.id,
         message.from_user.username,
@@ -488,6 +514,7 @@ async def btn_start(message: Message):
     if we:
         try: await message.answer(we)
         except: pass
+    await send_sticker(message.bot, message.chat.id, 'welcome')
     welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
     welcome = welcome.replace("{name}", message.from_user.first_name or "doust aziz")
     menu_msg = await message.answer(welcome, parse_mode="HTML", reply_markup=await main_menu(message.from_user.id))
@@ -730,6 +757,7 @@ async def cb_free_test_select(callback: CallbackQuery):
     else:
         text = await free_test_config(result["sub_link"], free_test_days)
         qr_img = generate_qr(result["sub_link"])
+        await send_sticker(callback.bot, callback.message.chat.id, 'success')
         await callback.message.answer_photo(
             photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
         )
@@ -888,6 +916,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
             plan["price"], plan["name"], plan["gb"], plan["days"], symbol,
         )
         qr_img = generate_qr(result["sub_link"])
+        await send_sticker(callback.bot, callback.message.chat.id, 'config')
         await callback.message.answer_photo(
             photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
         )
@@ -927,6 +956,11 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "buy_config")
 async def cb_buy_config(callback: CallbackQuery):
+    shop_open = await get_setting("shop_open") or "1"
+    if shop_open == "0":
+        msg = await get_setting("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
+        await callback.answer(msg, show_alert=True)
+        return
     user = await get_user(callback.from_user.id)
     if not user:
         await callback.answer("لطفاً ابتدا /start را بزنید", show_alert=True)
@@ -973,6 +1007,11 @@ async def cb_buy_config(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("select_section_"))
 async def cb_select_section(callback: CallbackQuery):
+    shop_open = await get_setting("shop_open") or "1"
+    if shop_open == "0":
+        msg = await get_setting("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
+        await callback.answer(msg, show_alert=True)
+        return
     section_id = int(callback.data.split("_")[-1])
     from database import get_plan_section
     section = await get_plan_section(section_id)
@@ -985,6 +1024,11 @@ async def cb_select_section(callback: CallbackQuery):
 
 @router.callback_query(F.data == "all_plans")
 async def cb_all_plans(callback: CallbackQuery):
+    shop_open = await get_setting("shop_open") or "1"
+    if shop_open == "0":
+        msg = await get_setting("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
+        await callback.answer(msg, show_alert=True)
+        return
     text = await get_setting("plans_header_text") or (
         "━━━━━━━━━━━━━━━━━━━━\n"
         "  🛒 <b>خرید کانفیگ</b>\n"
@@ -999,6 +1043,11 @@ async def cb_all_plans(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("select_plan_"))
 async def cb_select_plan(callback: CallbackQuery, state: FSMContext):
+    shop_open = await get_setting("shop_open") or "1"
+    if shop_open == "0":
+        msg = await get_setting("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
+        await callback.answer(msg, show_alert=True)
+        return
     plan_id = int(callback.data.split("_")[-1])
     plan = await get_plan(plan_id)
     if not plan:

@@ -2,6 +2,10 @@ import aiosqlite
 import json
 from datetime import datetime, timedelta
 from config import DB_PATH, ADMIN_IDS
+import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 
 async def get_db():
@@ -12,7 +16,29 @@ async def get_db():
     return db
 
 
+async def _check_db_integrity():
+    """Check DB integrity at startup and attempt recovery."""
+    import sqlite3, os, shutil
+    db_path = DB_PATH
+    if not os.path.exists(db_path):
+        return
+    try:
+        conn = sqlite3.connect(db_path)
+        result = conn.execute("PRAGMA integrity_check").fetchone()
+        conn.close()
+        if result[0] != 'ok':
+            logger.error(f"Database corruption detected: {result[0]}")
+            backup_dir = os.path.join(os.path.dirname(__file__), 'backups')
+            os.makedirs(backup_dir, exist_ok=True)
+            backup_path = os.path.join(backup_dir, f"db_backup_{int(time.time())}.db")
+            shutil.copy2(db_path, backup_path)
+            logger.info(f"Corrupted DB backed up to {backup_path}")
+    except Exception as e:
+        logger.error(f"DB integrity check failed: {e}")
+
+
 async def init_db():
+    await _check_db_integrity()
     db = await get_db()
     await db.executescript("""
         CREATE TABLE IF NOT EXISTS users (
@@ -74,6 +100,12 @@ async def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             display_order INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS blacklist (
+            user_id INTEGER PRIMARY KEY,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reason TEXT DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS settings (
@@ -275,6 +307,8 @@ async def init_db():
         "backup_enabled": "1",
         "backup_hour": "4",
         "backup_minute": "0",
+        "shop_open": "1",
+        "shop_close_message": "فروش به دلیل بروزرسانی موقتاً بسته شده است.",
     }
     for key, value in defaults.items():
         existing = await db.execute("SELECT key FROM settings WHERE key = ?", (key,))
@@ -1040,3 +1074,32 @@ async def set_user_collaborator(user_id: int, is_collaborator: bool):
     await db.execute("UPDATE users SET is_collaborator = ? WHERE id = ?", (1 if is_collaborator else 0, user_id))
     await db.commit()
     await db.close()
+
+
+# ==================== Blacklist ====================
+
+async def is_blacklisted(user_id: int) -> bool:
+    db = await get_db()
+    cursor = await db.execute("SELECT 1 FROM blacklist WHERE user_id = ?", (user_id,))
+    result = await cursor.fetchone()
+    await db.close()
+    return result is not None
+
+async def add_to_blacklist(user_id: int, reason: str = "") -> None:
+    db = await get_db()
+    await db.execute("INSERT OR REPLACE INTO blacklist (user_id, reason) VALUES (?, ?)", (user_id, reason))
+    await db.commit()
+    await db.close()
+
+async def remove_from_blacklist(user_id: int) -> None:
+    db = await get_db()
+    await db.execute("DELETE FROM blacklist WHERE user_id = ?", (user_id,))
+    await db.commit()
+    await db.close()
+
+async def get_blacklisted_users() -> list:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM blacklist")
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
