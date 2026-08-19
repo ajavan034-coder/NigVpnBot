@@ -321,8 +321,12 @@ async def cmd_start(message: Message, state: FSMContext):
                             f"  👤 زیرمجموعه: {invitee_display} (ID: {message.from_user.id})\n\n"
                             f"  📊 تعداد زیرمجموعه‌های کاربر: <b>{invitee_count}</b>\n"
                         )
+                        reward_type_notif = await get_setting("invite_reward_type") or "fixed"
                         if invite_enabled_val == "1" and reward_val > 0:
-                            notif_text += f"  💰 پاداش اعطا شده: <b>{reward_val:,.0f} {symbol}</b>\n"
+                            if reward_type_notif == "fixed":
+                                notif_text += f"  💰 پاداش ثابت اعطا شده: <b>{reward_val:,.0f} {symbol}</b>\n"
+                            else:
+                                notif_text += f"  📊 نوع پاداش: <b>کمیسیون درصدی ( عندالشراء )</b>\n"
 
                         await message.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(referrer["id"]))
                     except Exception as e:
