@@ -2586,16 +2586,10 @@ async def cb_collab_reply(callback: CallbackQuery, state: FSMContext):
     await state.update_data(collab_reply_request_id=request_id)
     await state.set_state(AdminState.collab_reply_text)
     await callback.message.edit_text(
-        f"💬 <b>پاسخ به کاربر</b>
-
-"
-        f"کاربر: @{request.get('username', 'ندارد')} (ID: {request['user_id']})
-"
-        f"پیام اولیه:
-{request.get('message', '')}
-
-"
-        f"لطفاً پاسخ خود را ارسال کنید:",
+        "💬 <b>پاسخ به کاربر</b>\n\n"
+        f"کاربر: @{request.get('username', 'ندارد')} (ID: {request['user_id']})\n"
+        f"پیام اولیه:\n{request.get('message', '')}\n\n"
+        "لطفاً پاسخ خود را ارسال کنید:",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ لغو", callback_data=f"collab_view_{request_id}")]
