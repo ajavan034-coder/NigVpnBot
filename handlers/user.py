@@ -292,10 +292,12 @@ async def cmd_start(message: Message, state: FSMContext):
 
                 invite_enabled = await get_setting("invite_enabled")
                 if invite_enabled == "1":
-                    reward = float(await get_setting("invite_reward_amount") or "0")
-                    if reward > 0:
-                        await update_balance(referrer["id"], reward)
-                        await send_sticker(message.bot, message.chat.id, 'referral')
+                    reward_type = await get_setting("invite_reward_type") or "fixed"
+                    if reward_type == "fixed":
+                        reward = float(await get_setting("invite_reward_amount") or "0")
+                        if reward > 0:
+                            await update_balance(referrer["id"], reward)
+                            await send_sticker(message.bot, message.chat.id, 'referral')
 
                 channel_id = await get_setting("notification_channel_id") or ""
                 if channel_id:
@@ -1079,6 +1081,18 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
         cashback_amount = pay_price_mk * cashback_pct / 100
         unique_key = f"cashback_{user_id}_{int(time.time())}"
         await wallet_credit(user_id, cashback_amount, "CASHBACK", "کش‌بک خرید", unique_key)
+
+    invite_reward_type = await get_setting("invite_reward_type") or "fixed"
+    if invite_reward_type == "commission":
+        from database import get_user
+        buyer_user = await get_user(user_id)
+        if buyer_user and buyer_user.get("referred_by"):
+            referrer_id = buyer_user["referred_by"]
+            commission_pct = float(await get_setting("invite_commission_percent") or "10")
+            if commission_pct > 0 and pay_price_mk:
+                commission_amount = pay_price_mk * commission_pct / 100
+                unique_key_comm = f"commission_{user_id}_{int(time.time())}"
+                await wallet_credit(referrer_id, commission_amount, "CASHBACK", f"کمیسیون زیرمجموعه", unique_key_comm)
 
     await update_balance(user_id, -pay_price_mk)
     symbol = await get_setting("currency_symbol") or "تومان"
