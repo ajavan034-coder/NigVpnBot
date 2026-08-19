@@ -351,6 +351,20 @@
                     <label class="form-label">دکمه کیف پول</label>
                     <input type="text" name="btn_wallet" class="form-control" value="{{ settings.get('btn_wallet', 'Wallet') }}">
                 </div>
+                    <label class="form-label">دکمه شروع</label>
+                    <input type="text" name="btn_start" class="form-control" value="{{ settings.get('btn_start', '▶️ شروع') }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">استایل دکمه شروع</label>
+                    <select name="btn_start_style" class="form-select">
+                        <option value="primary" {{ 'selected' if settings.get('btn_start_style') == 'primary' }}>آبی (Primary)</option>
+                        <option value="success" {{ 'selected' if settings.get('btn_start_style', 'success') == 'success' }}>سبز (Success)</option>
+                        <option value="danger" {{ 'selected' if settings.get('btn_start_style') == 'danger' }}>قرمز (Danger)</option>
+                    </select>
+                    <div class="form-text">رنگ دکمه شروع در پایین چت</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">دکمه تست رایگان</label>
                 <div class="mb-3">
                     <label class="form-label">دکمه تست رایگان</label>
                     <input type="text" name="btn_free_test" class="form-control" value="{{ settings.get('btn_free_test', 'Free Test') }}">

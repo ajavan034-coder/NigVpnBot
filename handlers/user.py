@@ -187,8 +187,9 @@ _start_btn_match = _StartBtnFilter()
 
 async def _start_kb():
     btn_text = await get_setting("btn_start") or "▶️ شروع"
+    btn_style = await get_setting("btn_start_style") or "success"
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=btn_text)]],
+        keyboard=[[KeyboardButton(text=btn_text, style=btn_style)]],
         resize_keyboard=True,
     )
 
