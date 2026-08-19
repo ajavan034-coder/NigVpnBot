@@ -2612,9 +2612,7 @@ async def process_collab_reply(message: Message, state: FSMContext):
     try:
         await message.bot.send_message(
             chat_id=request["user_id"],
-            text=f"💬 <b>پاسخ مدیر به درخواست همکاری:</b>
-
-{message.text}",
+            text=f"💬 <b>پاسخ مدیر به درخواست همکاری:</b>\n\n{message.text}",
             parse_mode="HTML",
         )
         await message.answer("✅ پاسخ ارسال شد!", reply_markup=await collab_settings_menu())
