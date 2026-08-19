@@ -27,7 +27,7 @@ async def _get_text(key, default):
     return await get_setting(key) or default
 
 
-WELCOME_TEXT_DEFAULT = "به NigVpn خوش آمدید! خرید آسان و امن VPN"
+WELCOME_TEXT_DEFAULT = "سلام {name}! 👋\nبه NigVpn خوش آمدید.\nخرید آسان و امن VPN"
 
 
 async def wallet_text(balance: float, symbol: str = "تومان") -> str:
