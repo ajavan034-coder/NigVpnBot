@@ -153,6 +153,16 @@
                     <textarea name="text_invite" class="form-control" rows="3" placeholder="متن پیش‌فرض نمایش داده می‌شود">{{ settings.get('text_invite', '') }}</textarea>
                     <div class="form-text">متغیرها: <code>{link}</code> <code>{count}</code> <code>{reward}</code> <code>{symbol}</code></div>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label">متن دعوت - حالت پاداش ثابت</label>
+                    <textarea name="text_invite_fixed" class="form-control" rows="3" placeholder="متن پیش‌فرض نمایش داده می‌شود">{{ settings.get('text_invite_fixed', '') }}</textarea>
+                    <div class="form-text">متغیرها: <code>{link}</code> <code>{count}</code> <code>{reward}</code> <code>{symbol}</code> <code>{earnings}</code><br>فقط وقتی نوع پاداش روی «پاداش ثابت» تنظیم شده باشد استفاده می‌شود.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">متن دعوت - حالت کمیسیون</label>
+                    <textarea name="text_invite_commission" class="form-control" rows="3" placeholder="متن پیش‌فرض نمایش داده می‌شود">{{ settings.get('text_invite_commission', '') }}</textarea>
+                    <div class="form-text">متغیرها: <code>{link}</code> <code>{count}</code> <code>{commission}</code> <code>{symbol}</code> <code>{earnings}</code><br>فقط وقتی نوع پاداش روی «کمیسیون درصدی» تنظیم شده باشد استفاده می‌شود.</div>
+                </div>
                 <div class="row">
                     <div class="col-md-6 mb-3">
                         <label class="form-label">متن دکمه زیرمجموعه</label>

@@ -379,6 +379,8 @@ async def init_db():
         "invite_enabled": "0",
         "invite_reward_amount": "5000",
         "text_invite": "",
+        "text_invite_fixed": "",
+        "text_invite_commission": "",
         "force_join_enabled": "0",
         "required_channel_id": "",
         "force_join_text": "⚠️ برای استفاده از ربات، ابتدا باید در کانال ما عضو شوید!",

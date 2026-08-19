@@ -669,13 +669,22 @@ async def cb_invite(callback: CallbackQuery):
     else:
         reward_line = f"پاداش هر زیرمجموعه: <b>{reward} {symbol}</b>"
 
-    tpl = await get_setting("text_invite") or (
-        f"👥 <b>زیرمجموعه گیری</b>\n\n"
-        f"لینک دعوت شما:\n<code>{link}</code>\n\n"
-        f"تعداد زیرمجموعه‌ها: <b>{count}</b>\n"
-        f"{reward_line}\n"
-        f"درآمد کل: <b>{earnings:,.0f} {symbol}</b>"
-    )
+    if reward_type == "commission":
+        tpl = await get_setting("text_invite_commission") or await get_setting("text_invite") or (
+            f"👥 <b>زیرمجموعه گیری</b>\n\n"
+            f"لینک دعوت شما:\n<code>{link}</code>\n\n"
+            f"تعداد زیرمجموعه‌ها: <b>{count}</b>\n"
+            f"درصد کمیسیون: <b>{commission_pct}%</b> از خرید زیرمجموعه\n"
+            f"درآمد کل: <b>{earnings:,.0f} {symbol}</b>"
+        )
+    else:
+        tpl = await get_setting("text_invite_fixed") or await get_setting("text_invite") or (
+            f"👥 <b>زیرمجموعه گیری</b>\n\n"
+            f"لینک دعوت شما:\n<code>{link}</code>\n\n"
+            f"تعداد زیرمجموعه‌ها: <b>{count}</b>\n"
+            f"پاداش هر زیرمجموعه: <b>{reward} {symbol}</b>\n"
+            f"درآمد کل: <b>{earnings:,.0f} {symbol}</b>"
+        )
     text = tpl.replace("{link}", link) \
         .replace("{count}", str(count)) \
         .replace("{reward}", str(reward)) \
