@@ -362,6 +362,11 @@
                         <option value="danger" {{ 'selected' if settings.get('btn_start_style') == 'danger' }}>قرمز (Danger)</option>
                     </select>
                     <div class="form-text">رنگ دکمه شروع در پایین چت</div>
+                <div class="mb-3">
+                    <label class="form-label">آیدی ایموجی سفارشی (اختیاری)</label>
+                    <input type="text" name="btn_start_emoji_id" class="form-control" value="{{ settings.get('btn_start_emoji_id', '') }}" placeholder="مثلاً: 5368324170671202286">
+                    <div class="form-text">آیدی ایموجی پریمیوم تلگرام. برای دریافت آیدی، ایموجی را در چت خصوصی ارسال کنید و از @customemojiids bot استفاده کنید. خالی بگذارید برای بدون ایموجی.</div>
+                </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">دکمه تست رایگان</label>

@@ -188,8 +188,12 @@ _start_btn_match = _StartBtnFilter()
 async def _start_kb():
     btn_text = await get_setting("btn_start") or "▶️ شروع"
     btn_style = await get_setting("btn_start_style") or "success"
+    emoji_id = await get_setting("btn_start_emoji_id") or ""
+    btn = KeyboardButton(text=btn_text, style=btn_style)
+    if emoji_id:
+        btn.icon_custom_emoji_id = emoji_id
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=btn_text, style=btn_style)]],
+        keyboard=[[btn]],
         resize_keyboard=True,
     )
 
