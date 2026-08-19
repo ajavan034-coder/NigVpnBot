@@ -2079,7 +2079,7 @@ async def cb_collab_request(callback: CallbackQuery, state: FSMContext):
         await callback.answer("لطفاً ابتدا /start را بزنید", show_alert=True)
         return
     if user.get("is_collaborator"):
-        await callback.answer("شما قبلاً همکار شده‌اید!", show_alert=True)
+        await callback.answer("✅ همکاری شما تایید شده است! شما از قیمت‌های ویژه بهره‌مند هستید.", show_alert=True)
         return
     await state.set_state(CollabRequestState.waiting_text)
     text = (

@@ -103,6 +103,7 @@ class AdminState(StatesGroup):
     edit_collab_channel = State()
     edit_collab_btn_text = State()
     collab_reject_reason = State()
+    collab_reply_text = State()
     edit_shop_message = State()
     blacklist_add_id = State()
     blacklist_add_reason = State()
@@ -2570,6 +2571,62 @@ async def process_collab_reject_reason(message: Message, state: FSMContext):
 
     await state.clear()
     await message.answer("✅ درخواست رد شد و به کاربر اطلاع داده شد.", reply_markup=await collab_settings_menu())
+
+
+@router.callback_query(F.data.startswith("collab_reply_"))
+async def cb_collab_reply(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    request_id = int(callback.data.split("_")[-1])
+    request = await get_collab_request(request_id)
+    if not request:
+        await callback.answer("❌ درخواست یافت نشد!", show_alert=True)
+        return
+    await state.update_data(collab_reply_request_id=request_id)
+    await state.set_state(AdminState.collab_reply_text)
+    await callback.message.edit_text(
+        f"💬 <b>پاسخ به کاربر</b>
+
+"
+        f"کاربر: @{request.get('username', 'ندارد')} (ID: {request['user_id']})
+"
+        f"پیام اولیه:
+{request.get('message', '')}
+
+"
+        f"لطفاً پاسخ خود را ارسال کنید:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ لغو", callback_data=f"collab_view_{request_id}")]
+        ])
+    )
+    await callback.answer()
+
+
+@router.message(AdminState.collab_reply_text)
+async def process_collab_reply(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    request_id = data.get("collab_reply_request_id")
+    request = await get_collab_request(request_id)
+    if not request:
+        await state.clear()
+        await message.answer("❌ درخواست یافت نشد!", reply_markup=await collab_settings_menu())
+        return
+    try:
+        await message.bot.send_message(
+            chat_id=request["user_id"],
+            text=f"💬 <b>پاسخ مدیر به درخواست همکاری:</b>
+
+{message.text}",
+            parse_mode="HTML",
+        )
+        await message.answer("✅ پاسخ ارسال شد!", reply_markup=await collab_settings_menu())
+    except Exception:
+        await message.answer("❌ خطا در ارسال پاسخ به کاربر.", reply_markup=await collab_settings_menu())
+    await state.clear()
 
 
 @router.callback_query(F.data == "adm_control")

@@ -512,6 +512,7 @@ async def collab_request_actions(request_id: int) -> InlineKeyboardMarkup:
             await _btn("✅ تایید", f"collab_approve_{request_id}", "approve", "success"),
             await _btn("❌ رد", f"collab_reject_{request_id}", "reject", "danger"),
         ],
+        [await _btn("💬 پاسخ به کاربر", f"collab_reply_{request_id}", "reply", "primary")],
         [await _btn("🔙 بازگشت", "adm_collab_requests", btn_id="back")],
     ])
 

@@ -119,10 +119,6 @@ async def main_menu(user_id: int = 0) -> InlineKeyboardMarkup:
             enabled = await get_setting("collab_enabled")
             if enabled != "1":
                 return None
-            from database import get_user
-            user = await get_user(user_id) if user_id else None
-            if user and user.get("is_collaborator"):
-                return None
             return await _btn(await get_setting("btn_collab_request") or "🤝 درخواست همکاری", "collab_request", "link", "primary", "collab_request")
         elif bid == "webapp":
             url = "https://nigcity.ir/app"
