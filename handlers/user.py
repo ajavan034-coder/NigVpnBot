@@ -197,6 +197,12 @@ async def _start_kb():
         resize_keyboard=True,
     )
 
+async def _ensure_start_kb(bot, chat_id):
+    try:
+        await bot.send_message(chat_id, " ", reply_markup=await _start_kb())
+    except Exception:
+        pass
+
 class C2CState(StatesGroup):
     waiting_confirm = State()
     waiting_photo = State()
@@ -713,6 +719,7 @@ async def cb_invite(callback: CallbackQuery):
     ])
 
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    await _ensure_start_kb(callback.message.bot, callback.message.chat.id)
 
 
 @router.message(Command("menu"))
@@ -725,16 +732,19 @@ async def cb_main_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     try:
         await callback.message.edit_text("منوی اصلی", reply_markup=await main_menu(callback.from_user.id))
+        await _ensure_start_kb(callback.message.bot, callback.message.chat.id)
     except Exception:
         try:
             await callback.message.delete()
         except Exception:
             pass
         await callback.message.answer("منوی اصلی", reply_markup=await main_menu(callback.from_user.id))
+        await _ensure_start_kb(callback.message.bot, callback.message.chat.id)
 
 
 @router.callback_query(F.data == "free_test")
 async def cb_free_test(callback: CallbackQuery):
+    await _ensure_start_kb(callback.message.bot, callback.message.chat.id)
     mode = await get_setting("operating_mode") or "NORMAL"
     if mode == "MAINTENANCE":
         msg = await get_setting("maintenance_message") or "ربات در حال بروزرسانی است."
@@ -1245,6 +1255,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "buy_config")
 async def cb_buy_config(callback: CallbackQuery):
+    await _ensure_start_kb(callback.message.bot, callback.message.chat.id)
     mode = await get_setting("operating_mode") or "NORMAL"
     if mode == "MAINTENANCE":
         msg = await get_setting("maintenance_message") or "ربات در حال بروزرسانی است."
@@ -2061,6 +2072,7 @@ async def cb_cancel_receipt(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "my_configs")
 async def cb_my_configs(callback: CallbackQuery):
+    await _ensure_start_kb(callback.message.bot, callback.message.chat.id)
     user_id = callback.from_user.id
     configs = await get_user_configs(user_id)
     active_configs = [c for c in configs if c.get("is_active")]
