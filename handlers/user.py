@@ -517,7 +517,7 @@ async def cmd_start(message: Message, state: FSMContext):
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     welcome = welcome.replace("{{full_name}}", full_name or "دوست عزیز")
     if we:
-        welcome = '<tg-emoji emoji-id="' + we + '"></tg-emoji>\n' + welcome
+        welcome = '<tg-emoji emoji-id="' + we + '">🔹</tg-emoji>\n' + welcome
     await send_sticker(message.bot, message.chat.id, 'welcome')
     await message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
     menu_msg = await message.answer("منوی اصلی", reply_markup=await main_menu(message.from_user.id))
@@ -605,7 +605,7 @@ async def handle_contact(message: Message, state: FSMContext):
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     welcome = welcome.replace("{{full_name}}", full_name or "دوست عزیز")
     if we:
-        welcome = '<tg-emoji emoji-id="' + we + '"></tg-emoji>\n' + welcome
+        welcome = '<tg-emoji emoji-id="' + we + '">🔹</tg-emoji>\n' + welcome
     await send_sticker(message.bot, message.chat.id, 'welcome')
     await message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
     menu_msg = await message.answer("منوی اصلی", reply_markup=await main_menu(message.from_user.id))
