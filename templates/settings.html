@@ -132,6 +132,21 @@
                         <input type="number" name="invite_reward_amount" class="form-control" value="{{ settings.get('invite_reward_amount', '5000') }}">
                         <div class="form-text">مبلغ پاداش به تومان برای هر دعوت موفق</div>
                     </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">نوع پاداش</label>
+                            <select name="invite_reward_type" class="form-select">
+                                <option value="fixed" {{ 'selected' if settings.get('invite_reward_type', 'fixed') == 'fixed' }}>پاداش ثابت</option>
+                                <option value="commission" {{ 'selected' if settings.get('invite_reward_type') == 'commission' }}>کمیسیون درصدی</option>
+                            </select>
+                            <div class="form-text">پاداش ثابت: مبلغ مشخص به ازای هر دعوت<br>کمیسیون درصدی: درصدی از خرید زیرمجموعه</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">درصد کمیسیون</label>
+                            <input type="number" name="invite_commission_percent" class="form-control" value="{{ settings.get('invite_commission_percent', '10') }}">
+                            <div class="form-text">درصد کمیسیون از مبلغ خرید زیرمجموعه (فقط در حالت کمیسیون)</div>
+                        </div>
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">متن دعوت (خالی = پیش‌فرض)</label>
