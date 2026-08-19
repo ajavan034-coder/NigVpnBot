@@ -525,6 +525,34 @@ async def get_invite_stats(user_id: int) -> dict:
     return {"code": code, "count": cnt}
 
 
+
+async def get_user_purchase_stats(user_id: int) -> dict:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT COUNT(*) as total_purchases, COALESCE(SUM(amount), 0) as total_spent, "
+        "COALESCE(SUM(discount_amount), 0) as total_discount "
+        "FROM receipts WHERE user_id = ? AND status = 'approved'",
+        (user_id,),
+    )
+    row = await cursor.fetchone()
+    await db.close()
+    return {
+        "total_purchases": row["total_purchases"] if row else 0,
+        "total_spent": row["total_spent"] if row else 0,
+        "total_discount": row["total_discount"] if row else 0,
+    }
+
+
+async def get_user_referral_earnings(user_id: int) -> float:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT COALESCE(SUM(amount), 0) as total FROM wallet_transactions "
+        "WHERE user_id = ? AND type = 'CASHBACK' AND description LIKE '%زیرمجموعه%'",
+        (user_id,),
+    )
+    row = await cursor.fetchone()
+    await db.close()
+    return row["total"] if row else 0.0
 async def search_users(query: str) -> list[dict]:
     db = await get_db()
     cursor = await db.execute(

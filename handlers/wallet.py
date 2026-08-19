@@ -22,7 +22,7 @@ async def cb_wallet(callback: CallbackQuery, state: FSMContext):
         await callback.answer("لطفاً ابتدا /start را بزنید", show_alert=True)
         return
     symbol = await get_setting("currency_symbol") or "تومان"
-    text = await wallet_text(user["balance"], symbol)
+    text = await wallet_text(user["balance"], symbol, user_id=callback.from_user.id)
     try:
         await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await wallet_menu())
     except Exception:
