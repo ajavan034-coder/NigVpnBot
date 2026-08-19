@@ -648,7 +648,7 @@ async def cb_check_membership(callback: CallbackQuery):
 
 @router.callback_query(F.data == "invite")
 async def cb_invite(callback: CallbackQuery):
-    from database import get_setting
+    from database import get_setting, get_user_referral_earnings
     enabled = await get_setting("invite_enabled")
     if enabled != "1":
         await callback.answer("این قابلیت غیرفعال است", show_alert=True)
@@ -657,20 +657,31 @@ async def cb_invite(callback: CallbackQuery):
     code = stats["code"] or "N/A"
     count = stats["count"]
     reward = await get_setting("invite_reward_amount") or "0"
+    reward_type = await get_setting("invite_reward_type") or "fixed"
+    commission_pct = await get_setting("invite_commission_percent") or "10"
     symbol = await get_setting("currency_symbol") or "تومان"
+    earnings = await get_user_referral_earnings(callback.from_user.id)
     me = await callback.bot.get_me()
     link = f"https://t.me/{me.username}?start={code}"
+
+    if reward_type == "commission":
+        reward_line = f"درصد کمیسیون: <b>{commission_pct}%</b> از خرید زیرمجموعه"
+    else:
+        reward_line = f"پاداش هر زیرمجموعه: <b>{reward} {symbol}</b>"
 
     tpl = await get_setting("text_invite") or (
         f"👥 <b>زیرمجموعه گیری</b>\n\n"
         f"لینک دعوت شما:\n<code>{link}</code>\n\n"
         f"تعداد زیرمجموعه‌ها: <b>{count}</b>\n"
-        f"پاداش هر زیرمجموعه: <b>{reward} {symbol}</b>"
+        f"{reward_line}\n"
+        f"درآمد کل: <b>{earnings:,.0f} {symbol}</b>"
     )
     text = tpl.replace("{link}", link) \
         .replace("{count}", str(count)) \
         .replace("{reward}", str(reward)) \
-        .replace("{symbol}", symbol)
+        .replace("{symbol}", symbol) \
+        .replace("{earnings}", f"{earnings:,.0f}") \
+        .replace("{commission}", commission_pct)
 
     from keyboards.user import _btn
 
