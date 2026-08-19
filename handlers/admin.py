@@ -1518,6 +1518,12 @@ async def cb_edit_welcome_emoji(callback: CallbackQuery, state: FSMContext):
         f"🎯 <b>ایموجی خوش‌آمدگویی</b>\n\n"
         f"فعلی: <code>{current if current else 'غیرفعال'}</code>\n\n"
         f"ایموجی مورد نظر را ارسال کنید:\n"
+        f"<b>نحوه دریافت آیدی ایموجی پرمیوم:</b>\n"
+        f"1. ایموجی پرمیوم مورد نظر را در چت خصوصی ارسال کنید\n"
+        f"2. آن را به ربات <code>@customemojiids</code> فوروارد کنید\n"
+        f"3. آیدی دریافتی را کپی کنید\n\n"
+        f"<b>یا:</b> ایموجی پرمیوم را همینجا ارسال کنید\n\n"
+        f"(برای غیرفعال کردن `غیرفعال` تایپ کنید)",
         f"(برای غیرفعال کردن `غیرفعال` تایپ کنید)",
         parse_mode="HTML", reply_markup=await back_to_admin()
     )
