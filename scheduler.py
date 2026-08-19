@@ -6,9 +6,6 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-_notified_24h: set[str] = set()
-_notified_1h: set[str] = set()
-_last_reset_date: str = ""
 _last_backup_time: float = 0
 _last_backup_date: str = ""
 
@@ -38,29 +35,21 @@ async def _deactivate_expired(bot=None):
 
 
 async def _send_expiry_reminders(bot):
-    global _notified_24h, _notified_1h, _last_reset_date
-
     from database import get_setting
     enabled = await get_setting("expiry_reminder_enabled")
     if enabled == "0":
         return
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    if today != _last_reset_date:
-        _notified_24h.clear()
-        _notified_1h.clear()
-        _last_reset_date = today
-
-    from database import get_configs_expiring_in_24h, get_configs_expiring_in_1h
+    from database import get_configs_expiring_in_24h, get_configs_expiring_in_1h, has_notified, mark_notified
 
     configs_24h = await get_configs_expiring_in_24h()
     for c in configs_24h:
         uid = c["user_id"]
-        key = f"{uid}_{c['id']}_24h"
-        if key in _notified_24h:
+        cfg_id = c["id"]
+        if await has_notified(uid, cfg_id, "24h"):
             continue
 
-        cfg_name = c.get("config_name") or f"#{c['id']}"
+        cfg_name = c.get("config_name") or f"#{cfg_id}"
         try:
             await bot.send_message(
                 chat_id=uid,
@@ -71,18 +60,18 @@ async def _send_expiry_reminders(bot):
                 ),
                 parse_mode="HTML",
             )
-            _notified_24h.add(key)
+            await mark_notified(uid, cfg_id, "24h")
         except Exception:
-            _notified_24h.add(key)
+            await mark_notified(uid, cfg_id, "24h")
 
     configs_1h = await get_configs_expiring_in_1h()
     for c in configs_1h:
         uid = c["user_id"]
-        key = f"{uid}_{c['id']}_1h"
-        if key in _notified_1h:
+        cfg_id = c["id"]
+        if await has_notified(uid, cfg_id, "1h"):
             continue
 
-        cfg_name = c.get("config_name") or f"#{c['id']}"
+        cfg_name = c.get("config_name") or f"#{cfg_id}"
         try:
             await bot.send_message(
                 chat_id=uid,
@@ -93,9 +82,9 @@ async def _send_expiry_reminders(bot):
                 ),
                 parse_mode="HTML",
             )
-            _notified_1h.add(key)
+            await mark_notified(uid, cfg_id, "1h")
         except Exception:
-            _notified_1h.add(key)
+            await mark_notified(uid, cfg_id, "1h")
 async def _backup_3xui_panel(panel, channel_id, bot, panel_name=""):
     """Backup a single 3x-ui panel and send .db file to channel."""
     try:

@@ -553,6 +553,26 @@ async def get_user_referral_earnings(user_id: int) -> float:
     row = await cursor.fetchone()
     await db.close()
     return row["total"] if row else 0.0
+
+async def has_notified(user_id: int, config_id: int, window: str) -> bool:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT 1 FROM expiry_notifications WHERE user_id = ? AND config_id = ? AND window = ?",
+        (user_id, config_id, window),
+    )
+    row = await cursor.fetchone()
+    await db.close()
+    return row is not None
+
+
+async def mark_notified(user_id: int, config_id: int, window: str):
+    db = await get_db()
+    await db.execute(
+        "INSERT OR IGNORE INTO expiry_notifications (user_id, config_id, window) VALUES (?, ?, ?)",
+        (user_id, config_id, window),
+    )
+    await db.commit()
+    await db.close()
 async def search_users(query: str) -> list[dict]:
     db = await get_db()
     cursor = await db.execute(
