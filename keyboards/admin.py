@@ -361,11 +361,16 @@ async def force_join_settings_menu() -> InlineKeyboardMarkup:
 async def invite_settings_menu() -> InlineKeyboardMarkup:
     enabled = await get_setting("invite_enabled") or "0"
     reward = await get_setting("invite_reward_amount") or "5000"
+    reward_type = await get_setting("invite_reward_type") or "fixed"
+    commission_pct = await get_setting("invite_commission_percent") or "10"
     symbol = await get_setting("currency_symbol") or "تومان"
     status = "فعال ✅" if enabled == "1" else "غیرفعال ❌"
+    type_label = "پاداش ثابت" if reward_type == "fixed" else f"کمیسیون {commission_pct}%"
     return InlineKeyboardMarkup(inline_keyboard=[
         [await _btn(f"🔄 وضعیت فعلی: {status}", "adm_toggle_invite", "gear")],
         [await _btn(f"💰 مبلغ پاداش: {reward} {symbol}", "adm_edit_invite_reward", "money")],
+        [await _btn(f"🎯 نوع پاداش: {type_label}", "adm_edit_invite_reward_type", "gear")],
+        [await _btn(f"📊 درصد کمیسیون: {commission_pct}%", "adm_edit_invite_commission", "money")],
         [await _btn("📝 متن دعوت", "adm_edit_invite_text", "gear")],
         [await _btn("🔙 بازگشت", "adm_settings", btn_id="back")],
     ])

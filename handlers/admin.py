@@ -104,6 +104,8 @@ class AdminState(StatesGroup):
     edit_collab_btn_text = State()
     collab_reject_reason = State()
     collab_reply_text = State()
+    edit_invite_reward_type = State()
+    edit_invite_commission = State()
     edit_shop_message = State()
     blacklist_add_id = State()
     blacklist_add_reason = State()
@@ -2262,6 +2264,68 @@ async def process_edit_invite_text(message: Message, state: FSMContext):
     await set_setting("text_invite", value)
     await state.clear()
     await message.answer("✅ متن زیرمجموعه گیری به‌روزرسانی شد!", reply_markup=await invite_settings_menu())
+
+@router.callback_query(F.data == "adm_edit_invite_reward_type")
+async def cb_edit_invite_reward_type(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("invite_reward_type") or "fixed"
+    await state.set_state(AdminState.edit_invite_reward_type)
+    text = (
+        "🎯 <b>نوع پاداش زیرمجموعه</b>\n\n"
+        f"وضعیت فعلی: <b>{'پاداش ثابت' if current == 'fixed' else 'کمیسیون درصدی'}</b>\n\n"
+        "نوع جدید را انتخاب کنید:"
+    )
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 پاداش ثابت", callback_data="set_invite_type_fixed")],
+        [InlineKeyboardButton(text="📊 کمیسیون درصدی", callback_data="set_invite_type_commission")],
+        [InlineKeyboardButton(text="❌ لغو", callback_data="adm_edit_invite")],
+    ])
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("set_invite_type_"))
+async def cb_set_invite_type(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    reward_type = callback.data.replace("set_invite_type_", "")
+    await set_setting("invite_reward_type", reward_type)
+    type_label = "پاداش ثابت" if reward_type == "fixed" else "کمیسیون درصدی"
+    await callback.answer(f"✅ نوع پاداش: {type_label}", show_alert=True)
+    await callback.message.edit_text("✅ نوع پاداش به‌روزرسانی شد!", reply_markup=await invite_settings_menu())
+
+
+@router.callback_query(F.data == "adm_edit_invite_commission")
+async def cb_edit_invite_commission(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    current = await get_setting("invite_commission_percent") or "10"
+    await state.set_state(AdminState.edit_invite_commission)
+    await callback.message.edit_text(
+        f"📊 <b>درصد کمیسیون</b>\n\n"
+        f"درصد فعلی: <b>{current}%</b>\n\n"
+        "درصد جدید را ارسال کنید (عدد بین ۱ تا ۱۰۰):",
+        parse_mode="HTML",
+        reply_markup=await invite_settings_menu()
+    )
+
+
+@router.message(AdminState.edit_invite_commission)
+async def process_edit_invite_commission(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    try:
+        pct = int(message.text.strip())
+        if pct < 1 or pct > 100:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ لطفاً عددی بین ۱ تا ۱۰۰ وارد کنید:")
+        return
+    await set_setting("invite_commission_percent", str(pct))
+    await state.clear()
+    await message.answer(f"✅ درصد کمیسیون: {pct}%", reply_markup=await invite_settings_menu())
+
 
 @router.callback_query(F.data == "adm_edit_currency")
 async def cb_edit_currency(callback: CallbackQuery, state: FSMContext):
