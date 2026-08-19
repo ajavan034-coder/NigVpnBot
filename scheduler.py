@@ -6,23 +6,39 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-_notified_today: set[int] = set()
+_notified_24h: set[str] = set()
+_notified_1h: set[str] = set()
 _last_reset_date: str = ""
 _last_backup_time: float = 0
 _last_backup_date: str = ""
 
 
-async def _deactivate_expired():
+async def _deactivate_expired(bot=None):
     from database import get_expired_active_configs, deactivate_config
     configs = await get_expired_active_configs()
     if configs:
         for c in configs:
             await deactivate_config(c["id"])
+            if bot:
+                uid = c["user_id"]
+                cfg_name = c.get("config_name") or f"#{c['id']}"
+                try:
+                    await bot.send_message(
+                        chat_id=uid,
+                        text=(
+                            f"\u274c <b>کانفیگ منقضی شد</b>\n\n"
+                            f"کانفیگ <b>{cfg_name}</b> شما منقضی شده و غیرفعال شد.\n"
+                            f"برای ادامه اتصال، کانفیگ جدید بخرید!"
+                        ),
+                        parse_mode="HTML",
+                    )
+                except Exception as e:
+                    logger.warning("Failed to notify user %d about expired config: %s", uid, e)
         logger.info("Deactivated %d expired configs", len(configs))
 
 
 async def _send_expiry_reminders(bot):
-    global _notified_today, _last_reset_date
+    global _notified_24h, _notified_1h, _last_reset_date
 
     from database import get_setting
     enabled = await get_setting("expiry_reminder_enabled")
@@ -31,38 +47,55 @@ async def _send_expiry_reminders(bot):
 
     today = datetime.utcnow().strftime("%Y-%m-%d")
     if today != _last_reset_date:
-        _notified_today.clear()
+        _notified_24h.clear()
+        _notified_1h.clear()
         _last_reset_date = today
 
-    from database import get_configs_expiring_soon
-    configs = await get_configs_expiring_soon()
-    for c in configs:
+    from database import get_configs_expiring_in_24h, get_configs_expiring_in_1h
+
+    configs_24h = await get_configs_expiring_in_24h()
+    for c in configs_24h:
         uid = c["user_id"]
-        if uid in _notified_today:
+        key = f"{uid}_{c['id']}_24h"
+        if key in _notified_24h:
             continue
 
-        expire = datetime.fromisoformat(c["expire_date"])
-        days_left = max(1, (expire - datetime.utcnow()).days)
-        symbol = "تومان"
-        try:
-            symbol = await get_setting("currency_symbol") or symbol
-        except Exception:
-            pass
-
+        cfg_name = c.get("config_name") or f"#{c['id']}"
         try:
             await bot.send_message(
                 chat_id=uid,
                 text=(
                     f"\u23f0 <b>کانفیگ در حال انقضا</b>\n\n"
-                    f"کانفیگ <b>#{c['id']}</b> شما در <b>{days_left} روز</b> منقضی می‌شود.\n"
+                    f"کانفیگ <b>{cfg_name}</b> شما در کمتر از ۲۴ ساعت منقضی می\u200cشود.\n"
                     f"برای ادامه اتصال، کانفیگ جدید بخرید!"
                 ),
+                parse_mode="HTML",
             )
-            _notified_today.add(uid)
+            _notified_24h.add(key)
         except Exception:
-            _notified_today.add(uid)
+            _notified_24h.add(key)
 
+    configs_1h = await get_configs_expiring_in_1h()
+    for c in configs_1h:
+        uid = c["user_id"]
+        key = f"{uid}_{c['id']}_1h"
+        if key in _notified_1h:
+            continue
 
+        cfg_name = c.get("config_name") or f"#{c['id']}"
+        try:
+            await bot.send_message(
+                chat_id=uid,
+                text=(
+                    f"\u23f0 <b>کانفیگ در حال انقضا</b>\n\n"
+                    f"کانفیگ <b>{cfg_name}</b> شما در کمتر از ۱ ساعت منقضی می\u200cشود!\n"
+                    f"برای ادامه اتصال، کانفیگ جدید بخرید!"
+                ),
+                parse_mode="HTML",
+            )
+            _notified_1h.add(key)
+        except Exception:
+            _notified_1h.add(key)
 async def _backup_3xui_panel(panel, channel_id, bot, panel_name=""):
     """Backup a single 3x-ui panel and send .db file to channel."""
     try:
@@ -251,7 +284,7 @@ async def scheduler_loop(bot, interval: int = 60):
     logger.info("Scheduler started (interval=%ds)", interval)
     while True:
         try:
-            await _deactivate_expired()
+            await _deactivate_expired(bot)
             await _send_expiry_reminders(bot)
             await _send_backup(bot)
         except Exception as e:

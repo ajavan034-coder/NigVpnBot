@@ -715,6 +715,37 @@ async def get_configs_expiring_soon() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+async def get_configs_expiring_in_24h() -> list[dict]:
+    from datetime import timedelta
+    now = datetime.utcnow()
+    start = (now + timedelta(hours=23)).isoformat()
+    end = (now + timedelta(hours=25)).isoformat()
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT c.*, u.username FROM configs c JOIN users u ON c.user_id = u.id "
+        "WHERE c.is_active = 1 AND c.expire_date > ? AND c.expire_date < ?",
+        (start, end),
+    )
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def get_configs_expiring_in_1h() -> list[dict]:
+    from datetime import timedelta
+    now = datetime.utcnow()
+    end = (now + timedelta(hours=1)).isoformat()
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT c.*, u.username FROM configs c JOIN users u ON c.user_id = u.id "
+        "WHERE c.is_active = 1 AND c.expire_date > ? AND c.expire_date < ?",
+        (now.isoformat(), end),
+    )
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
 async def add_receipt(user_id: int, amount: float, photo_file_id: str, plan_id: int = 0, config_name: str = "") -> int:
     db = await get_db()
     cursor = await db.execute(
