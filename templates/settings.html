@@ -22,6 +22,12 @@
                 <div class="mb-3">
                     <label class="form-label">متن خوش‌آمدگویی</label>
                     <textarea name="welcome_text" class="form-control" rows="3">{{ settings.get('welcome_text', '') }}</textarea>
+                    <div class="form-text">
+                        متغیرهای موجود:<br>
+                        <code>{name}</code> - نام کوچک کاربر (مثلاً علی)<br>
+                        <code>{{username}}</code> - نام کاربری کاربر (مثلاً @ali123)<br>
+                        <code>{{full_name}}</code> - نام کامل کاربر (مثلاً علی رضایی)
+                    </div>
                 </div>
                 <div class="row">
                     <div class="col-md-6 mb-3">
