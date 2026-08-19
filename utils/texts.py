@@ -22,6 +22,13 @@ def to_jalali(date_str: str) -> str:
         return date_str
 
 
+async def _get_setting(key: str) -> str | None:
+    try:
+        from database import get_setting
+        return await get_setting(key)
+    except Exception:
+        return None
+
 async def _get_text(key, default):
     from database import get_setting
     return await get_setting(key) or default
@@ -30,18 +37,36 @@ async def _get_text(key, default):
 WELCOME_TEXT_DEFAULT = "سلام {name}! 👋\nبه NigVpn خوش آمدید.\nخرید آسان و امن VPN"
 
 
-async def wallet_text(balance: float, symbol: str = "تومان") -> str:
+async def wallet_text(balance: float, symbol: str = "تومان", user_id: int = 0) -> str:
     e = await pe("money")
-    tpl = await _get_text("text_wallet",
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"  {e} <b>کیف پول من</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"  موجودی: <b>{{balance}} {symbol}</b>\n\n"
-        f"  رسید پرداخت آپلود کنید تا کیف پول شارژ شود."
-    )
-    return tpl.replace("{balance}", f"{balance:,.0f}")
+    symbol = await _get_setting("currency_symbol") or symbol
 
+    from database import get_user_purchase_stats, get_user_referral_earnings, get_user
+    stats = await get_user_purchase_stats(user_id) if user_id else {"total_purchases": 0, "total_spent": 0, "total_discount": 0}
+    referral_earnings = await get_user_referral_earnings(user_id) if user_id else 0
+    user = await get_user(user_id) if user_id else None
+    is_collab = user and user.get("is_collaborator")
 
+    lines = [
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"  {e} <b>کیف پول من</b>",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"  💰 موجودی: <b>{balance:,.0f} {symbol}</b>",
+        f"  🛒 تعداد خریدها: <b>{stats['total_purchases']}</b>",
+        f"  💳 مبلغ کل خرید: <b>{stats['total_spent']:,.0f} {symbol}</b>",
+    ]
+
+    if stats["total_discount"] > 0:
+        lines.append(f"  💰 صرفه‌جویی از تخفیف: <b>{stats['total_discount']:,.0f} {symbol}</b>")
+
+    if is_collab:
+        lines.append("  🤝 وضعیت همکاری: <b>فعال</b>")
+        if referral_earnings > 0:
+            lines.append(f"  💵 درآمد همکاری: <b>{referral_earnings:,.0f} {symbol}</b>")
+
+    lines.append("  📝 رسید پرداخت آپلود کنید تا کیف پول شارژ شود.")
+
+    return "\n".join(lines)
 async def receipt_submitted(amount: float, symbol: str = "تومان") -> str:
     e = await pe("success")
     tpl = await _get_text("text_receipt_submitted",

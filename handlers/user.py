@@ -347,7 +347,7 @@ async def cmd_start(message: Message, state: FSMContext):
             user = await get_user(message.from_user.id)
             symbol = await get_setting("currency_symbol") or "تومان"
             from utils.texts import wallet_text
-            text = await wallet_text(user["balance"] if user else 0, symbol)
+            text = await wallet_text(user["balance"] if user else 0, symbol, user_id=message.from_user.id)
             await message.answer(text, parse_mode="HTML", reply_markup=await wallet_menu())
 
         elif deep_link_action == "view_user":
