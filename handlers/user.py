@@ -526,7 +526,6 @@ async def cmd_start(message: Message, state: FSMContext):
     welcome = welcome.replace("{{username}}", f"@{user.username}" if user.username else "")
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     welcome = welcome.replace("{{full_name}}", full_name or "دوست عزیز")
-    await send_sticker(message.bot, message.chat.id, 'welcome')
     if we:
         await message.answer(we, parse_mode="HTML")
     await message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
@@ -570,7 +569,6 @@ async def btn_start(message: Message):
             return
 
     we = await get_setting("welcome_emoji") or ""
-    await send_sticker(message.bot, message.chat.id, 'welcome')
     welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
     user = message.from_user
     welcome = welcome.replace("{name}", user.first_name or "دوست عزیز")
@@ -613,7 +611,6 @@ async def handle_contact(message: Message, state: FSMContext):
     welcome = welcome.replace("{{username}}", f"@{user.username}" if user.username else "")
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     welcome = welcome.replace("{{full_name}}", full_name or "دوست عزیز")
-    await send_sticker(message.bot, message.chat.id, 'welcome')
     if we:
         await message.answer(we, parse_mode="HTML")
     await message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
