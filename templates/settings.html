@@ -20,6 +20,9 @@
                     <input type="password" name="bot_token" class="form-control" value="{{ settings.get('bot_token', '') }}" placeholder="توکن ربات را وارد کنید">
                 </div>
                 <div class="mb-3">
+                    <label class="form-label">ایموجی خوش‌آمدگویی</label>
+                    <input type="text" name="welcome_emoji" class="form-control" value="{{ settings.get('welcome_emoji', '') }}" placeholder="مثلاً: 🔹 یا &lt;tg-emoji emoji-id=&quot;...&quot;&gt;🔹&lt;/tg-emoji&gt;">
+                    <div class="form-text">محتوای این فیلد قبل از متن خوش‌آمد ارسال می‌شود. هر چیزی که اینجا بنویسید (ایموجی یونیکد، HTML ایموجی پرمیوم، یا متن) اضافه خواهد شد.</div>
                     <label class="form-label">متن خوش‌آمدگویی</label>
                     <textarea name="welcome_text" class="form-control" rows="3">{{ settings.get('welcome_text', '') }}</textarea>
                     <div class="form-text">

@@ -527,7 +527,7 @@ async def cmd_start(message: Message, state: FSMContext):
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     welcome = welcome.replace("{{full_name}}", full_name or "دوست عزیز")
     if we:
-        welcome = '<tg-emoji emoji-id="' + we + '">🔹</tg-emoji>\n' + welcome
+        welcome = we + "\n" + welcome
     await send_sticker(message.bot, message.chat.id, 'welcome')
     await message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
     menu_msg = await message.answer("منوی اصلی", reply_markup=await main_menu(message.from_user.id))
@@ -570,9 +570,6 @@ async def btn_start(message: Message):
             return
 
     we = await get_setting("welcome_emoji") or ""
-    if we:
-        try: await message.answer(we)
-        except: pass
     await send_sticker(message.bot, message.chat.id, 'welcome')
     welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
     user = message.from_user
@@ -580,6 +577,8 @@ async def btn_start(message: Message):
     welcome = welcome.replace("{{username}}", f"@{user.username}" if user.username else "")
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     welcome = welcome.replace("{{full_name}}", full_name or "دوست عزیز")
+    if we:
+        welcome = we + "\n" + welcome
     menu_msg = await message.answer(welcome, parse_mode="HTML", reply_markup=await main_menu(message.from_user.id))
     try:
         await message.bot.set_message_reaction(
@@ -615,7 +614,7 @@ async def handle_contact(message: Message, state: FSMContext):
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     welcome = welcome.replace("{{full_name}}", full_name or "دوست عزیز")
     if we:
-        welcome = '<tg-emoji emoji-id="' + we + '">🔹</tg-emoji>\n' + welcome
+        welcome = we + "\n" + welcome
     await send_sticker(message.bot, message.chat.id, 'welcome')
     await message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
     menu_msg = await message.answer("منوی اصلی", reply_markup=await main_menu(message.from_user.id))
@@ -636,10 +635,6 @@ async def cb_check_membership(callback: CallbackQuery):
             await callback.message.delete()
         except Exception:
             pass
-        we = await get_setting("welcome_emoji") or ""
-        if we:
-            try: await callback.message.answer(we)
-            except: pass
         welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
         user = callback.from_user
         welcome = welcome.replace("{name}", user.first_name or "دوست عزیز")
