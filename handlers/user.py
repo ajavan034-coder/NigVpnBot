@@ -526,9 +526,9 @@ async def cmd_start(message: Message, state: FSMContext):
     welcome = welcome.replace("{{username}}", f"@{user.username}" if user.username else "")
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     welcome = welcome.replace("{{full_name}}", full_name or "دوست عزیز")
-    if we:
-        welcome = we + "\n" + welcome
     await send_sticker(message.bot, message.chat.id, 'welcome')
+    if we:
+        await message.answer(we, parse_mode="HTML")
     await message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
     menu_msg = await message.answer("منوی اصلی", reply_markup=await main_menu(message.from_user.id))
     try:
@@ -578,7 +578,7 @@ async def btn_start(message: Message):
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     welcome = welcome.replace("{{full_name}}", full_name or "دوست عزیز")
     if we:
-        welcome = we + "\n" + welcome
+        await message.answer(we, parse_mode="HTML")
     menu_msg = await message.answer(welcome, parse_mode="HTML", reply_markup=await main_menu(message.from_user.id))
     try:
         await message.bot.set_message_reaction(
@@ -613,9 +613,9 @@ async def handle_contact(message: Message, state: FSMContext):
     welcome = welcome.replace("{{username}}", f"@{user.username}" if user.username else "")
     full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
     welcome = welcome.replace("{{full_name}}", full_name or "دوست عزیز")
-    if we:
-        welcome = we + "\n" + welcome
     await send_sticker(message.bot, message.chat.id, 'welcome')
+    if we:
+        await message.answer(we, parse_mode="HTML")
     await message.answer(welcome, parse_mode="HTML", reply_markup=await _start_kb())
     menu_msg = await message.answer("منوی اصلی", reply_markup=await main_menu(message.from_user.id))
     try:
