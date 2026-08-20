@@ -1115,7 +1115,6 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
 
     invite_reward_type = await get_setting("invite_reward_type") or "fixed"
     if invite_reward_type == "commission":
-        from database import get_user
         buyer_user = await get_user(user_id)
         if buyer_user and buyer_user.get("referred_by"):
             referrer_id = buyer_user["referred_by"]
