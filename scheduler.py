@@ -11,12 +11,13 @@ _last_backup_date: str = ""
 
 
 async def _deactivate_expired(bot=None):
-    from database import get_expired_active_configs, deactivate_config
+    from database import get_expired_active_configs, deactivate_config, get_setting
     configs = await get_expired_active_configs()
     if configs:
+        notify = await get_setting("expired_config_notify")
         for c in configs:
             await deactivate_config(c["id"])
-            if bot:
+            if bot and notify != "0":
                 uid = c["user_id"]
                 cfg_name = c.get("config_name") or f"#{c['id']}"
                 try:

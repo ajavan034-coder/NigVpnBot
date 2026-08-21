@@ -376,6 +376,7 @@ async def init_db():
         "free_test_inbound_ids": "",
         "auto_approve_max": "0",
         "expiry_reminder_enabled": "1",
+        "expired_config_notify": "0",
         "invite_enabled": "0",
         "invite_reward_amount": "5000",
         "text_invite": "",
