@@ -37,10 +37,10 @@
     function setTheme(scheme) {
         document.documentElement.classList.toggle('dark', scheme === 'dark');
         var meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.content = scheme === 'dark' ? '#0f172a' : '#ffffff';
+        if (meta) meta.content = scheme === 'dark' ? '#0a0612' : '#ffffff';
         if (tg) {
-            try { tg.setHeaderColor(scheme === 'dark' ? '#0f172a' : '#ffffff'); } catch (e) {}
-            try { tg.setBackgroundColor(scheme === 'dark' ? '#0f172a' : '#f5f6fa'); } catch (e) {}
+            try { tg.setHeaderColor(scheme === 'dark' ? '#0a0612' : '#ffffff'); } catch (e) {}
+            try { tg.setBackgroundColor(scheme === 'dark' ? '#0a0612' : '#f8f7fc'); } catch (e) {}
         }
     }
 
