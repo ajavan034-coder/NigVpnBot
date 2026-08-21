@@ -117,17 +117,18 @@ async def _send_receipt_to_channel(bot, photo_file_id, caption: str, receipt_id:
     if not channel_id:
         _log.warning("notification_channel_id not set - skipping channel receipt notification")
         return
+    from keyboards.user import _btn
+    kb = None
+    if receipt_id:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                await _btn("تایید", f"channel_approve_{receipt_id}", btn_id="approve"),
+                await _btn("رد", f"channel_reject_{receipt_id}", btn_id="reject"),
+            ]
+        ])
+    # Try 1: send_photo with HTML
     try:
-        from keyboards.user import _btn
-        kb = None
-        if receipt_id:
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [
-                    await _btn("تایید", f"channel_approve_{receipt_id}", btn_id="approve"),
-                    await _btn("رد", f"channel_reject_{receipt_id}", btn_id="reject"),
-                ]
-            ])
-        await bot.send_photo(chat_id=channel_id, photo=photo_file_id, caption=caption, parse_mode="Markdown", reply_markup=kb)
+        await bot.send_photo(chat_id=channel_id, photo=photo_file_id, caption=caption, parse_mode="HTML", reply_markup=kb)
         _log.info("Receipt %s sent to channel %s", receipt_id, channel_id)
         if receipt_id:
             try:
@@ -135,13 +136,48 @@ async def _send_receipt_to_channel(bot, photo_file_id, caption: str, receipt_id:
                 await mark_receipt_sent(receipt_id)
             except Exception:
                 pass
+        return
     except Exception as e:
-        _log.error("send_photo to channel %s failed (%s: %s) - trying text fallback", channel_id, type(e).__name__, e)
-        try:
-            await bot.send_message(chat_id=channel_id, text=caption, parse_mode="Markdown", reply_markup=kb)
-            _log.info("Text fallback to channel %s succeeded", channel_id)
-        except Exception as e2:
-            _log.error("Text fallback also failed for channel %s: %s %s", channel_id, type(e2).__name__, e2)
+        _log.warning("send_photo to channel %s failed (%s: %s)", channel_id, type(e).__name__, e)
+    # Try 2: send_photo without parse_mode (plain text)
+    try:
+        await bot.send_photo(chat_id=channel_id, photo=photo_file_id, caption=caption, reply_markup=kb)
+        _log.info("Receipt %s sent to channel %s (plain text photo)", receipt_id, channel_id)
+        if receipt_id:
+            try:
+                from database import mark_receipt_sent
+                await mark_receipt_sent(receipt_id)
+            except Exception:
+                pass
+        return
+    except Exception as e:
+        _log.warning("send_photo plain to channel %s failed (%s: %s)", channel_id, type(e).__name__, e)
+    # Try 3: text message with HTML
+    try:
+        await bot.send_message(chat_id=channel_id, text=caption, parse_mode="HTML", reply_markup=kb)
+        _log.info("Receipt %s sent to channel %s (text fallback)", receipt_id, channel_id)
+        if receipt_id:
+            try:
+                from database import mark_receipt_sent
+                await mark_receipt_sent(receipt_id)
+            except Exception:
+                pass
+        return
+    except Exception as e:
+        _log.warning("text HTML to channel %s failed (%s: %s)", channel_id, type(e).__name__, e)
+    # Try 4: text message without parse_mode
+    try:
+        await bot.send_message(chat_id=channel_id, text=caption, reply_markup=kb)
+        _log.info("Receipt %s sent to channel %s (plain text)", receipt_id, channel_id)
+        if receipt_id:
+            try:
+                from database import mark_receipt_sent
+                await mark_receipt_sent(receipt_id)
+            except Exception:
+                pass
+        return
+    except Exception as e:
+        _log.error("All attempts to send receipt %s to channel %s failed: %s %s", receipt_id, channel_id, type(e).__name__, e)
 
 
 class ForceJoinMiddleware(BaseMiddleware):
@@ -1992,7 +2028,7 @@ async def cb_c2c_receipt_photo(message: Message, state: FSMContext):
 
     await _send_receipt_to_channel(
         message.bot, photo_file_id,
-        f"**New C2C Receipt**\n\n"
+        f"<b>New C2C Receipt</b>\n\n"
         f"User: @{message.from_user.username or 'N/A'} (ID: {message.from_user.id})\n"
         f"Plan: {plan['name']} ({plan['gb']}GB / {plan['days']} days)\n"
         f"Amount: {{data.get('c2c_pay_price', plan['price']):,.0f}} {symbol}\n\n"
@@ -2040,7 +2076,7 @@ async def cb_upload_receipt_photo(message: Message, state: FSMContext):
 
     await message.answer(text, parse_mode="HTML", reply_markup=await back_to_menu())
 
-    caption_parts = ["**رسید جدید**\n\n"]
+    caption_parts = ["<b>رسید جدید</b>\n\n"]
     caption_parts.append(f"User: @{message.from_user.username or 'N/A'} (ID: {message.from_user.id})\n")
     if plan:
         caption_parts.append(f"Plan: {plan['name']} ({plan['gb']}GB / {plan['days']} days)\n")
@@ -2655,7 +2691,7 @@ async def cb_extra_volume_receipt(message: Message, state: FSMContext):
 
     await _send_receipt_to_channel(
         message.bot, photo_file_id,
-        f"**Extra Volume Receipt**\n\n"
+        f"<b>Extra Volume Receipt</b>\n\n"
         f"User: @{message.from_user.username or 'N/A'} (ID: {message.from_user.id})\n"
         f"Volume: {extra_gb}GB\n"
         f"Amount: {price:,} {symbol}\n"
@@ -2691,7 +2727,7 @@ async def cb_channel_approve(callback: CallbackQuery):
     try:
         await callback.message.edit_caption(
             caption=(
-                f"**Receipt #{receipt_id} - APPROVED**\n\n"
+                f"<b>Receipt #{receipt_id} - APPROVED</b>\n\n"
                 f"User: ID {receipt['user_id']}\n"
                 f"Amount: {receipt['amount']:,.0f} {symbol}\n"
                 f"Approved by: @{callback.from_user.username or 'N/A'}"
@@ -2750,7 +2786,7 @@ async def cb_channel_reject(callback: CallbackQuery):
     try:
         await callback.message.edit_caption(
             caption=(
-                f"**Receipt #{receipt_id} - REJECTED**\n\n"
+                f"<b>Receipt #{receipt_id} - REJECTED</b>\n\n"
                 f"User: ID {receipt['user_id']}\n"
                 f"Amount: {receipt['amount']:,.0f} {symbol}\n"
                 f"Rejected by: @{callback.from_user.username or 'N/A'}"
