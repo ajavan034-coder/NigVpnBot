@@ -402,3 +402,94 @@ def api_buy():
         })
 
     return jsonify({'success': False, 'message': 'Invalid payment method'})
+
+
+# ── Grouped endpoints for section/panel views ──────────────────
+@webapp_bp.route('/api/sections')
+@require_auth
+def api_sections():
+    """Return plan sections with their plans grouped."""
+    sections = web_db.get_plan_sections()
+    all_plans = web_db.get_all_plans()
+    currency = web_db.get_setting('currency_symbol') or 'Toman'
+
+    # Group plans by section_id
+    section_plans = {}
+    for p in (all_plans or []):
+        if not p.get('is_active', True):
+            continue
+        sid = p.get('section_id')
+        if sid not in section_plans:
+            section_plans[sid] = []
+        section_plans[sid].append({
+            'id': p['id'],
+            'name': p['name'],
+            'gb': p['gb'],
+            'days': p['days'],
+            'price': p['price'],
+            'collaborator_price': p.get('collaborator_price'),
+            'is_ultimate': bool(p.get('is_ultimate', False)),
+            'currency': currency,
+        })
+
+    result = []
+    for s in (sections or []):
+        sid = s['id']
+        plans = section_plans.get(sid, [])
+        if not plans:
+            continue
+        result.append({
+            'id': sid,
+            'name': s['name'],
+            'plans': plans,
+        })
+
+    return jsonify({'sections': result})
+
+
+@webapp_bp.route('/api/configs-grouped')
+@require_auth
+def api_configs_grouped():
+    """Return user configs grouped by panel."""
+    import sqlite3
+    from config import DB_PATH
+
+    conn = sqlite3.connect(DB_PATH, timeout=5)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        'SELECT c.*, p.name as plan_name FROM configs c '
+        'LEFT JOIN plans p ON c.plan_id = p.id '
+        'WHERE c.user_id = ? ORDER BY c.panel_id, c.expire_date DESC',
+        (request.user_id,)
+    ).fetchall()
+
+    panels = {}
+    for pr in conn.execute('SELECT id, name, emoji_id FROM panels ORDER BY id').fetchall():
+        prd = dict(pr); panels[prd['id']] = {'name': prd['name'], 'emoji_id': prd.get('emoji_id', '')}
+    conn.close()
+
+    # Group by panel_id
+    grouped = {}
+    for r in rows:
+        cfg = dict(r)
+        pid = cfg.get('panel_id')
+        if pid not in grouped:
+            panel_info = panels.get(pid, {'name': 'سرویس', 'emoji_id': ''}) if pid else {'name': 'سایر', 'emoji_id': ''}
+            grouped[pid] = {
+                'panel_id': pid,
+                'panel_name': panel_info['name'],
+                'emoji_id': panel_info.get('emoji_id', ''),
+                'configs': [],
+            }
+        grouped[pid]['configs'].append({
+            'id': cfg['id'],
+            'plan_id': cfg.get('plan_id'),
+            'plan_name': cfg.get('plan_name') or 'Free Test',
+            'config_name': cfg.get('config_name') or '',
+            'sub_link': cfg.get('sub_link') or '',
+            'expire_date': cfg.get('expire_date') or '',
+            'is_active': bool(cfg.get('is_active', True)),
+        })
+
+    return jsonify({'groups': list(grouped.values())})
+
