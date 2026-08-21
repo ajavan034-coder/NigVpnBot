@@ -2094,10 +2094,15 @@ async def cb_my_configs(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("my_services_panel_"))
 async def cb_my_services_panel(callback: CallbackQuery):
     user_id = callback.from_user.id
-    panel_id = int(callback.data.split("_")[-1])
-    from database import get_panel
-    panel = await get_panel(panel_id)
-    panel_name = panel["name"] if panel else "پنل"
+    raw = callback.data.split("_")[-1]
+    if raw == "unlinked":
+        panel_id = "unlinked"
+        panel_name = "سایر سرویس‌ها"
+    else:
+        panel_id = int(raw)
+        from database import get_panel
+        panel = await get_panel(panel_id)
+        panel_name = panel["name"] if panel else "پنل"
     text = f"📦 <b>{panel_name}</b>\n\nسرویس خود را انتخاب کنید:"
     
     try:

@@ -437,25 +437,34 @@ BUTTON_CONFIGS = {
 
 async def my_services_panel_menu(user_id: int) -> InlineKeyboardMarkup:
     """Show panels that have user's active configs."""
-    from database import get_user_configs, get_panel
+    from database import get_user_configs, get_panel, get_plan
     configs = await get_user_configs(user_id)
     active_configs = [c for c in configs if c.get("is_active")]
     
     # Group configs by panel_id
     panel_configs = {}
+    _plan_cache = {}
     for cfg in active_configs:
         panel_id = cfg.get("panel_id")
-        if panel_id is None:
-            # Fallback: get panel_id from plan
-            from database import get_plan
-            plan = await get_plan(cfg.get("plan_id"))
+        if not panel_id:
+            plan_id = cfg.get("plan_id")
+            if plan_id and plan_id not in _plan_cache:
+                _plan_cache[plan_id] = await get_plan(plan_id)
+            plan = _plan_cache.get(plan_id)
             panel_id = plan.get("panel_id") if plan else None
         if panel_id:
             panel_configs.setdefault(panel_id, []).append(cfg)
+        else:
+            panel_configs.setdefault("unlinked", []).append(cfg)
     
     buttons = []
     _panel_cache = {}
     for panel_id, cfgs in panel_configs.items():
+        if panel_id == "unlinked":
+            count = len(cfgs)
+            btn = await _btn(f"سایر سرویس‌ها ({count})", "my_configs", "package", btn_id="plan_name")
+            buttons.append([btn])
+            continue
         if panel_id not in _panel_cache:
             _panel_cache[panel_id] = await get_panel(panel_id)
         panel = _panel_cache[panel_id]
@@ -475,18 +484,29 @@ async def my_services_panel_menu(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-async def my_services_configs_menu(user_id: int, panel_id: int) -> InlineKeyboardMarkup:
+async def my_services_configs_menu(user_id: int, panel_id) -> InlineKeyboardMarkup:
     """Show configs for a specific panel."""
-    from database import get_user_configs, get_panel
+    from database import get_user_configs, get_panel, get_plan
     configs = await get_user_configs(user_id)
-    active_configs = [c for c in configs if c.get("is_active") and c.get("panel_id") == panel_id]
-
-    if not active_configs:
-        from database import get_plan
-        for c in [c for c in configs if c.get("is_active")]:
+    
+    if panel_id == "unlinked":
+        active_configs = []
+        for c in configs:
+            if not c.get("is_active"):
+                continue
+            cpid = c.get("panel_id")
+            if cpid:
+                continue
             plan = await get_plan(c.get("plan_id"))
-            if plan and plan.get("panel_id") == panel_id:
+            if not plan or not plan.get("panel_id"):
                 active_configs.append(c)
+    else:
+        active_configs = [c for c in configs if c.get("is_active") and c.get("panel_id") == panel_id]
+        if not active_configs:
+            for c in [c for c in configs if c.get("is_active")]:
+                plan = await get_plan(c.get("plan_id"))
+                if plan and plan.get("panel_id") == panel_id:
+                    active_configs.append(c)
 
     buttons = []
     for cfg in active_configs[:10]:
