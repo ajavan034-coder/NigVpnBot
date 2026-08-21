@@ -6,7 +6,7 @@
     <h3><i class="bi bi-cloud-download"></i> بکاپ و بازیابی</h3>
     <form method="POST" action="{{ url_for('backup_create') }}" style="display:inline;">
         {{ csrf_field() }}
-        <button type="submit" class="btn btn-success">
+        <button type="submit" class="btn btn-purple">
             <i class="bi bi-plus-lg"></i> ایجاد بکاپ جدید
         </button>
     </form>
@@ -37,7 +37,7 @@
                         <td>{{ b.size }}</td>
                         <td>{{ b.date }}</td>
                         <td class="text-center">
-                            <a href="{{ url_for('backup_download', filename=b.name) }}" class="btn btn-sm btn-outline-primary me-1">
+                            <a href="{{ url_for('backup_download', filename=b.name) }}" class="btn btn-sm btn-outline-purple me-1">
                                 <i class="bi bi-download"></i> دانلود
                             </a>
                             <form method="POST" action="{{ url_for('backup_delete', filename=b.name) }}" style="display:inline;" onsubmit="return confirm('آیا از حذف این بکاپ مطمئن هستید؟');">

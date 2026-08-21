@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header d-flex justify-content-between align-items-center">
     <h3>تنظیمات ربات</h3>
-    <button type="submit" form="settingsForm" class="btn btn-success">
+    <button type="submit" form="settingsForm" class="btn btn-purple">
         <i class="bi bi-check-lg"></i> ذخیره همه تغییرات
     </button>
 </div>
@@ -194,10 +194,10 @@
                         </div>
                         <div>
                             <input type="file" name="qr_bg" accept="image/*" id="qrBgInput" style="display:none" onchange="previewQrBg(this)">
-                            <button type="button" class="btn btn-outline-primary btn-sm mb-2" onclick="document.getElementById('qrBgInput').click()">
+                            <button type="button" class="btn btn-outline-purple btn-sm mb-2" onclick="document.getElementById('qrBgInput').click()">
                                 <i class="bi bi-upload"></i> آپلود تصویر
                             </button>
-                            <button type="button" class="btn btn-success btn-sm mb-2" id="qrBgSubmit" style="display:none" onclick="uploadQrBg()">
+                            <button type="button" class="btn btn-purple btn-sm mb-2" id="qrBgSubmit" style="display:none" onclick="uploadQrBg()">
                                 <i class="bi bi-check-lg"></i> ذخیره
                             </button>
                             {% if qr_bg_exists %}
@@ -336,7 +336,7 @@
                 <div class="mb-3">
                     <label class="form-label">تست اتصال</label>
                     <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-outline-primary" onclick="testConnection()">
+                        <button type="button" class="btn btn-outline-purple" onclick="testConnection()">
                             <i class="bi bi-lightning"></i> تست اتصال
                         </button>
                         <span id="testResult" class="align-self-center"></span>

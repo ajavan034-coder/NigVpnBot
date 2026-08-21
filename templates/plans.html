@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header d-flex justify-content-between align-items-center">
     <h3>مدیریت پلن‌ها</h3>
-    <a href="{{ url_for('plan_add') }}" class="btn btn-primary">
+    <a href="{{ url_for('plan_add') }}" class="btn btn-purple">
         <i class="bi bi-plus-lg"></i> افزودن پلن
     </a>
 </div>
@@ -18,7 +18,7 @@
                 <textarea name="plans_header_text" class="form-control" rows="3" placeholder="متن هدر را وارد کنید...">{{ plans_header }}</textarea>
                 <div class="form-text">از تگ‌های HTML مانند &lt;b&gt;بولد&lt;/b&gt; استفاده کنید</div>
             </div>
-            <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> ذخیره هدر</button>
+            <button type="submit" class="btn btn-purple"><i class="bi bi-check-lg"></i> ذخیره هدر</button>
         </form>
     </div>
 </div>
@@ -63,7 +63,7 @@
                         {% endif %}
                     </td>
                     <td>
-                        <a href="{{ url_for('plan_edit', plan_id=plan.id) }}" class="btn btn-sm btn-outline-primary">
+                        <a href="{{ url_for('plan_edit', plan_id=plan.id) }}" class="btn btn-sm btn-outline-purple">
                             <i class="bi bi-pencil"></i>
                         </a>
                         <form method="POST" action="{{ url_for('plan_delete', plan_id=plan.id) }}" class="d-inline"

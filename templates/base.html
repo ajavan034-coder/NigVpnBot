@@ -6,35 +6,305 @@
     <title>{% block title %}پنل مدیریت{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        body { background: #0a0e17; color: #e2e8f0; direction: rtl; }
-        .sidebar { background: #131926; min-height: 100vh; width: 260px; position: fixed; top: 0; right: 0; left: auto; z-index: 100; border-left: 1px solid #1e293b; padding-top: 20px; transition: transform .3s; }
-        .sidebar .brand { padding: 0 20px 20px; border-bottom: 1px solid #1e293b; margin-bottom: 10px; }
-        .sidebar .brand h5 { color: #e2e8f0; font-weight: 700; margin: 0; }
-        .sidebar .brand small { color: #64748b; }
-        .sidebar a { display: flex; align-items: center; gap: 10px; padding: 10px 20px; color: #94a3b8; text-decoration: none; font-size: 14px; transition: all .2s; border-right: 3px solid transparent; border-left: none; }
-        .sidebar a:hover { color: #e2e8f0; background: #1e293b; }
-        .sidebar a.active { color: #818cf8; background: rgba(99,102,241,.1); border-right-color: #6366f1; }
-        .sidebar a i { width: 20px; text-align: center; font-size: 16px; }
-        .main-content { margin-right: 260px; margin-left: 0; padding: 30px; }
-        .stat-card { background: #131926; border: 1px solid #1e293b; border-radius: 12px; padding: 24px; }
-        .stat-card .stat-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
-        .stat-card .stat-value { font-size: 28px; font-weight: 700; color: #e2e8f0; }
-        .stat-card .stat-label { color: #64748b; font-size: 13px; }
-        .card-dark { background: #131926; border: 1px solid #1e293b; border-radius: 12px; }
-        .card-dark .card-header { background: #131926; border-bottom: 1px solid #1e293b; color: #e2e8f0; font-weight: 600; }
-        .table-dark { --bs-table-bg: transparent; --bs-table-border-color: #1e293b; }
-        .table-dark thead th { color: #64748b; font-weight: 600; font-size: 12px; letter-spacing: .5px; border-bottom-color: #1e293b !important; }
-        .badge-active { background: rgba(34,197,94,.15); color: #22c55e; }
-        .badge-expired { background: rgba(239,68,68,.15); color: #ef4444; }
-        .badge-pending { background: rgba(245,158,11,.15); color: #f59e0b; }
-        .btn-indigo { background: #6366f1; border-color: #6366f1; color: #fff; }
-        .btn-indigo:hover { background: #4f46e5; border-color: #4f46e5; color: #fff; }
-        .form-control, .form-select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; }
-        .form-control:focus, .form-select:focus { background: #1e293b; border-color: #6366f1; color: #e2e8f0; box-shadow: 0 0 0 0.2rem rgba(99,102,241,.25); }
-        .page-header { margin-bottom: 30px; }
-        .page-header h3 { font-weight: 700; color: #e2e8f0; }
-        @media (max-width: 768px) { .sidebar { transform: translateX(100%); } .sidebar.show { transform: translateX(0); } .main-content { margin-right: 0; } }
+        :root {
+            --purple-50: #faf5ff;
+            --purple-100: #f3e8ff;
+            --purple-200: #e9d5ff;
+            --purple-300: #d8b4fe;
+            --purple-400: #c084fc;
+            --purple-500: #a855f7;
+            --purple-600: #9333ea;
+            --purple-700: #7e22ce;
+            --purple-800: #6b21a8;
+            --purple-900: #581c87;
+            --purple-950: #3b0764;
+            --bg-deep: #0a0612;
+            --bg-surface: #110b1f;
+            --bg-card: #160e2a;
+            --bg-elevated: #1d1336;
+            --border-subtle: #2a1d4a;
+            --border-default: #362660;
+            --text-primary: #f0eaf8;
+            --text-secondary: #a89bc4;
+            --text-muted: #6d5f8a;
+        }
+        * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+        body { background: var(--bg-deep); color: var(--text-primary); direction: rtl; min-height: 100vh; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-surface); }
+        ::-webkit-scrollbar-thumb { background: var(--purple-800); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--purple-700); }
+
+        /* Sidebar */
+        .sidebar {
+            background: var(--bg-surface);
+            min-height: 100vh;
+            width: 270px;
+            position: fixed;
+            top: 0; right: 0; left: auto;
+            z-index: 100;
+            border-left: 1px solid var(--border-subtle);
+            padding: 0;
+            transition: transform .3s cubic-bezier(.4,0,.2,1);
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(20px);
+        }
+        .sidebar .brand {
+            padding: 24px 20px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+            background: linear-gradient(180deg, rgba(139,92,246,.08) 0%, transparent 100%);
+        }
+        .sidebar .brand .brand-icon {
+            width: 42px; height: 42px;
+            background: linear-gradient(135deg, var(--purple-600), var(--purple-800));
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; color: white;
+            box-shadow: 0 4px 15px rgba(139,92,246,.3);
+        }
+        .sidebar .brand h5 { color: var(--text-primary); font-weight: 700; margin: 0; font-size: 16px; }
+        .sidebar .brand small { color: var(--text-muted); font-size: 12px; }
+        .sidebar .nav-section { padding: 16px 0 8px; }
+        .sidebar .nav-section-title {
+            padding: 0 20px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+        .sidebar a {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 20px; margin: 2px 8px;
+            color: var(--text-secondary); text-decoration: none;
+            font-size: 13.5px; font-weight: 500;
+            transition: all .2s ease;
+            border-radius: 10px;
+            border-right: 3px solid transparent;
+            border-left: none;
+        }
+        .sidebar a:hover {
+            color: var(--text-primary);
+            background: rgba(139,92,246,.08);
+        }
+        .sidebar a.active {
+            color: var(--purple-300);
+            background: rgba(139,92,246,.12);
+            border-right-color: var(--purple-500);
+            box-shadow: 0 0 20px rgba(139,92,246,.05);
+        }
+        .sidebar a i { width: 20px; text-align: center; font-size: 16px; opacity: .8; }
+        .sidebar a.active i { opacity: 1; }
+        .sidebar-nav { flex: 1; overflow-y: auto; padding: 8px 0; }
+        .sidebar-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border-subtle);
+            background: rgba(10,6,18,.5);
+        }
+        .sidebar-footer a { color: #f87171 !important; border-right: none !important; margin: 0 !important; }
+        .sidebar-footer a:hover { background: rgba(248,113,113,.1) !important; }
+
+        /* Main Content */
+        .main-content { margin-right: 270px; margin-left: 0; padding: 32px; min-height: 100vh; }
+
+        /* Cards */
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 24px;
+            transition: all .3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; right: 0;
+            width: 100%; height: 3px;
+            background: linear-gradient(90deg, transparent, var(--purple-600), transparent);
+            opacity: 0;
+            transition: opacity .3s;
+        }
+        .stat-card:hover { border-color: var(--border-default); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(139,92,246,.08); }
+        .stat-card:hover::before { opacity: 1; }
+        .stat-card .stat-icon {
+            width: 50px; height: 50px;
+            border-radius: 14px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px;
+            transition: all .3s;
+        }
+        .stat-card:hover .stat-icon { transform: scale(1.05); }
+        .stat-card .stat-value { font-size: 28px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.5px; }
+        .stat-card .stat-label { color: var(--text-muted); font-size: 13px; font-weight: 500; }
+
+        .card-dark {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            overflow: hidden;
+            transition: all .3s;
+        }
+        .card-dark:hover { border-color: var(--border-default); }
+        .card-dark .card-header {
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 14px;
+            padding: 16px 20px;
+        }
+
+        /* Table */
+        .table-dark {
+            --bs-table-bg: transparent;
+            --bs-table-border-color: var(--border-subtle);
+        }
+        .table-dark thead th {
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 11px;
+            letter-spacing: .8px;
+            text-transform: uppercase;
+            border-bottom-color: var(--border-subtle) !important;
+            padding: 12px 16px;
+        }
+        .table-dark tbody td { padding: 14px 16px; vertical-align: middle; }
+        .table-dark tbody tr { transition: background .15s; }
+        .table-dark tbody tr:hover { background: rgba(139,92,246,.04); }
+
+        /* Badges */
+        .badge-active { background: rgba(34,197,94,.12); color: #4ade80; border: 1px solid rgba(34,197,94,.2); font-weight: 500; }
+        .badge-expired { background: rgba(239,68,68,.12); color: #f87171; border: 1px solid rgba(239,68,68,.2); font-weight: 500; }
+        .badge-pending { background: rgba(251,191,36,.12); color: #fbbf24; border: 1px solid rgba(251,191,36,.2); font-weight: 500; }
+        .badge { padding: 5px 10px; border-radius: 8px; font-size: 12px; }
+
+        /* Buttons */
+        .btn-purple {
+            background: linear-gradient(135deg, var(--purple-600), var(--purple-700));
+            border-color: var(--purple-600);
+            color: white;
+            font-weight: 600;
+            border-radius: 10px;
+            padding: 8px 18px;
+            transition: all .2s;
+            box-shadow: 0 2px 10px rgba(139,92,246,.2);
+        }
+        .btn-purple:hover {
+            background: linear-gradient(135deg, var(--purple-500), var(--purple-600));
+            border-color: var(--purple-500);
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(139,92,246,.3);
+        }
+        .btn-outline-purple {
+            border-color: var(--border-default);
+            color: var(--purple-400);
+            border-radius: 10px;
+            font-weight: 500;
+            transition: all .2s;
+        }
+        .btn-outline-purple:hover {
+            background: rgba(139,92,246,.1);
+            border-color: var(--purple-600);
+            color: var(--purple-300);
+        }
+
+        /* Forms */
+        .form-control, .form-select {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-primary);
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-size: 14px;
+            transition: all .2s;
+        }
+        .form-control:focus, .form-select:focus {
+            background: var(--bg-elevated);
+            border-color: var(--purple-600);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 3px rgba(139,92,246,.15);
+        }
+        .form-control::placeholder { color: var(--text-muted); }
+        .form-label { color: var(--text-secondary); font-weight: 500; font-size: 13px; margin-bottom: 6px; }
+        .form-text { color: var(--text-muted); font-size: 12px; }
+
+        /* Alerts */
+        .alert { border-radius: 12px; border: none; font-size: 14px; }
+        .alert-success { background: rgba(34,197,94,.1); color: #4ade80; }
+        .alert-danger { background: rgba(239,68,68,.1); color: #f87171; }
+        .alert-warning { background: rgba(251,191,36,.1); color: #fbbf24; }
+        .alert-info { background: rgba(96,165,250,.1); color: #60a5fa; }
+
+        /* Page Header */
+        .page-header { margin-bottom: 32px; }
+        .page-header h3 { font-weight: 800; color: var(--text-primary); font-size: 24px; letter-spacing: -0.3px; }
+
+        /* Animations */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .main-content > * { animation: fadeIn .4s ease-out; }
+
+        /* Quick action cards */
+        .quick-action {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 16px;
+            text-decoration: none;
+            color: var(--text-secondary);
+            transition: all .2s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .quick-action:hover {
+            background: var(--bg-elevated);
+            border-color: var(--purple-700);
+            color: var(--text-primary);
+            transform: translateY(-1px);
+        }
+        .quick-action i {
+            width: 36px; height: 36px;
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px;
+        }
+
+        /* Status indicator */
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 6px;
+        }
+        .status-dot.active { background: #4ade80; box-shadow: 0 0 8px rgba(74,222,128,.4); }
+        .status-dot.inactive { background: #f87171; }
+
+        /* Pagination */
+        .pagination .page-link {
+            background: var(--bg-card);
+            border-color: var(--border-subtle);
+            color: var(--text-secondary);
+            border-radius: 8px;
+            margin: 0 2px;
+            font-size: 13px;
+        }
+        .pagination .page-link:hover { background: var(--bg-elevated); border-color: var(--purple-700); color: var(--text-primary); }
+        .pagination .page-item.active .page-link { background: var(--purple-700); border-color: var(--purple-700); }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            .sidebar { transform: translateX(100%); }
+            .sidebar.show { transform: translateX(0); box-shadow: -10px 0 40px rgba(0,0,0,.5); }
+            .main-content { margin-right: 0; padding: 20px; }
+        }
     </style>
     {% block head %}{% endblock %}
 </head>
@@ -42,57 +312,73 @@
     {% macro csrf_field() %}<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">{% endmacro %}
     <nav class="sidebar" id="sidebar">
         <div class="brand">
-            <h5><i class="bi bi-robot"></i> مدیریت ربات</h5>
-            <small>پنل مدیریت</small>
+            <div class="d-flex align-items-center gap-3">
+                <div class="brand-icon"><i class="bi bi-robot"></i></div>
+                <div>
+                    <h5>مدیریت ربات</h5>
+                    <small>پنل مدیریت</small>
+                </div>
+            </div>
         </div>
-        <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
-            <i class="bi bi-grid-1x2"></i> داشبورد
-        </a>
-        <a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">
-            <i class="bi bi-gear"></i> تنظیمات
-        </a>
-        <a href="{{ url_for('plans') }}" class="{% if request.endpoint in ['plans','plan_add','plan_edit'] %}active{% endif %}">
-            <i class="bi bi-tags"></i> پلن‌ها
-        </a>
-        <a href="{{ url_for('plan_sections') }}" class="{% if request.endpoint in ['plan_sections','plan_section_add','plan_section_edit'] %}active{% endif %}">
-            <i class="bi bi-collection"></i> بخش‌های پلن
-        </a>
-        <a href="{{ url_for('users') }}" class="{% if request.endpoint in ['users','user_detail'] %}active{% endif %}">
-            <i class="bi bi-people"></i> کاربران
-        </a>
-        <a href="{{ url_for('receipts') }}" class="{% if request.endpoint == 'receipts' %}active{% endif %}">
-            <i class="bi bi-receipt"></i> رسیدها
-        </a>
-        <a href="{{ url_for('configs') }}" class="{% if request.endpoint == 'configs' %}active{% endif %}">
-            <i class="bi bi-key"></i> کانفیگ‌ها
-        </a>
-        <a href="{{ url_for('admins') }}" class="{% if request.endpoint == 'admins' %}active{% endif %}">
-            <i class="bi bi-shield-check"></i> ادمین‌ها
-        </a>
-        <a href="{{ url_for('broadcast') }}" class="{% if request.endpoint == 'broadcast' %}active{% endif %}">
-            <i class="bi bi-megaphone"></i> ارسال همگانی
-        </a>
-        <a href="{{ url_for('bot_texts') }}" class="{% if request.endpoint == 'bot_texts' %}active{% endif %}">
-            <i class="bi bi-chat-text"></i> متن‌های ربات
-        </a>
-        <a href="{{ url_for('buttons') }}" class="{% if request.endpoint == 'buttons' %}active{% endif %}">
-            <i class="bi bi-hand-index-thumb"></i> دکمه‌ها
-        </a>
-        <a href="{{ url_for('menu_layout') }}" class="{% if request.endpoint == 'menu_layout' %}active{% endif %}">
-            <i class="bi bi-menu-button-wide"></i> لایوت منو
-        </a>
-        <a href="{{ url_for('backups') }}" class="{% if request.endpoint == 'backups' %}active{% endif %}">
-            <i class="bi bi-cloud-download"></i> بکاپ و بازیابی
-        </a>
-        <div style="position:absolute;bottom:20px;left:20px;right:20px;">
-            <a href="{{ url_for('logout') }}" style="border-right:none;border-left:none;color:#ef4444;">
+        <div class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-section-title">اصلی</div>
+                <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
+                    <i class="bi bi-grid-1x2"></i> داشبورد
+                </a>
+                <a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">
+                    <i class="bi bi-gear"></i> تنظیمات
+                </a>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-title">مدیریت</div>
+                <a href="{{ url_for('plans') }}" class="{% if request.endpoint in ['plans','plan_add','plan_edit'] %}active{% endif %}">
+                    <i class="bi bi-tags"></i> پلن‌ها
+                </a>
+                <a href="{{ url_for('plan_sections') }}" class="{% if request.endpoint in ['plan_sections','plan_section_add','plan_section_edit'] %}active{% endif %}">
+                    <i class="bi bi-collection"></i> بخش‌های پلن
+                </a>
+                <a href="{{ url_for('users') }}" class="{% if request.endpoint in ['users','user_detail'] %}active{% endif %}">
+                    <i class="bi bi-people"></i> کاربران
+                </a>
+                <a href="{{ url_for('configs') }}" class="{% if request.endpoint == 'configs' %}active{% endif %}">
+                    <i class="bi bi-key"></i> کانفیگ‌ها
+                </a>
+                <a href="{{ url_for('receipts') }}" class="{% if request.endpoint == 'receipts' %}active{% endif %}">
+                    <i class="bi bi-receipt"></i> رسیدها
+                </a>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-title">ابزارها</div>
+                <a href="{{ url_for('admins') }}" class="{% if request.endpoint == 'admins' %}active{% endif %}">
+                    <i class="bi bi-shield-check"></i> ادمین‌ها
+                </a>
+                <a href="{{ url_for('broadcast') }}" class="{% if request.endpoint == 'broadcast' %}active{% endif %}">
+                    <i class="bi bi-megaphone"></i> ارسال همگانی
+                </a>
+                <a href="{{ url_for('bot_texts') }}" class="{% if request.endpoint == 'bot_texts' %}active{% endif %}">
+                    <i class="bi bi-chat-text"></i> متن‌های ربات
+                </a>
+                <a href="{{ url_for('buttons') }}" class="{% if request.endpoint == 'buttons' %}active{% endif %}">
+                    <i class="bi bi-hand-index-thumb"></i> دکمه‌ها
+                </a>
+                <a href="{{ url_for('menu_layout') }}" class="{% if request.endpoint == 'menu_layout' %}active{% endif %}">
+                    <i class="bi bi-menu-button-wide"></i> لایوت منو
+                </a>
+                <a href="{{ url_for('backups') }}" class="{% if request.endpoint == 'backups' %}active{% endif %}">
+                    <i class="bi bi-cloud-download"></i> بکاپ و بازیابی
+                </a>
+            </div>
+        </div>
+        <div class="sidebar-footer">
+            <a href="{{ url_for('logout') }}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;font-weight:500;">
                 <i class="bi bi-box-arrow-left"></i> خروج
             </a>
         </div>
     </nav>
 
     <div class="main-content">
-        <button class="btn btn-sm btn-outline-secondary d-md-none mb-3" onclick="document.getElementById('sidebar').classList.toggle('show')">
+        <button class="btn btn-sm btn-outline-purple d-md-none mb-3" onclick="document.getElementById('sidebar').classList.toggle('show')">
             <i class="bi bi-list"></i> منو
         </button>
 
