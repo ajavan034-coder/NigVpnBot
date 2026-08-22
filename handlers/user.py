@@ -909,12 +909,62 @@ async def cb_free_test_select(callback: CallbackQuery):
         result = {"sub_link": sub_link, "uuid": pg_username, "expire_date": expire_date}
     else:
         ft_panel_api = panel_manager.get(ft_panel["id"]) or panel_api
-        result = await ft_panel_api.create_test_config(email, total_mb=free_test_mb, days=free_test_days, custom_inbound_ids=free_test_inbound_ids)
-        if not result:
-            await callback.message.edit_text(
-                "ساخت کانفیگ ناموفق بود. لطفاً با ادمین تماس بگیرید.", reply_markup=await back_to_menu()
-            )
-            return
+
+        _is_wg_ft = False
+        if free_test_inbound_ids:
+            try:
+                for _iid in free_test_inbound_ids:
+                    if await ft_panel_api.get_inbound_protocol(_iid) == "wireguard":
+                        _is_wg_ft = True
+                        break
+            except Exception:
+                pass
+
+        if _is_wg_ft:
+            from aiogram.types import BufferedInputFile
+            import random as _r
+            expire_date = (datetime.utcnow() + timedelta(days=free_test_days)).isoformat()
+            sent_any = False
+            first_sub_link = ""
+            first_uuid = ""
+            first_email = email
+            for wg_iid in free_test_inbound_ids:
+                try:
+                    wg_inb = await ft_panel_api.get_inbound(wg_iid)
+                    wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"
+                    _rid = _r.randint(100000, 999999)
+                    _wemail = f"wg_{wg_iid}_{_rid}@bot"
+                    _wcli = await ft_panel_api.add_client([wg_iid], _wemail, total_gb=free_test_mb // 1024, days=free_test_days)
+                    if not _wcli:
+                        logger.error("WG free test: failed add client inbound %s", wg_iid)
+                        continue
+                    _wsub = _wcli["sub_id"]
+                    _wlink = ft_panel_api.get_sub_link("", _wsub)
+                    if not first_sub_link:
+                        first_sub_link = _wlink
+                        first_uuid = _wcli["uuid"]
+                        first_email = _wemail
+                    wg_conf = await ft_panel_api.download_wireguard_conf(_wsub)
+                    if wg_conf:
+                        cf = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rid}.conf")
+                        await callback.message.answer_document(document=cf, caption=f"📄 {wg_name}")
+                        sent_any = True
+                    else:
+                        logger.error("WG free test: failed download conf inbound %s sub %s", wg_iid, _wsub)
+                except Exception as e:
+                    logger.error("WG free test conf error inbound %s: %s", wg_iid, e)
+
+            if not sent_any:
+                await callback.message.edit_text("ساخت کانفیگ WireGuard ناموفق بود.", reply_markup=await back_to_menu())
+                return
+
+            email = first_email
+            result = {"sub_link": first_sub_link, "uuid": first_uuid, "expire_date": expire_date}
+        else:
+            result = await ft_panel_api.create_test_config(email, total_mb=free_test_mb, days=free_test_days, custom_inbound_ids=free_test_inbound_ids)
+            if not result:
+                await callback.message.edit_text("ساخت کانفیگ ناموفق بود. لطفاً دوباره تلاش کنید.", reply_markup=await back_to_menu())
+                return
 
     await add_config(
         user_id=user_id,
@@ -978,59 +1028,6 @@ async def cb_free_test_select(callback: CallbackQuery):
         if conf_content:
             conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"{result['uuid']}.conf")
             await callback.message.answer_document(document=conf_file, caption=f"📄 فایل تنظیمات")
-    else:
-        is_wg = result.get("protocol") == "wireguard"
-
-        if is_wg:
-            from aiogram.types import BufferedInputFile
-            conf_content = None
-            try:
-                sub_id = result.get("sub_id", "")
-                if sub_id:
-                    conf_content = await ft_panel_api.download_wireguard_conf(sub_id)
-            except Exception as e:
-                logger.error("WireGuard free test conf download error: %s %s", type(e).__name__, e)
-
-            wg_ft_text = (
-                "\u2705 <b>\u062a\u0633\u062a \u0631\u0627\u06cc\u06af\u0627\u0646 WireGuard \u0633\u0627\u062e\u062a\u0647 \u0634\u062f!</b>\n\n"
-                f"\U0001f4ca \u062d\u062c\u0645: <b>{free_test_mb // 1024} GB</b>\n"
-                f"\U0001f4c5 \u0645\u062f\u062a: <b>{free_test_days} \u0631\u0648\u0632</b>\n\n"
-            )
-            if conf_content:
-                wg_ft_text += "\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a \u062f\u0631 \u0627\u062f\u0627\u0645\u0647 \u0627\u0631\u0633\u0627\u0644 \u0634\u062f."
-            else:
-                wg_ft_text += f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>"
-            await callback.message.answer(wg_ft_text, parse_mode="HTML", reply_markup=await back_to_menu())
-
-            wg_inbound_ids = free_test_inbound_ids or []
-            sent_any = False
-            for wg_iid in wg_inbound_ids:
-                try:
-                    wg_inbound = await ft_panel_api.get_inbound(wg_iid)
-                    wg_name = (wg_inbound.get("remark") or wg_inbound.get("tag") or f"inbound-{wg_iid}").strip() if wg_inbound else f"inbound-{wg_iid}"
-                    import random as _rand, string as _str
-                    _rand_id = _rand.randint(100000, 999999)
-                    _wg_email = f"wg_{wg_iid}_{_rand_id}@bot"
-                    _wg_client = await ft_panel_api.add_client([wg_iid], _wg_email, total_gb=free_test_mb // 1024, days=free_test_days)
-                    if not _wg_client:
-                        logger.error("Failed to add WG client to inbound %s", wg_iid)
-                        continue
-                    _wg_sub_id = _wg_client["sub_id"]
-                    wg_conf = await ft_panel_api.download_wireguard_conf(_wg_sub_id)
-                    if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rand_id}.conf")
-                        await callback.message.answer_document(
-                            document=conf_file,
-                            caption=f"\U0001f4c4 {wg_name}",
-                        )
-                        sent_any = True
-                    else:
-                        logger.error("Failed to download WG conf for inbound %s sub_id %s", wg_iid, _wg_sub_id)
-                except Exception as e:
-                    logger.error("WireGuard conf error inbound %s: %s", wg_iid, e)
-            if not sent_any:
-                await callback.message.answer(f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>", parse_mode="HTML")
-        else:
             text = await free_test_config(result["sub_link"], free_test_days)
             qr_img = generate_qr(result["sub_link"])
             await send_sticker(callback.bot, callback.message.chat.id, 'success')
@@ -1176,7 +1173,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
         result = {"sub_link": sub_link, "uuid": actual_username, "expire_date": expire_date}
         # pg_api stays open for config download below
     else:
-        # V2Ray config creation (existing flow)
+        # V2Ray / 3x-ui WireGuard config creation
         plan_inbound_ids = None
         if plan.get("inbound_ids"):
             plan_inbound_ids = [int(x.strip()) for x in plan["inbound_ids"].split(",") if x.strip().isdigit()]
@@ -1184,10 +1181,63 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
         plan_panel = panel_manager.get(plan.get("panel_id")) if plan.get("panel_id") else panel_api
         if not plan_panel:
             plan_panel = panel_api
-        result = await plan_panel.create_config(email, days=plan["days"], total_gb=plan["gb"], inbound_ids=plan_inbound_ids, ip_limit=ip_limit)
-        if not result:
-            await callback.message.edit_text("ساخت کانفیگ ناموفق بود. لطفاً دوباره تلاش کنید.", reply_markup=await back_to_menu())
-            return
+
+        _is_wg = False
+        if plan_inbound_ids:
+            try:
+                for _iid in plan_inbound_ids:
+                    if await plan_panel.get_inbound_protocol(_iid) == "wireguard":
+                        _is_wg = True
+                        break
+            except Exception:
+                pass
+
+        if _is_wg:
+            from aiogram.types import BufferedInputFile
+            import random as _r
+            wg_ids = plan_inbound_ids or []
+            expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
+            sent_any = False
+            first_sub_link = ""
+            first_uuid = ""
+            first_email = email
+            for wg_iid in wg_ids:
+                try:
+                    wg_inb = await plan_panel.get_inbound(wg_iid)
+                    wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"
+                    _rid = _r.randint(100000, 999999)
+                    _wemail = f"wg_{wg_iid}_{_rid}@bot"
+                    _wcli = await plan_panel.add_client([wg_iid], _wemail, total_gb=plan["gb"], days=plan["days"])
+                    if not _wcli:
+                        logger.error("WG: failed add client inbound %s", wg_iid)
+                        continue
+                    _wsub = _wcli["sub_id"]
+                    _wlink = plan_panel.get_sub_link("", _wsub)
+                    if not first_sub_link:
+                        first_sub_link = _wlink
+                        first_uuid = _wcli["uuid"]
+                        first_email = _wemail
+                    wg_conf = await plan_panel.download_wireguard_conf(_wsub)
+                    if wg_conf:
+                        cf = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rid}.conf")
+                        await callback.message.answer_document(document=cf, caption=f"📄 {wg_name}")
+                        sent_any = True
+                    else:
+                        logger.error("WG: failed download conf inbound %s sub %s", wg_iid, _wsub)
+                except Exception as e:
+                    logger.error("WG conf error inbound %s: %s", wg_iid, e)
+
+            if not sent_any:
+                await callback.message.edit_text("ساخت کانفیگ WireGuard ناموفق بود.", reply_markup=await back_to_menu())
+                return
+
+            email = first_email
+            result = {"sub_link": first_sub_link, "uuid": first_uuid, "expire_date": expire_date}
+        else:
+            result = await plan_panel.create_config(email, days=plan["days"], total_gb=plan["gb"], inbound_ids=plan_inbound_ids, ip_limit=ip_limit)
+            if not result:
+                await callback.message.edit_text("ساخت کانفیگ ناموفق بود. لطفاً دوباره تلاش کنید.", reply_markup=await back_to_menu())
+                return
 
     await add_config(
         user_id=user_id, plan_id=plan_id, sub_link=result["sub_link"],
@@ -1287,40 +1337,6 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
                 document=conf_file,
                 caption=f"📄 فایل تنظیمات {result['uuid']}",
             )
-    else:
-        is_wg = result.get("protocol") == "wireguard"
-
-        if is_wg:
-            from aiogram.types import BufferedInputFile
-
-            wg_inbound_ids = plan_inbound_ids or []
-            sent_any = False
-            for wg_iid in wg_inbound_ids:
-                try:
-                    wg_inbound = await plan_panel.get_inbound(wg_iid)
-                    wg_name = (wg_inbound.get("remark") or wg_inbound.get("tag") or f"inbound-{wg_iid}").strip() if wg_inbound else f"inbound-{wg_iid}"
-                    import random as _rand, string as _str
-                    _rand_id = _rand.randint(100000, 999999)
-                    _wg_email = f"wg_{wg_iid}_{_rand_id}@bot"
-                    _wg_client = await plan_panel.add_client([wg_iid], _wg_email, total_gb=plan["gb"], days=plan["days"])
-                    if not _wg_client:
-                        logger.error("Failed to add WG client to inbound %s", wg_iid)
-                        continue
-                    _wg_sub_id = _wg_client["sub_id"]
-                    wg_conf = await plan_panel.download_wireguard_conf(_wg_sub_id)
-                    if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rand_id}.conf")
-                        await callback.message.answer_document(
-                            document=conf_file,
-                            caption=f"\U0001f4c4 {wg_name}",
-                        )
-                        sent_any = True
-                    else:
-                        logger.error("Failed to download WG conf for inbound %s sub_id %s", wg_iid, _wg_sub_id)
-                except Exception as e:
-                    logger.error("WireGuard conf error inbound %s: %s", wg_iid, e)
-            if not sent_any:
-                await callback.message.answer(f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>", parse_mode="HTML")
         else:
             # V2Ray: existing flow
             text = await config_created(
@@ -1879,18 +1895,72 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
         plan_panel = panel_manager.get(plan.get("panel_id")) if plan.get("panel_id") else panel_api
         if not plan_panel:
             plan_panel = panel_api
-        result = await plan_panel.create_config(email, days=plan["days"], total_gb=plan["gb"], inbound_ids=plan_inbound_ids, ip_limit=ip_limit)
-        if not result:
-            await update_balance(user_id, pay_price)
+
+        _is_wg_pw = False
+        if plan_inbound_ids:
             try:
-                await callback.message.edit_text(
-                    "ساخت کانفیگ ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
-                )
+                for _iid in plan_inbound_ids:
+                    if await plan_panel.get_inbound_protocol(_iid) == "wireguard":
+                        _is_wg_pw = True
+                        break
             except Exception:
-                await callback.message.answer(
-                    "ساخت کانفیگ ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
-                )
-            return
+                pass
+
+        if _is_wg_pw:
+            from aiogram.types import BufferedInputFile
+            import random as _r
+            wg_ids = plan_inbound_ids or []
+            expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
+            sent_any = False
+            first_sub_link = ""
+            first_uuid = ""
+            first_email = email
+            for wg_iid in wg_ids:
+                try:
+                    wg_inb = await plan_panel.get_inbound(wg_iid)
+                    wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"
+                    _rid = _r.randint(100000, 999999)
+                    _wemail = f"wg_{wg_iid}_{_rid}@bot"
+                    _wcli = await plan_panel.add_client([wg_iid], _wemail, total_gb=plan["gb"], days=plan["days"])
+                    if not _wcli:
+                        logger.error("WG pay: failed add client inbound %s", wg_iid)
+                        continue
+                    _wsub = _wcli["sub_id"]
+                    _wlink = plan_panel.get_sub_link("", _wsub)
+                    if not first_sub_link:
+                        first_sub_link = _wlink
+                        first_uuid = _wcli["uuid"]
+                        first_email = _wemail
+                    wg_conf = await plan_panel.download_wireguard_conf(_wsub)
+                    if wg_conf:
+                        cf = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rid}.conf")
+                        await callback.message.answer_document(document=cf, caption=f"📄 {wg_name}")
+                        sent_any = True
+                    else:
+                        logger.error("WG pay: failed download conf inbound %s sub %s", wg_iid, _wsub)
+                except Exception as e:
+                    logger.error("WG pay conf error inbound %s: %s", wg_iid, e)
+
+            if not sent_any:
+                await update_balance(user_id, pay_price)
+                await callback.message.edit_text("ساخت کانفیگ WireGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu())
+                return
+
+            email = first_email
+            result = {"sub_link": first_sub_link, "uuid": first_uuid, "expire_date": expire_date}
+        else:
+            result = await plan_panel.create_config(email, days=plan["days"], total_gb=plan["gb"], inbound_ids=plan_inbound_ids, ip_limit=ip_limit)
+            if not result:
+                await update_balance(user_id, pay_price)
+                try:
+                    await callback.message.edit_text(
+                        "ساخت کانفیگ ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                    )
+                except Exception:
+                    await callback.message.answer(
+                        "ساخت کانفیگ ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu(),
+                    )
+                return
 
     await add_config(
         user_id=user_id, plan_id=plan_id, sub_link=result["sub_link"],
@@ -1982,40 +2052,6 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                 document=conf_file,
                 caption=f"📄 فایل تنظیمات {result['uuid']}",
             )
-    else:
-        is_wg = result.get("protocol") == "wireguard"
-
-        if is_wg:
-            from aiogram.types import BufferedInputFile
-
-            wg_inbound_ids = plan_inbound_ids or []
-            sent_any = False
-            for wg_iid in wg_inbound_ids:
-                try:
-                    wg_inbound = await plan_panel.get_inbound(wg_iid)
-                    wg_name = (wg_inbound.get("remark") or wg_inbound.get("tag") or f"inbound-{wg_iid}").strip() if wg_inbound else f"inbound-{wg_iid}"
-                    import random as _rand, string as _str
-                    _rand_id = _rand.randint(100000, 999999)
-                    _wg_email = f"wg_{wg_iid}_{_rand_id}@bot"
-                    _wg_client = await plan_panel.add_client([wg_iid], _wg_email, total_gb=plan["gb"], days=plan["days"])
-                    if not _wg_client:
-                        logger.error("Failed to add WG client to inbound %s", wg_iid)
-                        continue
-                    _wg_sub_id = _wg_client["sub_id"]
-                    wg_conf = await plan_panel.download_wireguard_conf(_wg_sub_id)
-                    if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rand_id}.conf")
-                        await callback.message.answer_document(
-                            document=conf_file,
-                            caption=f"\U0001f4c4 {wg_name}",
-                        )
-                        sent_any = True
-                    else:
-                        logger.error("Failed to download WG conf for inbound %s sub_id %s", wg_iid, _wg_sub_id)
-                except Exception as e:
-                    logger.error("WireGuard conf error inbound %s: %s", wg_iid, e)
-            if not sent_any:
-                await callback.message.answer(f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>", parse_mode="HTML")
         else:
             text = await config_created(result["sub_link"], result["expire_date"][:10], pay_price, plan["name"], plan["gb"], plan["days"], symbol)
             qr_img = generate_qr(result["sub_link"])
