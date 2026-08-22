@@ -1002,12 +1002,24 @@ async def cb_free_test_select(callback: CallbackQuery):
                 wg_ft_text += f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>"
             await callback.message.answer(wg_ft_text, parse_mode="HTML", reply_markup=await back_to_menu())
 
-            if conf_content:
-                conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename="wg_free_test.conf")
-                await callback.message.answer_document(
-                    document=conf_file,
-                    caption="\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a WireGuard - \u062a\u0633\u062a \u0631\u0627\u06cc\u06af\u0627\u0646",
-                )
+            wg_inbound_ids = plan_inbound_ids or []
+            sent_any = False
+            for wg_iid in wg_inbound_ids:
+                try:
+                    wg_inbound = await ft_panel_api.get_inbound(wg_iid)
+                    wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
+                    wg_conf = await ft_panel_api.download_wireguard_conf(result["sub_id"])
+                    if wg_conf:
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"wg_{wg_tag}.conf")
+                        await callback.message.answer_document(
+                            document=conf_file,
+                            caption=f"\U0001f4c4 {wg_tag}",
+                        )
+                        sent_any = True
+                except Exception as e:
+                    logger.error("WireGuard conf error inbound %s: %s", wg_iid, e)
+            if not sent_any:
+                await callback.message.answer(f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>", parse_mode="HTML")
         else:
             text = await free_test_config(result["sub_link"], free_test_days)
             qr_img = generate_qr(result["sub_link"])
@@ -1292,12 +1304,24 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
                 wg_text += f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>"
             await callback.message.answer(wg_text, parse_mode="HTML", reply_markup=await back_to_menu())
 
-            if conf_content:
-                conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"wg_{plan['name']}.conf")
-                await callback.message.answer_document(
-                    document=conf_file,
-                    caption=f"\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a WireGuard - {plan['name']}",
-                )
+            wg_inbound_ids = plan_inbound_ids or []
+            sent_any = False
+            for wg_iid in wg_inbound_ids:
+                try:
+                    wg_inbound = await plan_panel.get_inbound(wg_iid)
+                    wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
+                    wg_conf = await plan_panel.download_wireguard_conf(result["sub_id"])
+                    if wg_conf:
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"wg_{wg_tag}.conf")
+                        await callback.message.answer_document(
+                            document=conf_file,
+                            caption=f"\U0001f4c4 {wg_tag}",
+                        )
+                        sent_any = True
+                except Exception as e:
+                    logger.error("WireGuard conf error inbound %s: %s", wg_iid, e)
+            if not sent_any:
+                await callback.message.answer(f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>", parse_mode="HTML")
         else:
             # V2Ray: existing flow
             text = await config_created(
@@ -1988,12 +2012,24 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                 wg_text += f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>"
             await callback.message.answer(wg_text, parse_mode="HTML", reply_markup=await back_to_menu())
 
-            if conf_content:
-                conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"wg_{plan['name']}.conf")
-                await callback.message.answer_document(
-                    document=conf_file,
-                    caption=f"\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a WireGuard - {plan['name']}",
-                )
+            wg_inbound_ids = plan_inbound_ids or []
+            sent_any = False
+            for wg_iid in wg_inbound_ids:
+                try:
+                    wg_inbound = await plan_panel.get_inbound(wg_iid)
+                    wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
+                    wg_conf = await plan_panel.download_wireguard_conf(result["sub_id"])
+                    if wg_conf:
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"wg_{wg_tag}.conf")
+                        await callback.message.answer_document(
+                            document=conf_file,
+                            caption=f"\U0001f4c4 {wg_tag}",
+                        )
+                        sent_any = True
+                except Exception as e:
+                    logger.error("WireGuard conf error inbound %s: %s", wg_iid, e)
+            if not sent_any:
+                await callback.message.answer(f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>", parse_mode="HTML")
         else:
             text = await config_created(result["sub_link"], result["expire_date"][:10], pay_price, plan["name"], plan["gb"], plan["days"], symbol)
             qr_img = generate_qr(result["sub_link"])
