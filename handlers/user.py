@@ -1007,7 +1007,7 @@ async def cb_free_test_select(callback: CallbackQuery):
             for wg_iid in wg_inbound_ids:
                 try:
                     wg_inbound = await ft_panel_api.get_inbound(wg_iid)
-                    wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
+                    wg_name = (wg_inbound.get("remark") or wg_inbound.get("tag") or f"inbound-{wg_iid}").strip() if wg_inbound else f"inbound-{wg_iid}"
                     import random as _rand, string as _str
                     _rand_id = _rand.randint(100000, 999999)
                     _wg_email = f"wg_{wg_iid}_{_rand_id}@bot"
@@ -1018,10 +1018,10 @@ async def cb_free_test_select(callback: CallbackQuery):
                     _wg_sub_id = _wg_client["sub_id"]
                     wg_conf = await ft_panel_api.download_wireguard_conf(_wg_sub_id)
                     if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{_rand_id}.conf")
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rand_id}.conf")
                         await callback.message.answer_document(
                             document=conf_file,
-                            caption=f"\U0001f4c4 {wg_tag}",
+                            caption=f"\U0001f4c4 {wg_name}",
                         )
                         sent_any = True
                     else:
@@ -1298,7 +1298,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
             for wg_iid in wg_inbound_ids:
                 try:
                     wg_inbound = await plan_panel.get_inbound(wg_iid)
-                    wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
+                    wg_name = (wg_inbound.get("remark") or wg_inbound.get("tag") or f"inbound-{wg_iid}").strip() if wg_inbound else f"inbound-{wg_iid}"
                     import random as _rand, string as _str
                     _rand_id = _rand.randint(100000, 999999)
                     _wg_email = f"wg_{wg_iid}_{_rand_id}@bot"
@@ -1309,10 +1309,10 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
                     _wg_sub_id = _wg_client["sub_id"]
                     wg_conf = await plan_panel.download_wireguard_conf(_wg_sub_id)
                     if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{_rand_id}.conf")
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rand_id}.conf")
                         await callback.message.answer_document(
                             document=conf_file,
-                            caption=f"\U0001f4c4 {wg_tag}",
+                            caption=f"\U0001f4c4 {wg_name}",
                         )
                         sent_any = True
                     else:
@@ -1993,7 +1993,7 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
             for wg_iid in wg_inbound_ids:
                 try:
                     wg_inbound = await plan_panel.get_inbound(wg_iid)
-                    wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
+                    wg_name = (wg_inbound.get("remark") or wg_inbound.get("tag") or f"inbound-{wg_iid}").strip() if wg_inbound else f"inbound-{wg_iid}"
                     import random as _rand, string as _str
                     _rand_id = _rand.randint(100000, 999999)
                     _wg_email = f"wg_{wg_iid}_{_rand_id}@bot"
@@ -2004,10 +2004,10 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                     _wg_sub_id = _wg_client["sub_id"]
                     wg_conf = await plan_panel.download_wireguard_conf(_wg_sub_id)
                     if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{_rand_id}.conf")
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rand_id}.conf")
                         await callback.message.answer_document(
                             document=conf_file,
-                            caption=f"\U0001f4c4 {wg_tag}",
+                            caption=f"\U0001f4c4 {wg_name}",
                         )
                         sent_any = True
                     else:
