@@ -1008,14 +1008,24 @@ async def cb_free_test_select(callback: CallbackQuery):
                 try:
                     wg_inbound = await ft_panel_api.get_inbound(wg_iid)
                     wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
-                    wg_conf = await ft_panel_api.download_wireguard_conf(result["sub_id"])
+                    import random as _rand, string as _str
+                    _rand_id = _rand.randint(100000, 999999)
+                    _wg_email = f"wg_{wg_iid}_{_rand_id}@bot"
+                    _wg_client = await ft_panel_api.add_client([wg_iid], _wg_email, total_gb=free_test_mb // 1024, days=free_test_days)
+                    if not _wg_client:
+                        logger.error("Failed to add WG client to inbound %s", wg_iid)
+                        continue
+                    _wg_sub_id = _wg_client["sub_id"]
+                    wg_conf = await ft_panel_api.download_wireguard_conf(_wg_sub_id)
                     if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{__import__('random').randint(100000,999999)}.conf")
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{_rand_id}.conf")
                         await callback.message.answer_document(
                             document=conf_file,
                             caption=f"\U0001f4c4 {wg_tag}",
                         )
                         sent_any = True
+                    else:
+                        logger.error("Failed to download WG conf for inbound %s sub_id %s", wg_iid, _wg_sub_id)
                 except Exception as e:
                     logger.error("WireGuard conf error inbound %s: %s", wg_iid, e)
             if not sent_any:
@@ -1282,27 +1292,6 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
 
         if is_wg:
             from aiogram.types import BufferedInputFile
-            conf_content = None
-            try:
-                sub_id = result.get("sub_id", "")
-                if sub_id:
-                    conf_content = await plan_panel.download_wireguard_conf(sub_id)
-            except Exception as e:
-                logger.error("WireGuard conf download error: %s %s", type(e).__name__, e)
-
-            wg_text = (
-                "\u2705 <b>\u06a9\u0627\u0646\u0641\u06cc\u06af WireGuard \u0633\u0627\u062e\u062a\u0647 \u0634\u062f!</b>\n\n"
-                f"\U0001f4e6 \u067e\u0644\u0646: <b>{plan['name']}</b>\n"
-                f"\U0001f4ca \u062d\u062c\u0645: <b>{plan['gb']} GB</b>\n"
-                f"\U0001f4c5 \u0645\u062f\u062a: <b>{plan['days']} \u0631\u0648\u0632</b>\n"
-                f"\U0001f4b0 \u067e\u0631\u062f\u0627\u062e\u062a: <b>{plan['price']:,} {symbol}</b>\n"
-                f"\U0001f4c5 \u0627\u0646\u0636\u0627: <b>{result['expire_date'][:10]}</b>\n\n"
-            )
-            if conf_content:
-                wg_text += "\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a \u062f\u0631 \u0627\u062f\u0627\u0645\u0647 \u0627\u0631\u0633\u0627\u0644 \u0634\u062f."
-            else:
-                wg_text += f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>"
-            await callback.message.answer(wg_text, parse_mode="HTML", reply_markup=await back_to_menu())
 
             wg_inbound_ids = plan_inbound_ids or []
             sent_any = False
@@ -1310,14 +1299,24 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
                 try:
                     wg_inbound = await plan_panel.get_inbound(wg_iid)
                     wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
-                    wg_conf = await plan_panel.download_wireguard_conf(result["sub_id"])
+                    import random as _rand, string as _str
+                    _rand_id = _rand.randint(100000, 999999)
+                    _wg_email = f"wg_{wg_iid}_{_rand_id}@bot"
+                    _wg_client = await plan_panel.add_client([wg_iid], _wg_email, total_gb=plan["gb"], days=plan["days"])
+                    if not _wg_client:
+                        logger.error("Failed to add WG client to inbound %s", wg_iid)
+                        continue
+                    _wg_sub_id = _wg_client["sub_id"]
+                    wg_conf = await plan_panel.download_wireguard_conf(_wg_sub_id)
                     if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{__import__('random').randint(100000,999999)}.conf")
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{_rand_id}.conf")
                         await callback.message.answer_document(
                             document=conf_file,
                             caption=f"\U0001f4c4 {wg_tag}",
                         )
                         sent_any = True
+                    else:
+                        logger.error("Failed to download WG conf for inbound %s sub_id %s", wg_iid, _wg_sub_id)
                 except Exception as e:
                     logger.error("WireGuard conf error inbound %s: %s", wg_iid, e)
             if not sent_any:
@@ -1988,29 +1987,6 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
 
         if is_wg:
             from aiogram.types import BufferedInputFile
-            conf_content = None
-            try:
-                sub_id = result.get("sub_id", "")
-                if sub_id:
-                    plan_panel = panel_manager.get(plan.get("panel_id")) if plan.get("panel_id") else panel_api
-                    if plan_panel:
-                        conf_content = await plan_panel.download_wireguard_conf(sub_id)
-            except Exception as e:
-                logger.error("WireGuard wallet conf download error: %s %s", type(e).__name__, e)
-
-            wg_text = (
-                "\u2705 <b>\u06a9\u0627\u0646\u0641\u06cc\u06af WireGuard \u0633\u0627\u062e\u062a\u0647 \u0634\u062f!</b>\n\n"
-                f"\U0001f4e6 \u067e\u0644\u0646: <b>{plan['name']}</b>\n"
-                f"\U0001f4ca \u062d\u062c\u0645: <b>{plan['gb']} GB</b>\n"
-                f"\U0001f4c5 \u0645\u062f\u062a: <b>{plan['days']} \u0631\u0648\u0632</b>\n"
-                f"\U0001f4b0 \u067e\u0631\u062f\u0627\u062e\u062a: <b>{pay_price:,} {symbol}</b>\n"
-                f"\U0001f4c5 \u0627\u0646\u0636\u0627: <b>{result['expire_date'][:10]}</b>\n\n"
-            )
-            if conf_content:
-                wg_text += "\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a \u062f\u0631 \u0627\u062f\u0627\u0645\u0647 \u0627\u0631\u0633\u0627\u0644 \u0634\u062f."
-            else:
-                wg_text += f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>"
-            await callback.message.answer(wg_text, parse_mode="HTML", reply_markup=await back_to_menu())
 
             wg_inbound_ids = plan_inbound_ids or []
             sent_any = False
@@ -2018,14 +1994,24 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                 try:
                     wg_inbound = await plan_panel.get_inbound(wg_iid)
                     wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
-                    wg_conf = await plan_panel.download_wireguard_conf(result["sub_id"])
+                    import random as _rand, string as _str
+                    _rand_id = _rand.randint(100000, 999999)
+                    _wg_email = f"wg_{wg_iid}_{_rand_id}@bot"
+                    _wg_client = await plan_panel.add_client([wg_iid], _wg_email, total_gb=plan["gb"], days=plan["days"])
+                    if not _wg_client:
+                        logger.error("Failed to add WG client to inbound %s", wg_iid)
+                        continue
+                    _wg_sub_id = _wg_client["sub_id"]
+                    wg_conf = await plan_panel.download_wireguard_conf(_wg_sub_id)
                     if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{__import__('random').randint(100000,999999)}.conf")
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{_rand_id}.conf")
                         await callback.message.answer_document(
                             document=conf_file,
                             caption=f"\U0001f4c4 {wg_tag}",
                         )
                         sent_any = True
+                    else:
+                        logger.error("Failed to download WG conf for inbound %s sub_id %s", wg_iid, _wg_sub_id)
                 except Exception as e:
                     logger.error("WireGuard conf error inbound %s: %s", wg_iid, e)
             if not sent_any:
