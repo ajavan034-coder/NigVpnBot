@@ -1002,7 +1002,7 @@ async def cb_free_test_select(callback: CallbackQuery):
                 wg_ft_text += f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>"
             await callback.message.answer(wg_ft_text, parse_mode="HTML", reply_markup=await back_to_menu())
 
-            wg_inbound_ids = plan_inbound_ids or []
+            wg_inbound_ids = free_test_inbound_ids or []
             sent_any = False
             for wg_iid in wg_inbound_ids:
                 try:
