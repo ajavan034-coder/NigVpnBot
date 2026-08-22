@@ -979,7 +979,6 @@ async def cb_free_test_select(callback: CallbackQuery):
             conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"{result['uuid']}.conf")
             await callback.message.answer_document(document=conf_file, caption=f"📄 فایل تنظیمات")
     else:
-        # Check if this is a WireGuard inbound on 3x-ui panel
         is_wg = result.get("protocol") == "wireguard"
 
         if is_wg:
@@ -993,27 +992,21 @@ async def cb_free_test_select(callback: CallbackQuery):
                 logger.error("WireGuard free test conf download error: %s %s", type(e).__name__, e)
 
             wg_ft_text = (
-                "✅ <b>تست رایگان WireGuard ساخته شد!</b>
-
-"
-                f"📊 حجم: <b>{free_test_mb // 1024} GB</b>
-"
-                f"📅 مدت: <b>{free_test_days} روز</b>
-
-"
+                "\u2705 <b>\u062a\u0633\u062a \u0631\u0627\u06cc\u06af\u0627\u0646 WireGuard \u0633\u0627\u062e\u062a\u0647 \u0634\u062f!</b>\n\n"
+                f"\U0001f4ca \u062d\u062c\u0645: <b>{free_test_mb // 1024} GB</b>\n"
+                f"\U0001f4c5 \u0645\u062f\u062a: <b>{free_test_days} \u0631\u0648\u0632</b>\n\n"
             )
             if conf_content:
-                wg_ft_text += "📄 فایل تنظیمات در ادامه ارسال شد."
+                wg_ft_text += "\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a \u062f\u0631 \u0627\u062f\u0627\u0645\u0647 \u0627\u0631\u0633\u0627\u0644 \u0634\u062f."
             else:
-                wg_ft_text += f"🔗 لینک اشتراک:
-<code>{result['sub_link']}</code>"
+                wg_ft_text += f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>"
             await callback.message.answer(wg_ft_text, parse_mode="HTML", reply_markup=await back_to_menu())
 
             if conf_content:
-                conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"wg_free_test.conf")
+                conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename="wg_free_test.conf")
                 await callback.message.answer_document(
                     document=conf_file,
-                    caption="📄 فایل تنظیمات WireGuard - تست رایگان",
+                    caption="\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a WireGuard - \u062a\u0633\u062a \u0631\u0627\u06cc\u06af\u0627\u0646",
                 )
         else:
             text = await free_test_config(result["sub_link"], free_test_days)
@@ -1273,7 +1266,6 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
                 caption=f"📄 فایل تنظیمات {result['uuid']}",
             )
     else:
-        # Check if this is a WireGuard inbound on 3x-ui panel
         is_wg = result.get("protocol") == "wireguard"
 
         if is_wg:
@@ -1287,33 +1279,24 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
                 logger.error("WireGuard conf download error: %s %s", type(e).__name__, e)
 
             wg_text = (
-                "✅ <b>کانفیگ WireGuard ساخته شد!</b>
-
-"
-                f"📦 پلن: <b>{plan['name']}</b>
-"
-                f"📊 حجم: <b>{plan['gb']} GB</b>
-"
-                f"📅 مدت: <b>{plan['days']} روز</b>
-"
-                f"💰 پرداخت: <b>{plan['price']:,} {symbol}</b>
-"
-                f"📅 انقضا: <b>{result['expire_date'][:10]}</b>
-
-"
+                "\u2705 <b>\u06a9\u0627\u0646\u0641\u06cc\u06af WireGuard \u0633\u0627\u062e\u062a\u0647 \u0634\u062f!</b>\n\n"
+                f"\U0001f4e6 \u067e\u0644\u0646: <b>{plan['name']}</b>\n"
+                f"\U0001f4ca \u062d\u062c\u0645: <b>{plan['gb']} GB</b>\n"
+                f"\U0001f4c5 \u0645\u062f\u062a: <b>{plan['days']} \u0631\u0648\u0632</b>\n"
+                f"\U0001f4b0 \u067e\u0631\u062f\u0627\u062e\u062a: <b>{plan['price']:,} {symbol}</b>\n"
+                f"\U0001f4c5 \u0627\u0646\u0636\u0627: <b>{result['expire_date'][:10]}</b>\n\n"
             )
             if conf_content:
-                wg_text += "📄 فایل تنظیمات در ادامه ارسال شد."
+                wg_text += "\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a \u062f\u0631 \u0627\u062f\u0627\u0645\u0647 \u0627\u0631\u0633\u0627\u0644 \u0634\u062f."
             else:
-                wg_text += f"🔗 لینک اشتراک:
-<code>{result['sub_link']}</code>"
+                wg_text += f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>"
             await callback.message.answer(wg_text, parse_mode="HTML", reply_markup=await back_to_menu())
 
             if conf_content:
                 conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"wg_{plan['name']}.conf")
                 await callback.message.answer_document(
                     document=conf_file,
-                    caption=f"📄 فایل تنظیمات WireGuard - {plan['name']}",
+                    caption=f"\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a WireGuard - {plan['name']}",
                 )
         else:
             # V2Ray: existing flow
@@ -1977,7 +1960,6 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                 caption=f"📄 فایل تنظیمات {result['uuid']}",
             )
     else:
-        # Check if this is a WireGuard inbound on 3x-ui panel
         is_wg = result.get("protocol") == "wireguard"
 
         if is_wg:
@@ -1993,33 +1975,24 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                 logger.error("WireGuard wallet conf download error: %s %s", type(e).__name__, e)
 
             wg_text = (
-                "✅ <b>کانفیگ WireGuard ساخته شد!</b>
-
-"
-                f"📦 پلن: <b>{plan['name']}</b>
-"
-                f"📊 حجم: <b>{plan['gb']} GB</b>
-"
-                f"📅 مدت: <b>{plan['days']} روز</b>
-"
-                f"💰 پرداخت: <b>{pay_price:,} {symbol}</b>
-"
-                f"📅 انقضا: <b>{result['expire_date'][:10]}</b>
-
-"
+                "\u2705 <b>\u06a9\u0627\u0646\u0641\u06cc\u06af WireGuard \u0633\u0627\u062e\u062a\u0647 \u0634\u062f!</b>\n\n"
+                f"\U0001f4e6 \u067e\u0644\u0646: <b>{plan['name']}</b>\n"
+                f"\U0001f4ca \u062d\u062c\u0645: <b>{plan['gb']} GB</b>\n"
+                f"\U0001f4c5 \u0645\u062f\u062a: <b>{plan['days']} \u0631\u0648\u0632</b>\n"
+                f"\U0001f4b0 \u067e\u0631\u062f\u0627\u062e\u062a: <b>{pay_price:,} {symbol}</b>\n"
+                f"\U0001f4c5 \u0627\u0646\u0636\u0627: <b>{result['expire_date'][:10]}</b>\n\n"
             )
             if conf_content:
-                wg_text += "📄 فایل تنظیمات در ادامه ارسال شد."
+                wg_text += "\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a \u062f\u0631 \u0627\u062f\u0627\u0645\u0647 \u0627\u0631\u0633\u0627\u0644 \u0634\u062f."
             else:
-                wg_text += f"🔗 لینک اشتراک:
-<code>{result['sub_link']}</code>"
+                wg_text += f"\U0001f517 \u0644\u06cc\u0646\u06a9 \u0627\u0634\u062a\u0631\u0627\u06a9:\n<code>{result['sub_link']}</code>"
             await callback.message.answer(wg_text, parse_mode="HTML", reply_markup=await back_to_menu())
 
             if conf_content:
                 conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"wg_{plan['name']}.conf")
                 await callback.message.answer_document(
                     document=conf_file,
-                    caption=f"📄 فایل تنظیمات WireGuard - {plan['name']}",
+                    caption=f"\U0001f4c4 \u0641\u0627\u06cc\u0644 \u062a\u0637\u0628\u06cc\u0642\u0627\u062a WireGuard - {plan['name']}",
                 )
         else:
             text = await config_created(result["sub_link"], result["expire_date"][:10], pay_price, plan["name"], plan["gb"], plan["days"], symbol)
