@@ -1337,17 +1337,17 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
                 document=conf_file,
                 caption=f"📄 فایل تنظیمات {result['uuid']}",
             )
-        else:
-            # V2Ray: existing flow
-            text = await config_created(
-                result["sub_link"], result["expire_date"][:10],
-                plan["price"], plan["name"], plan["gb"], plan["days"], symbol,
-            )
-            qr_img = generate_qr(result["sub_link"])
-            await send_sticker(callback.bot, callback.message.chat.id, 'config')
-            await callback.message.answer_photo(
-                photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
-            )
+    else:
+        # V2Ray: existing flow
+        text = await config_created(
+            result["sub_link"], result["expire_date"][:10],
+            plan["price"], plan["name"], plan["gb"], plan["days"], symbol,
+        )
+        qr_img = generate_qr(result["sub_link"])
+        await send_sticker(callback.bot, callback.message.chat.id, 'config')
+        await callback.message.answer_photo(
+            photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
+        )
 
     # Notify admin channel
     channel_id = await get_setting("notification_channel_id") or ""
