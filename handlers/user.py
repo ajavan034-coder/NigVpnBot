@@ -1034,6 +1034,14 @@ async def cb_free_test_select(callback: CallbackQuery):
             await callback.message.answer_photo(
                 photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
             )
+    else:
+        # V2Ray: free test config display
+        text = await free_test_config(result["sub_link"], free_test_days)
+        qr_img = generate_qr(result["sub_link"])
+        await send_sticker(callback.bot, callback.message.chat.id, 'success')
+        await callback.message.answer_photo(
+            photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
+        )
 
     # Notify admin channel
     channel_id = await get_setting("notification_channel_id") or ""
@@ -2052,12 +2060,12 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                 document=conf_file,
                 caption=f"📄 فایل تنظیمات {result['uuid']}",
             )
-        else:
-            text = await config_created(result["sub_link"], result["expire_date"][:10], pay_price, plan["name"], plan["gb"], plan["days"], symbol)
-            qr_img = generate_qr(result["sub_link"])
-            await callback.message.answer_photo(
-                photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
-            )
+    else:
+        text = await config_created(result["sub_link"], result["expire_date"][:10], pay_price, plan["name"], plan["gb"], plan["days"], symbol)
+        qr_img = generate_qr(result["sub_link"])
+        await callback.message.answer_photo(
+            photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
+        )
 
     # Notify admin channel - wallet payment
     channel_id = await get_setting("notification_channel_id") or ""
