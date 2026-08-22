@@ -208,14 +208,52 @@ class PanelAPI:
         return "unknown"
 
     async def download_wireguard_conf(self, sub_id: str) -> str | None:
+        import base64 as _b64
+        import urllib.parse as _url
         session = await self._get_session()
         sub_url = self.get_sub_link("", sub_id)
         try:
             async with session.get(sub_url, ssl=False, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                if resp.status == 200:
-                    text = await resp.text()
-                    if "[Interface]" in text or "private_key" in text.lower():
-                        return text
+                if resp.status != 200:
+                    return None
+                text = (await resp.text()).strip()
+
+                if "[Interface]" in text:
+                    return text
+
+                try:
+                    decoded = _b64.b64decode(text).decode("utf-8", errors="replace")
+                except Exception:
+                    decoded = text
+
+                if not decoded.startswith("wireguard://"):
+                    logger.error("Sub response is not wireguard:// URI: %s", decoded[:100])
+                    return None
+
+                parsed = _url.urlparse(decoded)
+                pk_b64 = _url.unquote(parsed.username) if parsed.username else ""
+                params = _url.parse_qs(parsed.query)
+                address = params.get("address", [""])[0]
+                dns = params.get("dns", [""])[0].replace("+", ", ")
+                mtu = params.get("mtu", ["1300"])[0]
+                pubkey = _url.unquote(params.get("publickey", [""])[0])
+                host = parsed.hostname or ""
+                port = parsed.port or 12825
+
+                conf_lines = [
+                    "[Interface]",
+                    f"PrivateKey = {pk_b64}",
+                    f"Address = {address}",
+                    f"DNS = {dns}",
+                    f"MTU = {mtu}",
+                    "",
+                    "[Peer]",
+                    f"PublicKey = {pubkey}",
+                    f"Endpoint = {host}:{port}",
+                    "AllowedIPs = 0.0.0.0/0, ::/0",
+                    "",
+                ]
+                return "\n".join(conf_lines)
         except Exception as e:
             logger.error(f"WireGuard conf download error: {e}")
         return None
