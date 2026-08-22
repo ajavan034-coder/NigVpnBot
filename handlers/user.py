@@ -1010,7 +1010,7 @@ async def cb_free_test_select(callback: CallbackQuery):
                     wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
                     wg_conf = await ft_panel_api.download_wireguard_conf(result["sub_id"])
                     if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"wg_{wg_tag}.conf")
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{__import__('random').randint(100000,999999)}.conf")
                         await callback.message.answer_document(
                             document=conf_file,
                             caption=f"\U0001f4c4 {wg_tag}",
@@ -1312,7 +1312,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
                     wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
                     wg_conf = await plan_panel.download_wireguard_conf(result["sub_id"])
                     if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"wg_{wg_tag}.conf")
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{__import__('random').randint(100000,999999)}.conf")
                         await callback.message.answer_document(
                             document=conf_file,
                             caption=f"\U0001f4c4 {wg_tag}",
@@ -2020,7 +2020,7 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                     wg_tag = wg_inbound.get("tag", f"inbound-{wg_iid}") if wg_inbound else f"inbound-{wg_iid}"
                     wg_conf = await plan_panel.download_wireguard_conf(result["sub_id"])
                     if wg_conf:
-                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"wg_{wg_tag}.conf")
+                        conf_file = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_tag}_{__import__('random').randint(100000,999999)}.conf")
                         await callback.message.answer_document(
                             document=conf_file,
                             caption=f"\U0001f4c4 {wg_tag}",
