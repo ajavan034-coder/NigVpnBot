@@ -934,7 +934,9 @@ async def cb_free_test_select(callback: CallbackQuery):
                     wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"
                     _rid = _r.randint(100000, 999999)
                     _wemail = f"wg_{wg_iid}_{_rid}@bot"
-                    _wcli = await ft_panel_api.add_client([wg_iid], _wemail, total_gb=free_test_mb // 1024, days=free_test_days)
+                    _ft_gb = free_test_mb / 1024  # float division to preserve sub-GB values
+                    logger.info(f"WG free_test: free_test_mb={free_test_mb}, calculated_gb={_ft_gb}, inbound={wg_iid}")
+                    _wcli = await ft_panel_api.add_client([wg_iid], _wemail, total_gb=_ft_gb, days=free_test_days)
                     if not _wcli:
                         logger.error("WG free test: failed add client inbound %s", wg_iid)
                         continue
@@ -975,7 +977,7 @@ async def cb_free_test_select(callback: CallbackQuery):
         expire_date=result["expire_date"],
         panel_id=ft_panel["id"],
     )
-    log_purchase(user_id, username or str(user_id), "Free Test", free_test_mb // 1024, free_test_days, 0, "تومان", "test")
+    log_purchase(user_id, username or str(user_id), "Free Test", round(free_test_mb / 1024, 2), free_test_days, 0, "تومان", "test")
 
     try:
         await callback.message.delete()
@@ -989,7 +991,7 @@ async def cb_free_test_select(callback: CallbackQuery):
 
         wg_text = (
             "✅ <b>تست رایگان Wireguard ساخته شد!</b>\n\n"
-            f"📊 حجم: <b>{free_test_mb // 1024} GB</b>\n"
+            f"📊 حجم: <b>{free_test_mb / 1024} GB</b>\n"
             f"📅 مدت: <b>{free_test_days} روز</b>\n"
             f"🔗 لینک کوتاه: <code>{result['sub_link']}</code>\n\n"
             "📄 فایل تنظیمات در ادامه ارسال شد."
@@ -1062,7 +1064,7 @@ async def cb_free_test_select(callback: CallbackQuery):
             )
             notif_text = tpl.replace("{user_display}", user_display) \
                 .replace("{user_id}", str(user_id)) \
-                .replace("{free_test_mb}", str(free_test_mb // 1024)) \
+                .replace("{free_test_mb}", str(free_test_mb / 1024)) \
                 .replace("{sub_link}", result["sub_link"])
             await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(user_id))
         except Exception as e:
