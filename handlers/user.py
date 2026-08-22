@@ -979,12 +979,49 @@ async def cb_free_test_select(callback: CallbackQuery):
             conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"{result['uuid']}.conf")
             await callback.message.answer_document(document=conf_file, caption=f"📄 فایل تنظیمات")
     else:
-        text = await free_test_config(result["sub_link"], free_test_days)
-        qr_img = generate_qr(result["sub_link"])
-        await send_sticker(callback.bot, callback.message.chat.id, 'success')
-        await callback.message.answer_photo(
-            photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
-        )
+        # Check if this is a WireGuard inbound on 3x-ui panel
+        is_wg = result.get("protocol") == "wireguard"
+
+        if is_wg:
+            from aiogram.types import BufferedInputFile
+            conf_content = None
+            try:
+                sub_id = result.get("sub_id", "")
+                if sub_id:
+                    conf_content = await ft_panel_api.download_wireguard_conf(sub_id)
+            except Exception as e:
+                logger.error("WireGuard free test conf download error: %s %s", type(e).__name__, e)
+
+            wg_ft_text = (
+                "✅ <b>تست رایگان WireGuard ساخته شد!</b>
+
+"
+                f"📊 حجم: <b>{free_test_mb // 1024} GB</b>
+"
+                f"📅 مدت: <b>{free_test_days} روز</b>
+
+"
+            )
+            if conf_content:
+                wg_ft_text += "📄 فایل تنظیمات در ادامه ارسال شد."
+            else:
+                wg_ft_text += f"🔗 لینک اشتراک:
+<code>{result['sub_link']}</code>"
+            await callback.message.answer(wg_ft_text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+            if conf_content:
+                conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"wg_free_test.conf")
+                await callback.message.answer_document(
+                    document=conf_file,
+                    caption="📄 فایل تنظیمات WireGuard - تست رایگان",
+                )
+        else:
+            text = await free_test_config(result["sub_link"], free_test_days)
+            qr_img = generate_qr(result["sub_link"])
+            await send_sticker(callback.bot, callback.message.chat.id, 'success')
+            await callback.message.answer_photo(
+                photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
+            )
 
     # Notify admin channel
     channel_id = await get_setting("notification_channel_id") or ""
@@ -1236,16 +1273,59 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
                 caption=f"📄 فایل تنظیمات {result['uuid']}",
             )
     else:
-        # V2Ray: existing flow
-        text = await config_created(
-            result["sub_link"], result["expire_date"][:10],
-            plan["price"], plan["name"], plan["gb"], plan["days"], symbol,
-        )
-        qr_img = generate_qr(result["sub_link"])
-        await send_sticker(callback.bot, callback.message.chat.id, 'config')
-        await callback.message.answer_photo(
-            photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
-        )
+        # Check if this is a WireGuard inbound on 3x-ui panel
+        is_wg = result.get("protocol") == "wireguard"
+
+        if is_wg:
+            from aiogram.types import BufferedInputFile
+            conf_content = None
+            try:
+                sub_id = result.get("sub_id", "")
+                if sub_id:
+                    conf_content = await plan_panel.download_wireguard_conf(sub_id)
+            except Exception as e:
+                logger.error("WireGuard conf download error: %s %s", type(e).__name__, e)
+
+            wg_text = (
+                "✅ <b>کانفیگ WireGuard ساخته شد!</b>
+
+"
+                f"📦 پلن: <b>{plan['name']}</b>
+"
+                f"📊 حجم: <b>{plan['gb']} GB</b>
+"
+                f"📅 مدت: <b>{plan['days']} روز</b>
+"
+                f"💰 پرداخت: <b>{plan['price']:,} {symbol}</b>
+"
+                f"📅 انقضا: <b>{result['expire_date'][:10]}</b>
+
+"
+            )
+            if conf_content:
+                wg_text += "📄 فایل تنظیمات در ادامه ارسال شد."
+            else:
+                wg_text += f"🔗 لینک اشتراک:
+<code>{result['sub_link']}</code>"
+            await callback.message.answer(wg_text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+            if conf_content:
+                conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"wg_{plan['name']}.conf")
+                await callback.message.answer_document(
+                    document=conf_file,
+                    caption=f"📄 فایل تنظیمات WireGuard - {plan['name']}",
+                )
+        else:
+            # V2Ray: existing flow
+            text = await config_created(
+                result["sub_link"], result["expire_date"][:10],
+                plan["price"], plan["name"], plan["gb"], plan["days"], symbol,
+            )
+            qr_img = generate_qr(result["sub_link"])
+            await send_sticker(callback.bot, callback.message.chat.id, 'config')
+            await callback.message.answer_photo(
+                photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
+            )
 
     # Notify admin channel
     channel_id = await get_setting("notification_channel_id") or ""
@@ -1897,11 +1977,56 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                 caption=f"📄 فایل تنظیمات {result['uuid']}",
             )
     else:
-        text = await config_created(result["sub_link"], result["expire_date"][:10], pay_price, plan["name"], plan["gb"], plan["days"], symbol)
-        qr_img = generate_qr(result["sub_link"])
-        await callback.message.answer_photo(
-            photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
-        )
+        # Check if this is a WireGuard inbound on 3x-ui panel
+        is_wg = result.get("protocol") == "wireguard"
+
+        if is_wg:
+            from aiogram.types import BufferedInputFile
+            conf_content = None
+            try:
+                sub_id = result.get("sub_id", "")
+                if sub_id:
+                    plan_panel = panel_manager.get(plan.get("panel_id")) if plan.get("panel_id") else panel_api
+                    if plan_panel:
+                        conf_content = await plan_panel.download_wireguard_conf(sub_id)
+            except Exception as e:
+                logger.error("WireGuard wallet conf download error: %s %s", type(e).__name__, e)
+
+            wg_text = (
+                "✅ <b>کانفیگ WireGuard ساخته شد!</b>
+
+"
+                f"📦 پلن: <b>{plan['name']}</b>
+"
+                f"📊 حجم: <b>{plan['gb']} GB</b>
+"
+                f"📅 مدت: <b>{plan['days']} روز</b>
+"
+                f"💰 پرداخت: <b>{pay_price:,} {symbol}</b>
+"
+                f"📅 انقضا: <b>{result['expire_date'][:10]}</b>
+
+"
+            )
+            if conf_content:
+                wg_text += "📄 فایل تنظیمات در ادامه ارسال شد."
+            else:
+                wg_text += f"🔗 لینک اشتراک:
+<code>{result['sub_link']}</code>"
+            await callback.message.answer(wg_text, parse_mode="HTML", reply_markup=await back_to_menu())
+
+            if conf_content:
+                conf_file = BufferedInputFile(conf_content.encode("utf-8"), filename=f"wg_{plan['name']}.conf")
+                await callback.message.answer_document(
+                    document=conf_file,
+                    caption=f"📄 فایل تنظیمات WireGuard - {plan['name']}",
+                )
+        else:
+            text = await config_created(result["sub_link"], result["expire_date"][:10], pay_price, plan["name"], plan["gb"], plan["days"], symbol)
+            qr_img = generate_qr(result["sub_link"])
+            await callback.message.answer_photo(
+                photo=qr_img, caption=text, parse_mode="HTML", reply_markup=await back_to_menu(),
+            )
 
     # Notify admin channel - wallet payment
     channel_id = await get_setting("notification_channel_id") or ""

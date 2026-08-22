@@ -190,6 +190,36 @@ class PanelAPI:
                 return inbound.get("id")
         return None
 
+    async def get_wireguard_inbound_ids(self) -> list[int]:
+        inbounds = await self.get_inbounds()
+        return [inbound.get("id") for inbound in inbounds
+                if inbound.get("protocol") == "wireguard" and inbound.get("enable")]
+
+    async def is_wireguard_inbound(self, inbound_id: int) -> bool:
+        inbound = await self.get_inbound(inbound_id)
+        if inbound:
+            return inbound.get("protocol") == "wireguard"
+        return False
+
+    async def get_inbound_protocol(self, inbound_id: int) -> str:
+        inbound = await self.get_inbound(inbound_id)
+        if inbound:
+            return inbound.get("protocol", "unknown")
+        return "unknown"
+
+    async def download_wireguard_conf(self, sub_id: str) -> str | None:
+        session = await self._get_session()
+        sub_url = self.get_sub_link("", sub_id)
+        try:
+            async with session.get(sub_url, ssl=False, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    text = await resp.text()
+                    if "[Interface]" in text or "private_key" in text.lower():
+                        return text
+        except Exception as e:
+            logger.error(f"WireGuard conf download error: {e}")
+        return None
+
     async def add_client(self, inbound_ids: list[int], email: str, total_gb: float = 0, days: int = 0, ip_limit: int = 0) -> dict | None:
         user_uuid = str(uuid.uuid4())
         sub_id = uuid.uuid4().hex[:16]
@@ -277,11 +307,25 @@ class PanelAPI:
         if result:
             sub_link = self.get_sub_link(email, result["sub_id"])
             expire_date = (datetime.utcnow() + timedelta(days=days)).isoformat()
+
+            # Detect if any of the inbounds is WireGuard
+            protocol = "v2ray"
+            try:
+                for iid in inbound_ids:
+                    p = await self.get_inbound_protocol(iid)
+                    if p == "wireguard":
+                        protocol = "wireguard"
+                        break
+            except Exception:
+                pass
+
             return {
                 "uuid": result["uuid"],
                 "email": result["email"],
                 "sub_link": sub_link,
+                "sub_id": result["sub_id"],
                 "expire_date": expire_date,
+                "protocol": protocol,
             }
 
         logger.error("Failed to add client to panel")
@@ -318,11 +362,25 @@ class PanelAPI:
         if result:
             sub_link = self.get_sub_link(email, result["sub_id"])
             expire_date = (datetime.utcnow() + timedelta(days=days)).isoformat()
+
+            # Detect if any of the inbounds is WireGuard
+            protocol = "v2ray"
+            try:
+                for iid in inbound_ids:
+                    p = await self.get_inbound_protocol(iid)
+                    if p == "wireguard":
+                        protocol = "wireguard"
+                        break
+            except Exception:
+                pass
+
             return {
                 "uuid": result["uuid"],
                 "email": result["email"],
                 "sub_link": sub_link,
+                "sub_id": result["sub_id"],
                 "expire_date": expire_date,
+                "protocol": protocol,
             }
 
         logger.error("Failed to add test client to panel")
