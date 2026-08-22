@@ -77,8 +77,8 @@ async def run_bot():
     logger.info("Bot starting polling...")
     from scheduler import scheduler_loop
     sched_task = asyncio.create_task(scheduler_loop(bot))
-    from utils.service_monitor import monitor_loop
-    monitor_task = asyncio.create_task(monitor_loop())
+    # from utils.service_monitor import monitor_loop  # DISABLED
+    # monitor_task = asyncio.create_task(monitor_loop())  # DISABLED
     try:
         await dp.start_polling(bot)
     finally:

@@ -275,7 +275,7 @@ async def scheduler_loop(bot, interval: int = 60):
     while True:
         try:
             await _deactivate_expired(bot)
-            await _send_expiry_reminders(bot)
+            # await _send_expiry_reminders(bot)  # DISABLED
             await _send_backup(bot)
         except Exception as e:
             logger.error("Scheduler error: %s", e)
