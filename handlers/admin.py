@@ -44,6 +44,7 @@ from keyboards.admin import (
     discount_codes_menu, discount_code_detail_menu,
     trial_management_menu, blacklist_keyboard,
     gift_codes_menu, gift_code_detail_menu, guides_menu, guide_platforms_menu,
+    tutorials_menu, tutorial_detail_menu, tutorial_item_detail_menu,
 )
 from keyboards.user import _btn
 
