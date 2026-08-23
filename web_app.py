@@ -167,7 +167,7 @@ def log_request():
 
 @app.before_request
 def csrf_protect():
-    if request.method == "POST" and request.endpoint not in ("login", "setup"):
+    if request.method == "POST" and request.endpoint not in ("login", "setup", "menu_layout"):
         if not validate_csrf():
             flash("Invalid CSRF token. Please try again.", "danger")
             return redirect(request.referrer or url_for("dashboard"))
@@ -689,10 +689,6 @@ def menu_layout():
 
     if request.method == "POST":
         layout_raw = request.form.getlist("layout[]")
-        enabled = {}
-        for key in request.form:
-            if key.startswith("enabled_"):
-                enabled[key.replace("enabled_", "")] = request.form[key] == "1"
 
         layout = []
         for item_id in layout_raw:
@@ -715,7 +711,8 @@ def menu_layout():
                 layout.append({
                     "type": "builtin",
                     "id": item_id,
-                    "enabled": enabled.get(item_id, True),
+                    # checkbox submits only when checked -> absent means disabled
+                    "enabled": ("enabled_" + item_id) in request.form,
                 })
 
         web_db.set_setting("menu_layout", json.dumps(layout))
