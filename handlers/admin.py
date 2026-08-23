@@ -3114,7 +3114,9 @@ async def cb_menu_editor(callback: CallbackQuery):
     LABELS = {
         "wallet": "💰 کیف پول", "free_test": "🧪 تست رایگان", "buy_config": "🛒 خرید کانفیگ",
         "my_configs": "📋 سرویس‌ها", "channel": "📢 کانال", "support": "💬 پشتیبانی",
-        "admin": "⚙️ ادمین", "invite": "👥 زیرمجموعه",
+        "admin": "⚙️ ادمین", "invite": "👥 زیرمجموعه", "collab": "🤝 همکاری",
+        "guides": "📖 راهنماها", "tutorials": "🎓 آموزش اتصال",
+        "redeem_gift": "🎁 کد هدیه", "webapp": "🌐 وب‌اپ",
     }
     summary = []
     for item in layout:
@@ -3125,6 +3127,28 @@ async def cb_menu_editor(callback: CallbackQuery):
         elif item.get("type") == "builtin":
             bid = item.get("id", "")
             summary.append({"label": LABELS.get(bid, bid), "enabled": item.get("enabled", True)})
+    if layout and not any(i.get("type") == "builtin" and i.get("id") == "tutorials" for i in layout):
+        from database import set_setting
+        nl, placed = [], False
+        for item in layout:
+            nl.append(item)
+            if item.get("type") == "builtin" and item.get("id") == "guides":
+                nl.append({"type": "builtin", "id": "tutorials", "enabled": True})
+                placed = True
+        if not placed:
+            ins = None
+            for i, item in enumerate(nl):
+                if item.get("type") == "builtin" and item.get("id") in ("support", "admin"):
+                    ins = i
+                    break
+            if ins is None:
+                nl.extend([{"type": "row_break"}, {"type": "builtin", "id": "tutorials", "enabled": True}])
+            else:
+                nl.insert(ins, {"type": "builtin", "id": "tutorials", "enabled": True})
+                if ins > 0 and nl[ins - 1].get("type") != "row_break":
+                    nl.insert(ins, {"type": "row_break"})
+        layout = nl
+        await set_setting("menu_layout", json.dumps(layout))
     await callback.message.edit_text("📱 <b>ویرایش منوی اصلی</b>", parse_mode="HTML", reply_markup=await menu_editor_menu(summary))
 
 
@@ -4138,5 +4162,56 @@ async def cb_adm_toggle_mm_tutorials(callback: CallbackQuery):
     await callback.answer(f"دکمه «آموزش اتصال» در منوی اصلی: {status}", show_alert=True)
     try:
         await callback.message.edit_reply_markup(reply_markup=await tutorials_menu())
+    except Exception:
+        pass
+
+@router.callback_query(F.data.startswith("adm_menu_toggle_"))
+async def cb_menu_toggle(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    import json
+    from database import set_setting
+    try:
+        idx = int(callback.data.rsplit("_", 1)[1])
+    except ValueError:
+        await callback.answer()
+        return
+    raw = await get_setting("menu_layout") or "[]"
+    try:
+        layout = json.loads(raw)
+    except Exception:
+        layout = []
+    if idx < 0 or idx >= len(layout):
+        await callback.answer()
+        return
+    item = layout[idx]
+    if item.get("type") == "row_break":
+        await callback.answer("ردیف قابل تغییر نیست")
+        return
+    item["enabled"] = not item.get("enabled", True)
+    await set_setting("menu_layout", json.dumps(layout))
+
+    LABELS = {
+        "wallet": "💰 کیف پول", "free_test": "🧪 تست رایگان", "buy_config": "🛒 خرید کانفیگ",
+        "my_configs": "📋 سرویس‌ها", "channel": "📢 کانال", "support": "💬 پشتیبانی",
+        "admin": "⚙️ ادمین", "invite": "👥 زیرمجموعه", "collab": "🤝 همکاری",
+        "guides": "📖 راهنماها", "tutorials": "🎓 آموزش اتصال",
+        "redeem_gift": "🎁 کد هدیه", "webapp": "🌐 وب\u200cاپ",
+    }
+    summary = []
+    for it in layout:
+        if it.get("type") == "row_break":
+            summary.append({"label": "── ردیف جدید ──", "enabled": True})
+        elif it.get("type") == "custom":
+            summary.append({"label": f"🔗 {it.get('text', 'سفارشی')}", "enabled": True})
+        elif it.get("type") == "builtin":
+            bid = it.get("id", "")
+            summary.append({"label": LABELS.get(bid, bid), "enabled": it.get("enabled", True)})
+    await callback.answer("وضعیت دکمه تغییر کرد")
+    try:
+        await callback.message.edit_text(
+            "📱 <b>ویرایش منوی اصلی</b>", parse_mode="HTML",
+            reply_markup=await menu_editor_menu(summary),
+        )
     except Exception:
         pass

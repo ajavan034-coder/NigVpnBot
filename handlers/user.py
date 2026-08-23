@@ -17,6 +17,7 @@ from database import (
     is_blacklisted,
     store_support_message, redeem_gift_code, get_guides_by_platform,
     wallet_credit, get_panel,
+    get_tutorials, get_tutorial, get_tutorial_items, get_tutorial_item,
 )
 from api import panel_api, panel_manager
 from keyboards.user import (
