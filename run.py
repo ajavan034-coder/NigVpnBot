@@ -79,14 +79,20 @@ async def run_bot():
     sched_task = asyncio.create_task(scheduler_loop(bot))
     # from utils.service_monitor import monitor_loop  # DISABLED
     # monitor_task = asyncio.create_task(monitor_loop())  # DISABLED
-    try:
-        await dp.start_polling(bot)
-    finally:
-        sched_task.cancel()
-        # monitor_task.cancel()  # DISABLED
-        await panel_manager.close_all()
-        await panel_api.close()
-        await bot.session.close()
+    while True:
+        try:
+            logger.info("Starting polling...")
+            await dp.start_polling(bot)
+            break
+        except Exception as e:
+            logger.error(f"Polling error: {e}. Retrying in 30s...")
+            await asyncio.sleep(30)
+
+    sched_task.cancel()
+    # monitor_task.cancel()  # DISABLED
+    await panel_manager.close_all()
+    await panel_api.close()
+    await bot.session.close()
 
 
 if __name__ == "__main__":
