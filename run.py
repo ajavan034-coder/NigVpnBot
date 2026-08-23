@@ -83,7 +83,7 @@ async def run_bot():
         await dp.start_polling(bot)
     finally:
         sched_task.cancel()
-        monitor_task.cancel()
+        # monitor_task.cancel()  # DISABLED
         await panel_manager.close_all()
         await panel_api.close()
         await bot.session.close()
