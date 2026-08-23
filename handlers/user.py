@@ -3344,104 +3344,91 @@ async def cb_guide_platform(callback: CallbackQuery):
     )
     await callback.answer()
 
-
 # ==================== Tutorial User Handlers ====================
 
 @router.callback_query(F.data == "tutorials")
 async def cb_tutorials_menu(callback: CallbackQuery):
     tutorials = await get_tutorials(enabled_only=True)
+    from keyboards.user import _btn
+    text = "🎓 <b>آموزش اتصال</b>\n\nآموزش مورد نظر را انتخاب کنید:"
     if not tutorials:
+        kb = await back_to_menu()
         try:
-            await callback.message.edit_text(
-                "🎓 <b>آموزش اتصال</b>\n\nهنوز آموزشی اضافه نشده است.",
-                parse_mode="HTML", reply_markup=await back_to_menu(),
-            )
+            await callback.message.edit_text("🎓 <b>آموزش اتصال</b>\n\nهنوز آموزشی اضافه نشده است.", parse_mode="HTML", reply_markup=kb)
         except Exception:
-            await callback.message.answer(
-                "🎓 <b>آموزش اتصال</b>\n\nهنوز آموزشی اضافه نشده است.",
-                parse_mode="HTML", reply_markup=await back_to_menu(),
-            )
+            await callback.message.answer("🎓 <b>آموزش اتصال</b>\n\nهنوز آموزشی اضافه نشده است.", parse_mode="HTML", reply_markup=kb)
         await callback.answer()
         return
-
-    from keyboards.user import _btn
     buttons = []
     for t in tutorials:
         buttons.append([await _btn(t["title"], f"tutorial_{t['id']}", "link", btn_id="tutorials")])
     buttons.append([await _btn(await get_setting("btn_back") or "بازگشت", "main_menu", "back", btn_id="back")])
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-
     try:
-        await callback.message.edit_text(
-            "🎓 <b>آموزش اتصال</b>\n\nآموزش مورد نظر را انتخاب کنید:",
-            parse_mode="HTML", reply_markup=kb,
-        )
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
     except Exception:
-        await callback.message.answer(
-            "🎓 <b>آموزش اتصال</b>\n\nآموزش مورد نظر را انتخاب کنید:",
-            parse_mode="HTML", reply_markup=kb,
-        )
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("tutorial_"))
 async def cb_tutorial_detail(callback: CallbackQuery):
-    tut_id = int(callback.data.split("_")[-1])
+    try:
+        tut_id = int(callback.data.replace("tutorial_", ""))
+    except ValueError:
+        await callback.answer()
+        return
     tut = await get_tutorial(tut_id)
     if not tut or not tut["is_enabled"]:
         await callback.answer("آموزش یافت نشد!", show_alert=True)
         return
-
     items = await get_tutorial_items(tut_id)
-    if not items:
-        from keyboards.user import _btn
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [await _btn("🔙 بازگشت", "tutorials", "back", btn_id="back")],
-        ])
-        try:
-            await callback.message.edit_text(
-                f"🎓 <b>{tut['title']}</b>\n\nهنوز محتوایی اضافه نشده است.",
-                parse_mode="HTML", reply_markup=kb,
-            )
-        except Exception:
-            await callback.message.answer(
-                f"🎓 <b>{tut['title']}</b>\n\nهنوز محتوایی اضافه نشده است.",
-                parse_mode="HTML", reply_markup=kb,
-            )
+    from keyboards.user import _btn
+    ct_icons = {"TEXT": "📝", "PHOTO": "📷", "VIDEO": "🎬", "ANIMATION": "🎞"}
+    buttons = []
+    for item in items:
+        icon = ct_icons.get(item["content_type"], "📄")
+        buttons.append([await _btn(f"{icon} {item['title']}", f"tutget_{item['id']}", "link", btn_id="tutorials")])
+    buttons.append([await _btn("🔙 بازگشت", "tutorials", btn_id="back")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    text = f"🎓 <b>{tut['title']}</b>\n\nیکی از موارد زیر را انتخاب کنید:"
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("tutget_"))
+async def cb_tutget_item(callback: CallbackQuery):
+    try:
+        item_id = int(callback.data.replace("tutget_", ""))
+    except ValueError:
         await callback.answer()
         return
-
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
-    for item in items:
-        if item["content_type"] == "TEXT" and item.get("content_text"):
-            await callback.message.answer(
-                f"<b>{item['title']}</b>\n\n{item['content_text']}",
-                parse_mode="HTML",
-            )
-        elif item["content_type"] == "PHOTO" and item.get("content_file_id"):
-            await callback.message.answer_photo(
-                photo=item["content_file_id"],
-                caption=f"<b>{item['title']}</b>\n\n{item.get('content_text', '')}" if item.get("content_text") else item["title"],
-                parse_mode="HTML",
-            )
-        elif item["content_type"] == "VIDEO" and item.get("content_file_id"):
-            await callback.message.answer_video(
-                video=item["content_file_id"],
-                caption=f"<b>{item['title']}</b>\n\n{item.get('content_text', '')}" if item.get("content_text") else item["title"],
-                parse_mode="HTML",
-            )
-        else:
-            await callback.message.answer(f"<b>{item['title']}</b>", parse_mode="HTML")
-
+    item = await get_tutorial_item(item_id)
+    if not item:
+        await callback.answer("مورد یافت نشد!", show_alert=True)
+        return
     from keyboards.user import _btn
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [await _btn("🔙 آموزش‌های دیگر", "tutorials", "back", btn_id="back")],
+        [await _btn("🔙 بازگشت به آموزش", f"tutorial_{item['tutorial_id']}", btn_id="back")],
         [await _btn("🏠 بازگشت به منو", "main_menu", btn_id="back")],
     ])
-    await callback.message.answer("✅ پایان آموزش", reply_markup=kb)
+    cap = f"<b>{item['title']}</b>"
+    if item.get("content_text"):
+        cap += f"\n\n{item['content_text']}"
+    try:
+        if item["content_type"] == "PHOTO" and item.get("content_file_id"):
+            await callback.message.answer_photo(photo=item["content_file_id"], caption=cap[:1024], parse_mode="HTML", reply_markup=kb)
+        elif item["content_type"] == "VIDEO" and item.get("content_file_id"):
+            await callback.message.answer_video(video=item["content_file_id"], caption=cap[:1024], parse_mode="HTML", reply_markup=kb)
+        elif item["content_type"] == "ANIMATION" and item.get("content_file_id"):
+            await callback.message.answer_animation(animation=item["content_file_id"], caption=cap[:1024], parse_mode="HTML", reply_markup=kb)
+        else:
+            await callback.message.answer(cap, parse_mode="HTML", reply_markup=kb)
+    except Exception as e:
+        logger.error(f"Tutorial item send error: {e}")
+        await callback.message.answer(cap, parse_mode="HTML", reply_markup=kb)
     await callback.answer()
 

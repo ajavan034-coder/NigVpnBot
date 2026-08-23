@@ -4005,7 +4005,7 @@ async def cb_adm_add_tutitem(callback: CallbackQuery, state: FSMContext):
     await state.update_data(tutitem_tutorial_id=tut_id)
     await state.set_state(AdminState.tutitem_title)
     await callback.message.edit_text(
-        "📝 <b>افزودن زیرمجموعه</b>\n\nعنوان زیرمجموعه را وارد کنید:",
+        "📝 <b>افزودن زیرمجموعه</b>\n\nعنوان را به صورت متن ارسال کنید، یا برای افزودن سریع، عکس/ویدیو همراه با عنوان در کپشن بفرستید:",
         parse_mode="HTML", reply_markup=await back_to_admin()
     )
 
@@ -4014,18 +4014,44 @@ async def cb_adm_add_tutitem(callback: CallbackQuery, state: FSMContext):
 async def process_tutitem_title(message: Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
         return
+    data = await state.get_data()
+    tut_id = data.get("tutitem_tutorial_id")
+
+    m_photo = message.photo[-1].file_id if message.photo else None
+    m_video = message.video.file_id if message.video else None
+    m_anim = getattr(message, "animation", None)
+
+    if m_photo or m_video or m_anim:
+        if m_photo:
+            ctype, fid = "PHOTO", m_photo
+        elif m_video:
+            ctype, fid = "VIDEO", m_video
+        else:
+            ctype, fid = "ANIMATION", m_anim.file_id
+        cap = (message.caption or "").strip()
+        if cap:
+            title = cap.split("\n")[0].strip()[:60]
+        else:
+            existing = await get_tutorial_items(tut_id)
+            title = f"{ctype.title()} #{len(existing) + 1}"
+        await add_tutorial_item(tut_id, title, ctype, cap, fid)
+        await state.clear()
+        await message.answer(
+            f"✅ زیرمجموعه «{title}» اضافه شد!",
+            reply_markup=await tutorial_detail_menu(tut_id)
+        )
+        return
+
     title = message.text.strip() if message.text else ""
     if not title:
-        await message.answer("عنوان نمی‌تواند خالی باشد:")
+        await message.answer("عنوان نمی‌تواند خالی باشد. متن بفرستید، یا عکس/ویدیو همراه با عنوان در کپشن ارسال کنید:")
         return
     await state.update_data(tutitem_title=title)
     await state.set_state(AdminState.tutitem_content)
     await message.answer(
-        "📎 <b>محتوا را ارسال کنید</b>\n\nمتن، عکس، یا ویدیو ارسال کنید:",
+        "📎 <b>محتوا را ارسال کنید</b>\n\nمتن، عکس، ویدیو یا گیف ارسال کنید:",
         parse_mode="HTML", reply_markup=await back_to_admin()
     )
-
-
 @router.message(AdminState.tutitem_content)
 async def process_tutitem_content(message: Message, state: FSMContext):
     if not await is_admin(message.from_user.id):
@@ -4042,12 +4068,16 @@ async def process_tutitem_content(message: Message, state: FSMContext):
         content_type = "VIDEO"
         content_file_id = message.video.file_id
         content_text = message.caption or ""
+    elif getattr(message, "animation", None):
+        content_type = "ANIMATION"
+        content_file_id = message.animation.file_id
+        content_text = message.caption or ""
     elif message.text:
         content_type = "TEXT"
         content_file_id = ""
         content_text = message.html_text or message.text
     else:
-        await message.answer("نوع محتوا پشتیبانی نمی‌شود. متن، عکس، یا ویدیو ارسال کنید:")
+        await message.answer("این نوع محتوا پشتیبانی نمی‌شود. متن، عکس، ویدیو یا گیف ارسال کنید:")
         return
 
     await add_tutorial_item(tut_id, title, content_type, content_text, content_file_id)
@@ -4096,3 +4126,17 @@ async def cb_adm_delete_tutitem(callback: CallbackQuery):
         reply_markup=await tutorial_detail_menu(item["tutorial_id"])
     )
 
+@router.callback_query(F.data == "adm_toggle_mm_tutorials")
+async def cb_adm_toggle_mm_tutorials(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    from database import set_setting
+    cur = await get_setting("tutorials_enabled") or "0"
+    await set_setting("tutorials_enabled", "0" if cur == "1" else "1")
+    new_val = await get_setting("tutorials_enabled")
+    status = "فعال" if new_val == "1" else "غیرفعال"
+    await callback.answer(f"دکمه «آموزش اتصال» در منوی اصلی: {status}", show_alert=True)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=await tutorials_menu())
+    except Exception:
+        pass

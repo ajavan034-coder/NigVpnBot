@@ -624,6 +624,9 @@ async def tutorials_menu() -> InlineKeyboardMarkup:
         status = "🟢" if t["is_enabled"] else "🔴"
         buttons.append([await _btn(f"{status} {t['title']}", f"adm_tut_detail_{t['id']}", "link", btn_id="tutorial_item")])
     buttons.append([await _btn("➕ آموزش جدید", "adm_add_tutorial", "plus", btn_id="add_tutorial")])
+    mm_on = (await get_setting("tutorials_enabled")) == "1"
+    mm_label = "🟢 دکمه منوی اصلی: فعال" if mm_on else "🔴 دکمه منوی اصلی: غیرفعال"
+    buttons.append([await _btn(mm_label, "adm_toggle_mm_tutorials", "gear", btn_id="toggle_tutorial")])
     buttons.append([await _btn("🔙 بازگشت", "adm_menu", btn_id="back")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

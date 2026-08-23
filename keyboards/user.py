@@ -90,6 +90,30 @@ async def main_menu(user_id: int = 0) -> InlineKeyboardMarkup:
                 new_layout.insert(insert_idx, {"type": "row_break"})
         layout = new_layout
 
+    has_tut = any(item.get("id") == "tutorials" for item in layout if item.get("type") == "builtin")
+    if not has_tut:
+        nl = []
+        placed = False
+        for item in layout:
+            nl.append(item)
+            if item.get("type") == "builtin" and item.get("id") == "guides":
+                nl.append({"type": "builtin", "id": "tutorials", "enabled": True})
+                placed = True
+        if not placed:
+            ins = None
+            for i, item in enumerate(nl):
+                if item.get("type") == "builtin" and item.get("id") in ("support", "admin"):
+                    ins = i
+                    break
+            if ins is None:
+                nl.append({"type": "row_break"})
+                nl.append({"type": "builtin", "id": "tutorials", "enabled": True})
+            else:
+                nl.insert(ins, {"type": "builtin", "id": "tutorials", "enabled": True})
+                if ins > 0 and nl[ins - 1].get("type") != "row_break":
+                    nl.insert(ins, {"type": "row_break"})
+        layout = nl
+
     async def make_builtin_btn(bid):
         if bid == "wallet":
             return await _btn(await get_setting("btn_wallet"), "wallet", "wallet", "primary", "wallet")
