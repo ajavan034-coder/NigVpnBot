@@ -23,7 +23,9 @@ from database import (
     update_collab_request, set_user_collaborator,
     is_blacklisted, add_to_blacklist, remove_from_blacklist, get_blacklisted_users,
     get_all_gift_codes, get_gift_code_by_id, add_gift_code, delete_gift_code, toggle_gift_code,
-    get_all_guides, delete_guide_item, add_guide_item,\n    add_tutorial, get_tutorials, get_tutorial, update_tutorial, delete_tutorial, toggle_tutorial,\n    add_tutorial_item, get_tutorial_items, get_tutorial_item, update_tutorial_item, delete_tutorial_item,
+    get_all_guides, delete_guide_item, add_guide_item,
+    add_tutorial, get_tutorials, get_tutorial, update_tutorial, delete_tutorial, toggle_tutorial,
+    add_tutorial_item, get_tutorial_items, get_tutorial_item, update_tutorial_item, delete_tutorial_item,
     get_support_user,
 )
 from api import panel_api
@@ -113,7 +115,11 @@ class AdminState(StatesGroup):
     gift_code_amount = State()
     gift_code_max_uses = State()
     guide_platform = State()
-    guide_body = State()\n    tutorial_title = State()\n    tutorial_edit_title = State()\n    tutitem_title = State()\n    tutitem_content = State()
+    guide_body = State()
+    tutorial_title = State()
+    tutorial_edit_title = State()
+    tutitem_title = State()
+    tutitem_content = State()
     guide_media = State()
     edit_cashback_percent = State()
 
