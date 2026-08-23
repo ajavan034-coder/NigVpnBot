@@ -929,28 +929,30 @@ async def cb_free_test_select(callback: CallbackQuery):
             first_sub_link = ""
             first_uuid = ""
             first_email = email
+            # Create ONE client email/uuid shared across all inbounds
+            _rid = _r.randint(100000, 999999)
+            _wemail = f"wg_{'_'.join(str(iid) for iid in free_test_inbound_ids)}_{_rid}@bot"
+            _wuuid = str(_u.uuid4())
+            # Add the SAME client to ALL inbounds
             for wg_iid in free_test_inbound_ids:
                 try:
-                    wg_inb = await ft_panel_api.get_inbound(wg_iid)
-                    wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"
-                    _rid = _r.randint(100000, 999999)
-                    _wemail = f"wg_{wg_iid}_{_rid}@bot"
-                    _ft_gb = free_test_mb / 1024  # float division to preserve sub-GB values
-                    logger.info(f"WG free_test: free_test_mb={free_test_mb}, calculated_gb={_ft_gb}, inbound={wg_iid}")
                     _wcli = await ft_panel_api.add_client([wg_iid], _wemail, total_gb=_ft_gb, days=free_test_days)
                     if not _wcli:
                         logger.error("WG free test: failed add client inbound %s", wg_iid)
                         continue
+                except Exception as e:
+                    logger.error("WG free test add client error inbound %s: %s", wg_iid, e)
+            # Download config for each inbound - one config per inbound for the single client
+            for wg_iid in free_test_inbound_ids:
+                try:
+                    wg_inb = await ft_panel_api.get_inbound(wg_iid)
+                    wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"
                     _wsub = _wcli["sub_id"]
                     _wlink = ft_panel_api.get_sub_link("", _wsub)
-                    if not first_sub_link:
-                        first_sub_link = _wlink
-                        first_uuid = _wcli["uuid"]
-                        first_email = _wemail
                     wg_conf = await ft_panel_api.download_wireguard_conf(_wsub)
                     if wg_conf:
                         cf = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rid}.conf")
-                        await callback.message.answer_document(document=cf, caption=f"📄 {wg_name}")
+                        await callback.message.answer(document=cf, caption=f"📄 {wg_name}")
                         sent_any = True
                     else:
                         logger.error("WG free test: failed download conf inbound %s sub %s", wg_iid, _wsub)
@@ -958,11 +960,10 @@ async def cb_free_test_select(callback: CallbackQuery):
                     logger.error("WG free test conf error inbound %s: %s", wg_iid, e)
 
             if not sent_any:
-                await callback.message.edit_text("ساخت کانفیگ WireGuard ناموفق بود.", reply_markup=await back_to_menu())
+                await callback.message.edit_text("ساخت کانفیگ WireGuard nominal.", reply_markup=await back_to_menu())
                 return
 
-            email = first_email
-            result = {"sub_link": first_sub_link, "uuid": first_uuid, "expire_date": expire_date}
+            result = {"sub_link": _wlink, "uuid": _wuuid, "expire_date": expire_date}            result = {"sub_link": first_sub_link, "uuid": first_uuid, "expire_date": expire_date}
         else:
             result = await ft_panel_api.create_test_config(email, total_mb=free_test_mb, days=free_test_days, custom_inbound_ids=free_test_inbound_ids)
             if not result:
@@ -1203,48 +1204,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
             except Exception:
                 pass
 
-        if _is_wg:
-            from aiogram.types import BufferedInputFile
-            import random as _r
-            wg_ids = plan_inbound_ids or []
-            expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
-            sent_any = False
-            first_sub_link = ""
-            first_uuid = ""
-            first_email = email
-            for wg_iid in wg_ids:
-                try:
-                    wg_inb = await plan_panel.get_inbound(wg_iid)
-                    wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"
-                    _rid = _r.randint(100000, 999999)
-                    _wemail = f"wg_{wg_iid}_{_rid}@bot"
-                    _wcli = await plan_panel.add_client([wg_iid], _wemail, total_gb=plan["gb"], days=plan["days"])
-                    if not _wcli:
-                        logger.error("WG: failed add client inbound %s", wg_iid)
-                        continue
-                    _wsub = _wcli["sub_id"]
-                    _wlink = plan_panel.get_sub_link("", _wsub)
-                    if not first_sub_link:
-                        first_sub_link = _wlink
-                        first_uuid = _wcli["uuid"]
-                        first_email = _wemail
-                    wg_conf = await plan_panel.download_wireguard_conf(_wsub)
-                    if wg_conf:
-                        cf = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rid}.conf")
-                        await callback.message.answer_document(document=cf, caption=f"📄 {wg_name}")
-                        sent_any = True
-                    else:
-                        logger.error("WG: failed download conf inbound %s sub %s", wg_iid, _wsub)
-                except Exception as e:
-                    logger.error("WG conf error inbound %s: %s", wg_iid, e)
-
-            if not sent_any:
-                await callback.message.edit_text("ساخت کانفیگ WireGuard ناموفق بود.", reply_markup=await back_to_menu())
-                return
-
-            email = first_email
-            result = {"sub_link": first_sub_link, "uuid": first_uuid, "expire_date": expire_date}
-        else:
+if _is_wg:            from aiogram.types import BufferedInputFile            import random as _r            import uuid as _u            wg_ids = plan_inbound_ids or []            expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()            sent_any = False            # Create ONE client email to be shared across all inbounds            _rid = _r.randint(100000, 999999)            _wemail = f"wg_{'_'.join(str(iid) for iid in wg_ids)}_{_rid}@bot"            _wuuid = str(_u.uuid4())            # Add the SAME client to ALL inbounds            for wg_iid in wg_ids:                try:                    _wcli = await plan_panel.add_client([wg_iid], _wemail, total_gb=plan["gb"], days=plan["days"])                    if not _wcli:                        logger.error("WG: failed add client inbound %s", wg_iid)                        continue                except Exception as e:                    logger.error("WG add client error inbound %s: %s", wg_iid, e)            # Download config for each inbound - one config per inbound for the single client            for wg_iid in wg_ids:                try:                    wg_inb = await plan_panel.get_inbound(wg_iid)                    wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"                    _wsub = _wcli["sub_id"]                    _wlink = plan_panel.get_sub_link("", _wsub)                    wg_conf = await plan_panel.download_wireguard_conf(_wsub)                    if wg_conf:                        cf = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rid}.conf")                        await callback.message.answer(document=cf, caption=f"📄 {wg_name}")                        sent_any = True                    else:                        logger.error("WG: failed download conf inbound %s sub %s", wg_iid, _wsub)                except Exception as e:                    logger.error("WG conf error inbound %s: %s", wg_iid, e)            if not sent_any:                await callback.message.edit_text("ساخت کانفیگ WireGuard nominal.", reply_markup=await back_to_menu())                return            result = {"sub_link": _wlink, "uuid": _wuuid, "expire_date": expire_date}        else:
             result = await plan_panel.create_config(email, days=plan["days"], total_gb=plan["gb"], inbound_ids=plan_inbound_ids, ip_limit=ip_limit)
             if not result:
                 await callback.message.edit_text("ساخت کانفیگ ناموفق بود. لطفاً دوباره تلاش کنید.", reply_markup=await back_to_menu())
