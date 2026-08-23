@@ -683,6 +683,8 @@ def menu_layout():
         "wallet": "Wallet", "free_test": "Free Test", "buy_config": "Buy Config",
         "my_configs": "My Configs", "channel": "Channel", "support": "Support",
         "admin": "Admin Panel", "invite": "Referral", "collab": "Collaboration Request",
+        "guides": "Connection Guides", "tutorials": "Tutorial (Media)",
+        "redeem_gift": "Gift Code", "webapp": "Web App",
     }
 
     if request.method == "POST":
@@ -750,7 +752,7 @@ def menu_layout():
                 "enabled": item.get("enabled", True),
             })
 
-    default_order = ["wallet", "free_test", "buy_config", "my_configs", "invite", "collab", "channel", "support", "admin"]
+    default_order = ["wallet", "free_test", "buy_config", "my_configs", "invite", "collab", "guides", "tutorials", "redeem_gift", "channel", "support", "admin"]
     for bid in default_order:
         if bid not in existing_ids:
             buttons.append({
@@ -922,4 +924,4 @@ def backup_restore():
 
 if __name__ == "__main__":
     port = int(os.getenv("WEB_PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=os.getenv("FLASK_DEBUG") == "1")

@@ -121,6 +121,8 @@ class AdminState(StatesGroup):
     tutorial_edit_title = State()
     tutitem_title = State()
     tutitem_content = State()
+    tutitem_mediatitle = State()
+    tutitem_edit = State()
     guide_media = State()
     edit_cashback_percent = State()
 
@@ -3992,7 +3994,7 @@ async def cb_adm_toggle_tutorial(callback: CallbackQuery):
     await callback.message.edit_reply_markup(reply_markup=await tutorial_detail_menu(tut_id))
 
 
-@router.callback_query(F.data.startswith("adm_delete_tutorial_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("adm_delete_tutorial_") and "_yes_" not in c.data)
 async def cb_adm_delete_tutorial_confirm(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
         return
@@ -4053,11 +4055,15 @@ async def process_tutitem_title(message: Message, state: FSMContext):
         else:
             ctype, fid = "ANIMATION", m_anim.file_id
         cap = (message.caption or "").strip()
-        if cap:
-            title = cap.split("\n")[0].strip()[:60]
-        else:
-            existing = await get_tutorial_items(tut_id)
-            title = f"{ctype.title()} #{len(existing) + 1}"
+        if not cap:
+            await state.update_data(pending_ctype=ctype, pending_fid=fid)
+            await state.set_state(AdminState.tutitem_mediatitle)
+            await message.answer(
+                "\U0001F4DD <b>عنوان این دکمه را ارسال کنید</b>:",
+                parse_mode="HTML", reply_markup=await back_to_admin()
+            )
+            return
+        title = cap.split("\n")[0].strip()[:60]
         await add_tutorial_item(tut_id, title, ctype, cap, fid)
         await state.clear()
         await message.answer(
@@ -4215,3 +4221,74 @@ async def cb_menu_toggle(callback: CallbackQuery):
         )
     except Exception:
         pass
+
+@router.message(AdminState.tutitem_mediatitle)
+async def process_tutitem_mediatitle(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    title = (message.text or "").strip()
+    data = await state.get_data()
+    tut_id = data.get("tutitem_tutorial_id")
+    ctype = data.get("pending_ctype")
+    fid = data.get("pending_fid")
+    if not title:
+        await message.answer("\u0639\u0646\u0648\u0627\u0646 \u0646\u0645\u06cc\u200c\u062a\u0648\u0627\u0646\u062f \u062e\u0627\u0644\u06cc \u0628\u0627\u0634\u062f. \u06cc\u06a9 \u0639\u0646\u0648\u0627\u0646 \u0627\u0631\u0633\u0627\u0644 \u06a9\u0646\u06cc\u062f:")
+        return
+    if not tut_id or not ctype or not fid:
+        await state.clear()
+        await message.answer("خطای وضعیت. دوباره تلاش کنید.", reply_markup=await back_to_admin())
+        return
+    await add_tutorial_item(tut_id, title[:60], ctype, "", fid)
+    await state.clear()
+    await message.answer(
+        f"✅ زیرمجموعه «{title[:60]}» اضافه شد!",
+        reply_markup=await tutorial_detail_menu(tut_id)
+    )
+
+
+@router.callback_query(F.data.startswith("adm_edit_tutitem_"))
+async def cb_adm_edit_tutitem(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    try:
+        item_id = int(callback.data.split("_")[-1])
+    except ValueError:
+        await callback.answer()
+        return
+    item = await get_tutorial_item(item_id)
+    if not item:
+        await callback.answer("یافت نشد!", show_alert=True)
+        return
+    await state.update_data(edit_tutitem_id=item_id)
+    await state.set_state(AdminState.tutitem_edit)
+    ct_icons = {"TEXT": "📝", "PHOTO": "📷", "VIDEO": "🎬", "ANIMATION": "🎞"}
+    icon = ct_icons.get(item["content_type"], "📄")
+    await callback.message.edit_text(
+        f"✏️ <b>ویرایش عنوان زیرمجموعه</b>\n\n"
+        f"{icon} عنوان فعلی: <b>{item['title']}</b>\n\n"
+        f"عنوان جدید را ارسال کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.tutitem_edit)
+async def process_tutitem_edit(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    title = (message.text or "").strip()
+    if not title:
+        await message.answer("عنوان نمی‌تواند خالی باشد. عنوان جدید را ارسال کنید:")
+        return
+    data = await state.get_data()
+    item_id = data.get("edit_tutitem_id")
+    item = await get_tutorial_item(item_id) if item_id else None
+    if not item:
+        await state.clear()
+        await message.answer("آیتم یافت نشد.", reply_markup=await back_to_admin())
+        return
+    await update_tutorial_item(item_id, title=title[:60])
+    await state.clear()
+    await message.answer(
+        f"✅ عنوان به «{title[:60]}» تغییر کرد.",
+        reply_markup=await tutorial_detail_menu(item["tutorial_id"])
+    )
