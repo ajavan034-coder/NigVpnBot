@@ -323,6 +323,34 @@ async def init_db():
         pass
 
     try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS tutorials (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                is_enabled INTEGER DEFAULT 1,
+                display_order INTEGER DEFAULT 0
+            )
+        """)
+    except Exception:
+        pass
+
+    try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS tutorial_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tutorial_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                content_type TEXT DEFAULT 'TEXT',
+                content_text TEXT DEFAULT '',
+                content_file_id TEXT DEFAULT '',
+                display_order INTEGER DEFAULT 0,
+                FOREIGN KEY (tutorial_id) REFERENCES tutorials(id) ON DELETE CASCADE
+            )
+        """)
+    except Exception:
+        pass
+
+    try:
         await db.execute("ALTER TABLE users ADD COLUMN is_collaborator INTEGER DEFAULT 0")
     except Exception:
         pass
@@ -1526,3 +1554,124 @@ async def get_support_user(admin_msg_id: int) -> int | None:
     row = await cursor.fetchone()
     await db.close()
     return row["user_id"] if row else None
+
+
+# ==================== Tutorials ====================
+
+async def add_tutorial(title: str, display_order: int = 0) -> int:
+    db = await get_db()
+    cursor = await db.execute(
+        "INSERT INTO tutorials (title, display_order) VALUES (?, ?)",
+        (title, display_order),
+    )
+    await db.commit()
+    tid = cursor.lastrowid
+    await db.close()
+    return tid
+
+
+async def get_tutorials(enabled_only: bool = False) -> list[dict]:
+    db = await get_db()
+    q = "SELECT * FROM tutorials" + (" WHERE is_enabled = 1" if enabled_only else "") + " ORDER BY display_order, id"
+    cursor = await db.execute(q)
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def get_tutorial(tutorial_id: int) -> dict | None:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM tutorials WHERE id = ?", (tutorial_id,))
+    row = await cursor.fetchone()
+    await db.close()
+    return dict(row) if row else None
+
+
+async def update_tutorial(tutorial_id: int, title: str = None, is_enabled: int = None, display_order: int = None):
+    db = await get_db()
+    updates, vals = [], []
+    if title is not None:
+        updates.append("title = ?"); vals.append(title)
+    if is_enabled is not None:
+        updates.append("is_enabled = ?"); vals.append(is_enabled)
+    if display_order is not None:
+        updates.append("display_order = ?"); vals.append(display_order)
+    if updates:
+        vals.append(tutorial_id)
+        await db.execute(f"UPDATE tutorials SET {', '.join(updates)} WHERE id = ?", vals)
+        await db.commit()
+    await db.close()
+
+
+async def delete_tutorial(tutorial_id: int):
+    db = await get_db()
+    await db.execute("DELETE FROM tutorial_items WHERE tutorial_id = ?", (tutorial_id,))
+    await db.execute("DELETE FROM tutorials WHERE id = ?", (tutorial_id,))
+    await db.commit()
+    await db.close()
+
+
+async def toggle_tutorial(tutorial_id: int):
+    db = await get_db()
+    await db.execute("UPDATE tutorials SET is_enabled = NOT is_enabled WHERE id = ?", (tutorial_id,))
+    await db.commit()
+    await db.close()
+
+
+async def add_tutorial_item(tutorial_id: int, title: str, content_type: str = "TEXT", content_text: str = "", content_file_id: str = "", display_order: int = 0) -> int:
+    db = await get_db()
+    cursor = await db.execute(
+        "INSERT INTO tutorial_items (tutorial_id, title, content_type, content_text, content_file_id, display_order) VALUES (?, ?, ?, ?, ?, ?)",
+        (tutorial_id, title, content_type, content_text, content_file_id, display_order),
+    )
+    await db.commit()
+    item_id = cursor.lastrowid
+    await db.close()
+    return item_id
+
+
+async def get_tutorial_items(tutorial_id: int) -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT * FROM tutorial_items WHERE tutorial_id = ? ORDER BY display_order, id",
+        (tutorial_id,),
+    )
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+async def get_tutorial_item(item_id: int) -> dict | None:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM tutorial_items WHERE id = ?", (item_id,))
+    row = await cursor.fetchone()
+    await db.close()
+    return dict(row) if row else None
+
+
+async def update_tutorial_item(item_id: int, title: str = None, content_type: str = None, content_text: str = None, content_file_id: str = None, display_order: int = None):
+    db = await get_db()
+    updates, vals = [], []
+    if title is not None:
+        updates.append("title = ?"); vals.append(title)
+    if content_type is not None:
+        updates.append("content_type = ?"); vals.append(content_type)
+    if content_text is not None:
+        updates.append("content_text = ?"); vals.append(content_text)
+    if content_file_id is not None:
+        updates.append("content_file_id = ?"); vals.append(content_file_id)
+    if display_order is not None:
+        updates.append("display_order = ?"); vals.append(display_order)
+    if updates:
+        vals.append(item_id)
+        await db.execute(f"UPDATE tutorial_items SET {', '.join(updates)} WHERE id = ?", vals)
+        await db.commit()
+    await db.close()
+
+
+async def delete_tutorial_item(item_id: int):
+    db = await get_db()
+    await db.execute("DELETE FROM tutorial_items WHERE id = ?", (item_id,))
+    await db.commit()
+    await db.close()
+

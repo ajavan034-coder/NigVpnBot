@@ -23,7 +23,7 @@ from database import (
     update_collab_request, set_user_collaborator,
     is_blacklisted, add_to_blacklist, remove_from_blacklist, get_blacklisted_users,
     get_all_gift_codes, get_gift_code_by_id, add_gift_code, delete_gift_code, toggle_gift_code,
-    get_all_guides, delete_guide_item, add_guide_item,
+    get_all_guides, delete_guide_item, add_guide_item,\n    add_tutorial, get_tutorials, get_tutorial, update_tutorial, delete_tutorial, toggle_tutorial,\n    add_tutorial_item, get_tutorial_items, get_tutorial_item, update_tutorial_item, delete_tutorial_item,
     get_support_user,
 )
 from api import panel_api
@@ -113,7 +113,7 @@ class AdminState(StatesGroup):
     gift_code_amount = State()
     gift_code_max_uses = State()
     guide_platform = State()
-    guide_body = State()
+    guide_body = State()\n    tutorial_title = State()\n    tutorial_edit_title = State()\n    tutitem_title = State()\n    tutitem_content = State()
     guide_media = State()
     edit_cashback_percent = State()
 
@@ -3855,4 +3855,237 @@ async def cmd_dbstatus(message: Message):
             lines.append(f"  {t}: N/A")
     conn.close()
     await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+# ==================== Tutorial Admin Handlers ====================
+
+@router.callback_query(F.data == "adm_tutorials")
+async def cb_adm_tutorials(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    if not await is_admin(callback.from_user.id):
+        return
+    await callback.message.edit_text(
+        "🎓 <b>مدیریت آموزش‌ها</b>\n\nآموزش مورد نظر را انتخاب کنید یا آموزش جدید اضافه کنید:",
+        parse_mode="HTML", reply_markup=await tutorials_menu()
+    )
+
+
+@router.callback_query(F.data.startswith("adm_tut_detail_"))
+async def cb_adm_tut_detail(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    tut_id = int(callback.data.split("_")[-1])
+    tut = await get_tutorial(tut_id)
+    if not tut:
+        await callback.answer("آموزش یافت نشد!", show_alert=True)
+        return
+    items = await get_tutorial_items(tut_id)
+    status = "🟢 فعال" if tut["is_enabled"] else "🔴 غیرفعال"
+    text = (
+        f"🎓 <b>{tut['title']}</b>\n"
+        f"وضعیت: {status}\n"
+        f"تعداد زیرمجموعه‌ها: {len(items)}\n\n"
+        f"زیرمجموعه‌ها:"
+    )
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await tutorial_detail_menu(tut_id))
+
+
+@router.callback_query(F.data == "adm_add_tutorial")
+async def cb_adm_add_tutorial(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    await state.set_state(AdminState.tutorial_title)
+    await callback.message.edit_text(
+        "🎓 <b>افزودن آموزش جدید</b>\n\nعنوان آموزش را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.tutorial_title)
+async def process_tutorial_title(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    title = message.text.strip() if message.text else ""
+    if not title:
+        await message.answer("عنوان نمی‌تواند خالی باشد:")
+        return
+    tut_id = await add_tutorial(title)
+    await state.clear()
+    await message.answer(
+        f"✅ آموزش «{title}» ایجاد شد!\nحالا زیرمجموعه‌ها را اضافه کنید.",
+        reply_markup=await tutorial_detail_menu(tut_id)
+    )
+
+
+@router.callback_query(F.data.startswith("adm_edit_tutorial_"))
+async def cb_adm_edit_tutorial(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    tut_id = int(callback.data.split("_")[-1])
+    await state.update_data(edit_tutorial_id=tut_id)
+    await state.set_state(AdminState.tutorial_edit_title)
+    tut = await get_tutorial(tut_id)
+    await callback.message.edit_text(
+        f"✏️ <b>ویرایش عنوان</b>\n\nعنوان فعلی: {tut['title']}\n\nعنوان جدید را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.tutorial_edit_title)
+async def process_tutorial_edit_title(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    tut_id = data.get("edit_tutorial_id")
+    title = message.text.strip() if message.text else ""
+    if not title:
+        await message.answer("عنوان نمی‌تواند خالی باشد:")
+        return
+    await update_tutorial(tut_id, title=title)
+    await state.clear()
+    await message.answer(
+        f"✅ عنوان به «{title}» تغییر کرد.",
+        reply_markup=await tutorial_detail_menu(tut_id)
+    )
+
+
+@router.callback_query(F.data.startswith("adm_toggle_tutorial_"))
+async def cb_adm_toggle_tutorial(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    tut_id = int(callback.data.split("_")[-1])
+    await toggle_tutorial(tut_id)
+    tut = await get_tutorial(tut_id)
+    status = "فعال" if tut["is_enabled"] else "غیرفعال"
+    await callback.answer(f"آموزش {status} شد", show_alert=True)
+    await callback.message.edit_reply_markup(reply_markup=await tutorial_detail_menu(tut_id))
+
+
+@router.callback_query(F.data.startswith("adm_delete_tutorial_"))
+async def cb_adm_delete_tutorial_confirm(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    tut_id = int(callback.data.split("_")[-1])
+    tut = await get_tutorial(tut_id)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ بله، حذف شود", callback_data=f"adm_delete_tutorial_yes_{tut_id}")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data=f"adm_tut_detail_{tut_id}")],
+    ])
+    await callback.message.edit_text(
+        f"⚠️ <b>آیا از حذف آموزش «{tut['title']}» مطمئنید؟</b>\n\nتمام زیرمجموعه‌ها نیز حذف خواهند شد.",
+        parse_mode="HTML", reply_markup=kb
+    )
+
+
+@router.callback_query(F.data.startswith("adm_delete_tutorial_yes_"))
+async def cb_adm_delete_tutorial_yes(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    tut_id = int(callback.data.split("_")[-1])
+    await delete_tutorial(tut_id)
+    await callback.answer("آموزش حذف شد", show_alert=True)
+    await callback.message.edit_text(
+        "🎓 <b>مدیریت آموزش‌ها</b>",
+        parse_mode="HTML", reply_markup=await tutorials_menu()
+    )
+
+
+@router.callback_query(F.data.startswith("adm_add_tutitem_"))
+async def cb_adm_add_tutitem(callback: CallbackQuery, state: FSMContext):
+    if not await is_admin(callback.from_user.id):
+        return
+    tut_id = int(callback.data.split("_")[-1])
+    await state.update_data(tutitem_tutorial_id=tut_id)
+    await state.set_state(AdminState.tutitem_title)
+    await callback.message.edit_text(
+        "📝 <b>افزودن زیرمجموعه</b>\n\nعنوان زیرمجموعه را وارد کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.tutitem_title)
+async def process_tutitem_title(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    title = message.text.strip() if message.text else ""
+    if not title:
+        await message.answer("عنوان نمی‌تواند خالی باشد:")
+        return
+    await state.update_data(tutitem_title=title)
+    await state.set_state(AdminState.tutitem_content)
+    await message.answer(
+        "📎 <b>محتوا را ارسال کنید</b>\n\nمتن، عکس، یا ویدیو ارسال کنید:",
+        parse_mode="HTML", reply_markup=await back_to_admin()
+    )
+
+
+@router.message(AdminState.tutitem_content)
+async def process_tutitem_content(message: Message, state: FSMContext):
+    if not await is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    tut_id = data.get("tutitem_tutorial_id")
+    title = data.get("tutitem_title", "")
+
+    if message.photo:
+        content_type = "PHOTO"
+        content_file_id = message.photo[-1].file_id
+        content_text = message.caption or ""
+    elif message.video:
+        content_type = "VIDEO"
+        content_file_id = message.video.file_id
+        content_text = message.caption or ""
+    elif message.text:
+        content_type = "TEXT"
+        content_file_id = ""
+        content_text = message.html_text or message.text
+    else:
+        await message.answer("نوع محتوا پشتیبانی نمی‌شود. متن، عکس، یا ویدیو ارسال کنید:")
+        return
+
+    await add_tutorial_item(tut_id, title, content_type, content_text, content_file_id)
+    await state.clear()
+    await message.answer(
+        f"✅ زیرمجموعه «{title}» اضافه شد!",
+        reply_markup=await tutorial_detail_menu(tut_id)
+    )
+
+
+@router.callback_query(F.data.startswith("adm_tutitem_detail_"))
+async def cb_adm_tutitem_detail(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    item_id = int(callback.data.split("_")[-1])
+    item = await get_tutorial_item(item_id)
+    if not item:
+        await callback.answer("زیرمجموعه یافت نشد!", show_alert=True)
+        return
+    ct_icons = {"TEXT": "📝", "PHOTO": "📷", "VIDEO": "🎬"}
+    icon = ct_icons.get(item["content_type"], "📄")
+    text = (
+        f"{icon} <b>{item['title']}</b>\n\n"
+        f"نوع: {item['content_type']}\n"
+    )
+    if item["content_text"]:
+        text += f"متن: {item['content_text'][:200]}\n"
+    if item["content_file_id"]:
+        text += f"فایل: {item['content_file_id'][:30]}...\n"
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=await tutorial_item_detail_menu(item_id, item["tutorial_id"]))
+
+
+@router.callback_query(F.data.startswith("adm_delete_tutitem_"))
+async def cb_adm_delete_tutitem(callback: CallbackQuery):
+    if not await is_admin(callback.from_user.id):
+        return
+    item_id = int(callback.data.split("_")[-1])
+    item = await get_tutorial_item(item_id)
+    if not item:
+        await callback.answer("یافت نشد!", show_alert=True)
+        return
+    await delete_tutorial_item(item_id)
+    await callback.answer("زیرمجموعه حذف شد", show_alert=True)
+    await callback.message.edit_text(
+        "📝 زیرمجموعه حذف شد",
+        reply_markup=await tutorial_detail_menu(item["tutorial_id"])
+    )
 

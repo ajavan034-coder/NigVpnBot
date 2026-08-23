@@ -65,6 +65,7 @@ async def main_menu(user_id: int = 0) -> InlineKeyboardMarkup:
             {"type": "builtin", "id": "my_configs", "enabled": True},
             {"type": "row_break"},
             {"type": "builtin", "id": "guides", "enabled": True},
+            {"type": "builtin", "id": "tutorials", "enabled": True},
             {"type": "builtin", "id": "redeem_gift", "enabled": True},
             {"type": "row_break"},
             {"type": "builtin", "id": "invite", "enabled": True},
@@ -127,6 +128,11 @@ async def main_menu(user_id: int = 0) -> InlineKeyboardMarkup:
             return await _btn(await get_setting("btn_redeem_gift") or "🎁 کد هدیه", "redeem_gift", "package", "primary", "redeem_gift")
         elif bid == "guides":
             return await _btn(await get_setting("btn_guides") or "📖 راهنمای اتصال", "guides", "link", "", "guides")
+        elif bid == "tutorials":
+            enabled = await get_setting("tutorials_enabled")
+            if enabled is not None and enabled != "1":
+                return None
+            return await _btn(await get_setting("btn_tutorials") or "🎓 آموزش اتصال", "tutorials", "link", "primary", "tutorials")
         return None
 
     current_row = []

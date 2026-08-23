@@ -32,7 +32,10 @@ async def admin_menu() -> InlineKeyboardMarkup:
             await _btn("🎁 کدهای هدیه", "adm_gift_codes", "package", btn_id="admin_gift_codes"),
             await _btn("📖 راهنماها", "adm_guides", "link", btn_id="admin_guides"),
         ],
-        [await _btn("⛔ لیست سیاه", "adm_blacklist", "ban", btn_id="admin_blacklist")],
+        [
+            await _btn("🎓 آموزش‌ها", "adm_tutorials", "link", btn_id="admin_tutorials"),
+            await _btn("⛔ لیست سیاه", "adm_blacklist", "ban", btn_id="admin_blacklist"),
+        ],
     ])
 
 
@@ -610,3 +613,43 @@ async def confirm_action(callback_data: str, text: str) -> InlineKeyboardMarkup:
             await _btn("❌ خیر", "adm_menu", "cross", "danger"),
         ],
     ])
+
+
+# ─── Tutorials Management ────────────────────────────────────
+async def tutorials_menu() -> InlineKeyboardMarkup:
+    from database import get_tutorials
+    tutorials = await get_tutorials()
+    buttons = []
+    for t in tutorials[:10]:
+        status = "🟢" if t["is_enabled"] else "🔴"
+        buttons.append([await _btn(f"{status} {t['title']}", f"adm_tut_detail_{t['id']}", "link", btn_id="tutorial_item")])
+    buttons.append([await _btn("➕ آموزش جدید", "adm_add_tutorial", "plus", btn_id="add_tutorial")])
+    buttons.append([await _btn("🔙 بازگشت", "adm_menu", btn_id="back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def tutorial_detail_menu(tutorial_id: int) -> InlineKeyboardMarkup:
+    from database import get_tutorial, get_tutorial_items
+    tut = await get_tutorial(tutorial_id)
+    items = await get_tutorial_items(tutorial_id)
+    status = "🟢" if tut["is_enabled"] else "🔴"
+    toggle_text = "🔴 غیرفعال" if tut["is_enabled"] else "🟢 فعال"
+    buttons = []
+    for item in items[:10]:
+        ct_icon = {"TEXT": "📝", "PHOTO": "📷", "VIDEO": "🎬"}.get(item["content_type"], "📄")
+        buttons.append([await _btn(f"{ct_icon} {item['title']}", f"adm_tutitem_detail_{item['id']}", "link", btn_id="tutorial_subitem")])
+    buttons.append([await _btn("➕ زیرمجموعه جدید", f"adm_add_tutitem_{tutorial_id}", "plus", btn_id="add_tutorial")])
+    buttons.append([await _btn("✏️ ویرایش عنوان", f"adm_edit_tutorial_{tutorial_id}", "gear", btn_id="edit_tutorial")])
+    buttons.append([await _btn(toggle_text, f"adm_toggle_tutorial_{tutorial_id}", "gear", btn_id="toggle_tutorial")])
+    buttons.append([await _btn("🗑️ حذف آموزش", f"adm_delete_tutorial_{tutorial_id}", "delete", btn_id="delete_tutorial", style="danger")])
+    buttons.append([await _btn("🔙 بازگشت", "adm_tutorials", btn_id="back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def tutorial_item_detail_menu(item_id: int, tutorial_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [await _btn("✏️ ویرایش عنوان", f"adm_edit_tutitem_{item_id}", "gear", btn_id="edit_tutorial")],
+        [await _btn("🗑️ حذف", f"adm_delete_tutitem_{item_id}", "delete", btn_id="delete_tutorial", style="danger")],
+        [await _btn("🔙 بازگشت", f"adm_tut_detail_{tutorial_id}", btn_id="back")],
+    ])
+
