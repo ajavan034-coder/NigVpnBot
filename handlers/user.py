@@ -924,6 +924,7 @@ async def cb_free_test_select(callback: CallbackQuery):
         if _is_wg_ft:
             from aiogram.types import BufferedInputFile
             import random as _r
+            import uuid
             expire_date = (datetime.utcnow() + timedelta(days=free_test_days)).isoformat()
             sent_any = False
             first_sub_link = ""
@@ -932,7 +933,7 @@ async def cb_free_test_select(callback: CallbackQuery):
             # Create ONE client email/uuid shared across all inbounds
             _rid = _r.randint(100000, 999999)
             _wemail = "wg_" + "_".join(str(iid) for iid in free_test_inbound_ids) + f"_{_rid}@bot"
-            _wuuid = str(_u.uuid4())
+            _wuuid = str(uuid.uuid4())
             # Add the SAME client to ALL inbounds
             for wg_iid in free_test_inbound_ids:
                 try:
