@@ -1880,6 +1880,7 @@ BUTTON_SETTINGS = {
     "adm_edit_btn_back": "btn_back",
     "adm_edit_btn_back_to_menu": "btn_back_to_menu",
     "adm_edit_btn_support": "btn_support",
+    "adm_edit_btn_tutorials": "btn_tutorials",
 }
 
 
