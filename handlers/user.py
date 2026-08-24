@@ -934,28 +934,23 @@ async def cb_free_test_select(callback: CallbackQuery):
             _rid = _r.randint(100000, 999999)
             _wemail = "wg_" + "_".join(str(iid) for iid in free_test_inbound_ids) + f"_{_rid}@bot"
             _wuuid = str(uuid.uuid4())
-            # Add the SAME client to ALL inbounds
-            for wg_iid in free_test_inbound_ids:
-                try:
-                    _ft_gb = free_test_mb / 1024
-                    logger.info(f"WG free_test: free_test_mb={free_test_mb}, calculated_gb={_ft_gb}, inbound={wg_iid}")
-                    _wcli = await ft_panel_api.add_client([wg_iid], _wemail, total_gb=_ft_gb, days=free_test_days)
-                    if not _wcli:
-                        logger.error("WG free test: failed add client inbound %s", wg_iid)
-                        continue
-                except Exception as e:
-                    logger.error("WG free test add client error inbound %s: %s", wg_iid, e)
-            # Download config for each inbound - one config per inbound for the single client
+            _ft_gb = free_test_mb / 1024
+            logger.info(f"WG free_test: adding client to inbounds {free_test_inbound_ids}, gb={_ft_gb}")
+            _wcli = await ft_panel_api.add_client(free_test_inbound_ids, _wemail, total_gb=_ft_gb, days=free_test_days)
+            if not _wcli:
+                logger.error("WG free test: failed to add client")
+                await callback.message.edit_text("ساخت کانفیگ WireGuard ناموفق بود.", reply_markup=await back_to_menu())
+                return
+            _wsub = _wcli["sub_id"]
+            _wlink = ft_panel_api.get_sub_link("", _wsub)
             for wg_iid in free_test_inbound_ids:
                 try:
                     wg_inb = await ft_panel_api.get_inbound(wg_iid)
                     wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"
-                    _wsub = _wcli["sub_id"]
-                    _wlink = ft_panel_api.get_sub_link("", _wsub)
                     wg_conf = await ft_panel_api.download_wireguard_conf(_wsub)
                     if wg_conf:
                         cf = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rid}.conf")
-                        await callback.message.answer_document(document=cf, caption=f"📄 {wg_name}")
+                        await callback.message.answer_document(document=cf, caption=f"\U0001f4c4 {wg_name}")
                         sent_any = True
                     else:
                         logger.error("WG free test: failed download conf inbound %s sub %s", wg_iid, _wsub)
@@ -1216,20 +1211,17 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
             _rid = _r.randint(100000, 999999)
             _wemail = "wg_" + "_".join(str(iid) for iid in wg_ids) + f"_{_rid}@bot"
             _wuuid = str(_u.uuid4())
-            for wg_iid in wg_ids:
-                try:
-                    _wcli = await plan_panel.add_client([wg_iid], _wemail, total_gb=plan["gb"], days=plan["days"])
-                    if not _wcli:
-                        logger.error("WG: failed add client inbound %s", wg_iid)
-                        continue
-                except Exception as e:
-                    logger.error("WG add client error inbound %s: %s", wg_iid, e)
+            _wcli = await plan_panel.add_client(wg_ids, _wemail, total_gb=plan["gb"], days=plan["days"])
+            if not _wcli:
+                logger.error("WG: failed to add client")
+                await callback.message.edit_text("ساخت کانفیگ WireGuard ناموفق بود.", reply_markup=await back_to_menu())
+                return
+            _wsub = _wcli["sub_id"]
+            _wlink = plan_panel.get_sub_link("", _wsub)
             for wg_iid in wg_ids:
                 try:
                     wg_inb = await plan_panel.get_inbound(wg_iid)
                     wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"
-                    _wsub = _wcli["sub_id"]
-                    _wlink = plan_panel.get_sub_link("", _wsub)
                     wg_conf = await plan_panel.download_wireguard_conf(_wsub)
                     if wg_conf:
                         cf = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rid}.conf")

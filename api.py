@@ -267,39 +267,34 @@ class PanelAPI:
         if days > 0:
             expiry_time = int((datetime.utcnow() + timedelta(days=days)).timestamp() * 1000)
 
-        success_count = 0
-        for inbound_id in inbound_ids:
-            client_payload = {
-                "client": {
-                    "email": email,
-                    "subId": sub_id,
-                    "id": user_uuid,
-                    "password": "",
-                    "auth": "",
-                    "flow": "",
-                    "security": "auto",
-                    "totalGB": total_bytes,
-                    "expiryTime": expiry_time,
-                    "reset": 0,
-                    "limitIp": ip_limit,
-                    "tgId": 0,
-                    "group": "",
-                    "comment": "",
-                    "enable": True,
-                },
-                "inboundIds": [inbound_id],
-            }
+        client_payload = {
+            "client": {
+                "email": email,
+                "subId": sub_id,
+                "id": user_uuid,
+                "password": "",
+                "auth": "",
+                "flow": "",
+                "security": "auto",
+                "totalGB": total_bytes,
+                "expiryTime": expiry_time,
+                "reset": 0,
+                "limitIp": ip_limit,
+                "tgId": 0,
+                "group": "",
+                "comment": "",
+                "enable": True,
+            },
+            "inboundIds": inbound_ids,
+        }
 
-            logger.info(f"Adding client '{email}' to inbound {inbound_id}...")
-            result = await self._post("/panel/api/clients/add", client_payload)
-            logger.info(f"Result: {result}")
-            if result and result.get("success"):
-                success_count += 1
-            else:
-                logger.error(f"Failed to add client to inbound {inbound_id}: {result}")
-
-        if success_count > 0:
+        logger.info(f"Adding client '{email}' to inbounds {inbound_ids}...")
+        result = await self._post("/panel/api/clients/add", client_payload)
+        logger.info(f"add_client result: {result}")
+        if result and result.get("success"):
             return {"uuid": user_uuid, "sub_id": sub_id, "email": email}
+
+        logger.error(f"Failed to add client: {result}")
         return None
 
     def get_sub_link(self, email: str, sub_id: str) -> str:
