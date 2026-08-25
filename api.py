@@ -299,15 +299,46 @@ class PanelAPI:
         return None
 
 
-    async def restart_xray(self):
-        """Restart xray to pick up new WireGuard peers."""
+    async def reload_xray(self):
+        """Gracefully reload xray config via SIGUSR1 (no downtime)."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["bash", "-c", "PID=$(pgrep -o -f 'xray-linux-amd64'); if [ -n \"$PID\" ]; then kill -USR1 $PID && echo \"reload_sent:$PID\"; else echo 'no_xray'; fi"],
+                capture_output=True, text=True, timeout=5
+            )
+            output = result.stdout.strip()
+            logger.info(f"Xray SIGUSR1 reload: {output}")
+            if output.startswith("reload_sent:"):
+                import asyncio
+                await asyncio.sleep(1)
+                return {"success": True, "method": "sigusr1", "pid": output.split(":")[1]}
+            elif output == "no_xray":
+                logger.warning("xray process not found, falling back to API restart")
+                return await self._api_restart_xray()
+            else:
+                logger.error(f"SIGUSR1 failed: {output}")
+                return await self._api_restart_xray()
+        except FileNotFoundError:
+            logger.warning("bash not available, falling back to API restart")
+            return await self._api_restart_xray()
+        except Exception as e:
+            logger.error(f"SIGUSR1 reload failed: {e}")
+            return await self._api_restart_xray()
+
+    async def _api_restart_xray(self):
+        """Full xray restart via API (causes ~30s downtime)."""
         try:
             result = await self._post("/panel/api/server/restartXrayService", {})
-            logger.info(f"Xray restart result: {result}")
+            logger.info(f"Xray API restart result: {result}")
             return result
         except Exception as e:
-            logger.error(f"Xray restart failed: {e}")
+            logger.error(f"Xray API restart failed: {e}")
             return None
+
+    async def restart_xray(self):
+        """Reload xray config gracefully (no downtime)."""
+        return await self.reload_xray()
     def get_sub_link(self, email: str, sub_id: str) -> str:
         if self.sub_link_template:
             tmpl = self.sub_link_template
