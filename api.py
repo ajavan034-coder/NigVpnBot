@@ -292,11 +292,22 @@ class PanelAPI:
         result = await self._post("/panel/api/clients/add", client_payload)
         logger.info(f"add_client result: {result}")
         if result and result.get("success"):
+            await self.restart_xray()
             return {"uuid": user_uuid, "sub_id": sub_id, "email": email}
 
         logger.error(f"Failed to add client: {result}")
         return None
 
+
+    async def restart_xray(self):
+        """Restart xray to pick up new WireGuard peers."""
+        try:
+            result = await self._post("/panel/api/server/restartXrayService", {})
+            logger.info(f"Xray restart result: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Xray restart failed: {e}")
+            return None
     def get_sub_link(self, email: str, sub_id: str) -> str:
         if self.sub_link_template:
             tmpl = self.sub_link_template
