@@ -300,7 +300,7 @@ class PanelAPI:
 
 
     async def reload_xray(self):
-        """Gracefully reload xray config via SIGUSR1 (no downtime)."""
+        """Reload xray via SIGUSR1 (works for VLESS/VMess, NOT for WireGuard)."""
         import subprocess
         try:
             result = subprocess.run(
@@ -313,21 +313,13 @@ class PanelAPI:
                 import asyncio
                 await asyncio.sleep(1)
                 return {"success": True, "method": "sigusr1", "pid": output.split(":")[1]}
-            elif output == "no_xray":
-                logger.warning("xray process not found, falling back to API restart")
-                return await self._api_restart_xray()
-            else:
-                logger.error(f"SIGUSR1 failed: {output}")
-                return await self._api_restart_xray()
-        except FileNotFoundError:
-            logger.warning("bash not available, falling back to API restart")
-            return await self._api_restart_xray()
         except Exception as e:
-            logger.error(f"SIGUSR1 reload failed: {e}")
-            return await self._api_restart_xray()
+            logger.warning(f"SIGUSR1 failed: {e}")
+
+        return await self._api_restart_xray()
 
     async def _api_restart_xray(self):
-        """Full xray restart via API (causes ~30s downtime)."""
+        """Full xray restart via API."""
         try:
             result = await self._post("/panel/api/server/restartXrayService", {})
             logger.info(f"Xray API restart result: {result}")
@@ -336,9 +328,11 @@ class PanelAPI:
             logger.error(f"Xray API restart failed: {e}")
             return None
 
-    async def restart_xray(self):
-        """Reload xray config gracefully (no downtime)."""
-        return await self.reload_xray()
+    async def restart_xray(self, force_full: bool = False):
+        """Restart xray. Uses SIGUSR1 for non-WG, full restart for WireGuard."""
+        if force_full:
+            return await self._api_restart_xray()
+        return await self._api_restart_xray()
     def get_sub_link(self, email: str, sub_id: str) -> str:
         if self.sub_link_template:
             tmpl = self.sub_link_template
