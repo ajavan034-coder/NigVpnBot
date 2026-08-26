@@ -324,6 +324,66 @@ def get_recent_receipts(limit=5):
     return [dict(r) for r in rows]
 
 
+def get_panels_overview():
+    """All panels with aggregated purchase stats (config counts + purchased GB)."""
+    conn = get_conn()
+    rows = conn.execute(
+        """
+        SELECT p.id, p.name, p.url, p.is_active, p.is_default, p.created_at,
+               p.volume_gb, p.panel_type, p.free_test_enabled, p.free_test_mb,
+               p.free_test_days, p.inbound_ids,
+               COALESCE(s.config_count, 0)   AS config_count,
+               COALESCE(s.active_configs, 0) AS active_configs,
+               COALESCE(s.purchased_gb, 0)   AS purchased_gb
+        FROM panels p
+        LEFT JOIN (
+            SELECT c.panel_id AS pid,
+                   COUNT(*)                                        AS config_count,
+                   SUM(CASE WHEN c.is_active = 1 THEN 1 ELSE 0 END) AS active_configs,
+                   COALESCE(SUM(pl.gb), 0)                          AS purchased_gb
+            FROM configs c
+            LEFT JOIN plans pl ON c.plan_id = pl.id
+            GROUP BY c.panel_id
+        ) s ON s.pid = p.id
+        ORDER BY p.is_default DESC, p.id
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_panel_purchase_totals():
+    """Global totals across all panels for summary cards."""
+    conn = get_conn()
+    row = conn.execute(
+        """
+        SELECT COALESCE(SUM(pl.gb), 0) AS total_gb, COUNT(*) AS total_configs
+        FROM configs c LEFT JOIN plans pl ON c.plan_id = pl.id
+        """
+    ).fetchone()
+    active = conn.execute("SELECT COUNT(*) AS cnt FROM configs WHERE is_active = 1").fetchone()["cnt"]
+    conn.close()
+    return {"total_gb": row["total_gb"], "total_configs": row["total_configs"], "active_configs": active}
+
+
+def get_unattributed_purchases():
+    """Configs whose panel_id is NULL or points at a deleted panel (legacy data)."""
+    conn = get_conn()
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS config_count,
+               COALESCE(SUM(CASE WHEN c.is_active = 1 THEN 1 ELSE 0 END), 0) AS active_configs,
+               COALESCE(SUM(pl.gb), 0) AS purchased_gb
+        FROM configs c
+        LEFT JOIN plans pl ON c.plan_id = pl.id
+        WHERE c.panel_id IS NULL
+           OR c.panel_id NOT IN (SELECT id FROM panels)
+        """
+    ).fetchone()
+    conn.close()
+    return dict(row)
+
+
 def deactivate_config(config_id):
     conn = get_conn()
     conn.execute("UPDATE configs SET is_active = 0 WHERE id = ?", (config_id,))

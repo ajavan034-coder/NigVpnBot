@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}پنل‌ها{% endblock %}
+{% block page_name %}پنل‌ها{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div class="d-flex align-items-center gap-3">
+        <div class="ph-icon"><svg class="ic"><use href="#i-server"/></svg></div>
+        <div>
+            <h3>پنل‌های متصل</h3>
+            <p>وضعیت اتصال و حجم فروش هر پنل</p>
+        </div>
+    </div>
+    <button type="button" class="btn btn-ghost" id="repingBtn" onclick="loadPing(true)">
+        <svg class="ic ic-sm"><use href="#i-refresh"/></svg> اندازه‌گیری مجدد
+    </button>
+</div>
+
+<!-- Summary -->
+<div class="row g-3 mb-4">
+    <div class="col-xl-3 col-md-6">
+        <div class="stat-card" style="--sc:#8b5cf6;">
+            <div class="d-flex align-items-center gap-3">
+                <div class="stat-icon"><svg class="ic"><use href="#i-server"/></svg></div>
+                <div>
+                    <div class="stat-value">{{ panel_count }}</div>
+                    <div class="stat-label">پنل ثبت‌شده</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="stat-card" style="--sc:#34d399;">
+            <div class="d-flex align-items-center gap-3">
+                <div class="stat-icon"><svg class="ic"><use href="#i-check-circle"/></svg></div>
+                <div>
+                    <div class="stat-value">{{ active_count }}</div>
+                    <div class="stat-label">پنل فعال</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="stat-card" style="--sc:#60a5fa;">
+            <div class="d-flex align-items-center gap-3">
+                <div class="stat-icon"><svg class="ic"><use href="#i-key"/></svg></div>
+                <div>
+                    <div class="stat-value">{{ totals.active_configs }} <span style="font-size:14px;color:var(--text-muted);font-weight:500;">/ {{ totals.total_configs }}</span></div>
+                    <div class="stat-label">کانفیگ فعال / کل</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="stat-card" style="--sc:#fbbf24;">
+            <div class="d-flex align-items-center gap-3">
+                <div class="stat-icon"><svg class="ic"><use href="#i-coins"/></svg></div>
+                <div>
+                    <div class="stat-value">{{ "{:,.0f}".format(totals.total_gb) }} <span style="font-size:14px;color:var(--text-muted);font-weight:500;">GB</span></div>
+                    <div class="stat-label">کل حجم خریداری‌شده</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Panel cards -->
+<div class="row g-4">
+    {% for p in panels %}
+    <div class="col-xl-6">
+        <div class="card card-dark h-100 panel-card" data-panel-id="{{ p.id }}">
+            <div class="card-header" style="padding:18px 20px;">
+                <div class="d-flex align-items-center gap-3 w-100">
+                    <div class="ph-icon" style="width:42px;height:42px;border-radius:12px;">
+                        {% if p.panel_type == '3xui' %}
+                        <svg class="ic"><use href="#i-hdd"/></svg>
+                        {% else %}
+                        <svg class="ic"><use href="#i-globe"/></svg>
+                        {% endif %}
+                    </div>
+                    <div class="flex-grow-1">
+                        <div style="font-weight:800;font-size:15.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                            {{ p.name }}
+                            {% if p.is_default %}<span class="badge badge-active">پیش‌فرض</span>{% endif %}
+                            {% if not p.is_active %}<span class="badge badge-expired">غیرفعال</span>{% endif %}
+                        </div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+                            {{ p.panel_type|upper }} · شناسه #{{ p.id }}
+                        </div>
+                    </div>
+                    <!-- live ping badge -->
+                    <span class="ping-badge" id="ping-{{ p.id }}">
+                        <span class="dot"></span>
+                        <span class="ping-text">…</span>
+                    </span>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-dark mb-0">
+                    <tbody>
+                        <tr>
+                            <td style="color:var(--text-muted);width:36%;">آدرس</td>
+                            <td><span class="copy-chip" data-copy="{{ p.url }}" dir="ltr" style="max-width:280px;">
+                                <svg class="ic"><use href="#i-link"/></svg>
+                                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ p.url }}</span>
+                            </span></td>
+                        </tr>
+                        <tr>
+                            <td style="color:var(--text-muted);">کانفیگ‌ها (فعال/کل)</td>
+                            <td>
+                                <strong style="color:var(--violet-300);">{{ p.active_configs }}</strong>
+                                <span style="color:var(--text-muted);">/ {{ p.config_count }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="color:var(--text-muted);">حجم خریداری‌شده</td>
+                            <td>
+                                <strong style="color:#60a5fa;font-size:15px;">{{ "{:,.0f}".format(p.purchased_gb) }} GB</strong>
+                                {% if p.volume_gb and p.volume_gb > 0 %}
+                                <span style="color:var(--text-muted);font-size:11.5px;">از سقف {{ "{:,.0f}".format(p.volume_gb) }} GB</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="color:var(--text-muted);">تست رایگان</td>
+                            <td>
+                                {% if p.free_test_enabled %}
+                                <span class="badge badge-neutral">{{ p.free_test_mb }} MB · {{ p.free_test_days }} روزه</span>
+                                {% else %}
+                                <span style="color:var(--text-muted);">غیرفعال</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="px-4 py-3 d-flex align-items-center gap-2 flex-wrap" style="border-top:1px solid var(--border-subtle);">
+                <svg class="ic ic-sm" style="color:var(--text-muted);opacity:.7;"><use href="#i-layers"/></svg>
+                <span style="font-size:11.5px;color:var(--text-muted);">اینباندها:</span>
+                <code class="vio" style="font-size:10.5px;" dir="ltr">{{ p.inbound_ids or '—' }}</code>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    {% if unattributed and (unattributed.config_count or 0) > 0 %}
+    <div class="col-xl-6">
+        <div class="card card-dark h-100" style="border-style:dashed;border-color:var(--border-default);">
+            <div class="card-header" style="padding:18px 20px;">
+                <div class="d-flex align-items-center gap-3 w-100">
+                    <div class="ph-icon" style="width:42px;height:42px;border-radius:12px;border-style:dashed;">
+                        <svg class="ic"><use href="#i-inbox"/></svg>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div style="font-weight:800;font-size:15.5px;">سایر / نامشخص</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+                            کانفیگ‌های قدیمی قبل از ثبت پنل یا پنل‌های حذف‌شده
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-dark mb-0">
+                    <tbody>
+                        <tr>
+                            <td style="color:var(--text-muted);width:36%;">کانفیگ‌ها (فعال/کل)</td>
+                            <td><strong style="color:var(--violet-300);">{{ unattributed.active_configs }}</strong>
+                                <span style="color:var(--text-muted);">/ {{ unattributed.config_count }}</span></td>
+                        </tr>
+                        <tr>
+                            <td style="color:var(--text-muted);">حجم خریداری‌شده</td>
+                            <td><strong style="color:#60a5fa;font-size:15px;">{{ "{:,.0f}".format(unattributed.purchased_gb) }} GB</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not panels %}
+    <div class="col-12">
+        <div class="card card-dark">
+            <div class="empty-state">
+                <div class="es-icon"><svg class="ic"><use href="#i-server"/></svg></div>
+                هنوز پنلی به ربات متصل نشده است
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block head %}
+<style>
+    .ping-badge {
+        display: inline-flex; align-items: center; gap: 7px;
+        font-size: 11.5px; font-weight: 700; direction: ltr;
+        padding: 5px 12px; border-radius: 999px;
+        background: var(--bg-elevated); border: 1px solid var(--border-subtle);
+        color: var(--text-muted); min-width: 86px; justify-content: center;
+        transition: all .3s;
+    }
+    .ping-badge .dot { width: 8px; height: 8px; }
+    .ping-badge.p-ok   { color: #34d399; border-color: rgba(52,211,153,.3);  background: rgba(52,211,153,.07); }
+    .ping-badge.p-mid  { color: #fbbf24; border-color: rgba(251,191,36,.3);  background: rgba(251,191,36,.07); }
+    .ping-badge.p-slow { color: #fb923c; border-color: rgba(251,146,60,.3);  background: rgba(251,146,60,.07); }
+    .ping-badge.p-bad  { color: #f87171; border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.07); }
+    .panel-card:hover { border-color: var(--border-default); box-shadow: 0 10px 34px rgba(0,0,0,.35); }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function loadPing(force) {
+        document.querySelectorAll('.ping-badge').forEach(b => {
+            b.className = 'ping-badge';
+            b.querySelector('.ping-text').textContent = '…';
+        });
+        fetch('/api/panels-ping' + (force ? '?force=1' : ''))
+            .then(r => r.json())
+            .then(data => {
+                for (const [pid, res] of Object.entries(data.panels)) {
+                    const el = document.getElementById('ping-' + pid);
+                    if (!el) continue;
+                    const txt = el.querySelector('.ping-text');
+                    if (res.ok && res.ms !== null) {
+                        txt.textContent = res.ms + ' ms';
+                        el.classList.add(res.ms < 300 ? 'p-ok' : res.ms < 800 ? 'p-mid' : 'p-slow');
+                    } else {
+                        txt.textContent = 'قطع';
+                        el.classList.add('p-bad');
+                    }
+                }
+            })
+            .catch(() => {
+                document.querySelectorAll('.ping-badge').forEach(el => {
+                    el.querySelector('.ping-text').textContent = 'خطا';
+                    el.classList.add('p-bad');
+                });
+            });
+    }
+    loadPing(false);
+    setInterval(() => loadPing(false), 60000);
+</script>
+{% endblock %}

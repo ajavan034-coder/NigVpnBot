@@ -344,6 +344,9 @@
             <a href="{{ url_for('configs') }}" class="nav-item {% if request.endpoint == 'configs' %}active{% endif %}">
                 <svg class="ic"><use href="#i-key"/></svg> کانفیگ‌ها
             </a>
+            <a href="{{ url_for('panels') }}" class="nav-item {% if request.endpoint == 'panels' %}active{% endif %}">
+                <svg class="ic"><use href="#i-server"/></svg> پنل‌ها
+            </a>
             <a href="{{ url_for('receipts') }}" class="nav-item {% if request.endpoint == 'receipts' %}active{% endif %}">
                 <svg class="ic"><use href="#i-receipt"/></svg> رسیدها
                 {% if pending_receipts %}<span class="nav-badge">{{ pending_receipts }}</span>{% endif %}

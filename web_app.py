@@ -642,6 +642,86 @@ def config_deactivate(config_id):
     return redirect(url_for("configs"))
 
 
+# ─── Panels overview ────────────────────────────────────────────────
+_panels_ping_cache = {"data": None, "checked_at": 0}
+
+
+@app.route("/panels")
+@login_required
+def panels():
+    overview = web_db.get_panels_overview()
+    totals = web_db.get_panel_purchase_totals()
+    unattributed = web_db.get_unattributed_purchases()
+    return render_template(
+        "panels.html",
+        panels=overview,
+        totals=totals,
+        unattributed=unattributed,
+        panel_count=len(overview),
+        active_count=sum(1 for p in overview if p["is_active"]),
+    )
+
+
+@app.route("/api/panels-ping")
+@login_required
+def api_panels_ping():
+    """Measure latency to every registered panel URL (cached for 60s)."""
+    force = request.args.get("force") == "1"
+    now = time.time()
+    if not force and _panels_ping_cache["data"] and now - _panels_ping_cache["checked_at"] < 60:
+        return jsonify(_panels_ping_cache["data"])
+
+    import aiohttp
+
+    async def check(session, url):
+        start = time.time()
+        try:
+            async with session.head(
+                url, ssl=False, allow_redirects=True,
+                timeout=aiohttp.ClientTimeout(total=6),
+            ) as resp:
+                ms = int((time.time() - start) * 1000)
+                await resp.release()
+                return {"ok": resp.status < 500, "ms": ms}
+        except Exception:
+            pass
+        # Some servers reject HEAD — retry with GET
+        start = time.time()
+        try:
+            async with session.get(
+                url, ssl=False, timeout=aiohttp.ClientTimeout(total=6),
+            ) as resp:
+                ms = int((time.time() - start) * 1000)
+                await resp.release()
+                return {"ok": resp.status < 500, "ms": ms}
+        except Exception:
+            return {"ok": False, "ms": None}
+
+    async def run_all(urls):
+        results = {}
+        async with aiohttp.ClientSession() as session:
+            tasks = {str(pid): asyncio.ensure_future(check(session, url)) for pid, url in urls}
+            for pid, task in tasks.items():
+                results[pid] = await task
+        return results
+
+    panels_list = web_db.get_panels_overview()
+    urls = [(p["id"], p["url"]) for p in panels_list if p.get("url")]
+
+    payload = {"checked_at": int(now), "panels": {}}
+    if urls:
+        loop = asyncio.new_event_loop()
+        try:
+            payload["panels"] = loop.run_until_complete(run_all(urls))
+        except Exception:
+            payload["panels"] = {}
+        finally:
+            loop.close()
+
+    _panels_ping_cache.update({"data": payload, "checked_at": now})
+    return jsonify(payload)
+
+
 @app.route("/admins")
 @login_required
 def admins():
