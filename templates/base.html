@@ -51,6 +51,16 @@
             background: linear-gradient(135deg, var(--violet-500), var(--violet-700));
             display: flex; align-items: center; justify-content: center;
             box-shadow: 0 6px 20px rgba(124,58,237,.35), inset 0 1px 0 rgba(255,255,255,.15);
+            overflow: hidden; position: relative;
+        }
+        .brand-mark img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .brand-wrap { display: flex; flex-direction: column; align-items: center; gap: 5px; flex-shrink: 0; }
+        .brand-id {
+            font-size: 9.5px; font-weight: 600; letter-spacing: .4px;
+            color: var(--text-muted); background: rgba(139,92,246,.08);
+            border: 1px solid var(--border-subtle); border-radius: 999px;
+            padding: 2px 8px; line-height: 1.3;
+            max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
         .brand-mark svg.ic { width: 24px; height: 24px; stroke-width: 1.8; }
         .sidebar .brand h5 { color: var(--text-primary); font-weight: 800; margin: 0; font-size: 15.5px; letter-spacing: -.2px; }
@@ -316,10 +326,16 @@
     <nav class="sidebar" id="sidebar">
         <div class="brand">
             <div class="d-flex align-items-center gap-3">
-                <div class="brand-mark"><svg class="ic"><use href="#i-logo"/></svg></div>
+                <div class="brand-wrap">
+                    <div class="brand-mark" id="brandMark" title="آواتار ربات از تلگرام">
+                        <svg class="ic" id="brandLogoSvg"><use href="#i-logo"/></svg>
+                        <img src="" alt="" id="brandAvatarImg" style="display:none;">
+                    </div>
+                    <span class="brand-id" id="brandBotId" dir="ltr"></span>
+                </div>
                 <div>
                     <h5>نیگ‌سیتی</h5>
-                    <small>پنل مدیریت ربات</small>
+                    <small id="brandBotUser">پنل مدیریت ربات</small>
                 </div>
             </div>
         </div>
@@ -528,6 +544,27 @@
         }
         refreshStatus();
         setInterval(refreshStatus, 30000);
+
+        // ── Bot identity: avatar from Telegram + bot ID ──
+        (function loadBotIdentity() {
+            fetch('/api/bot-info').then(r => r.json()).then(d => {
+                if (!d || !d.id) return;
+                const idEl = document.getElementById('brandBotId');
+                if (idEl) idEl.textContent = 'ID ' + d.id;
+                if (d.username) {
+                    const userEl = document.getElementById('brandBotUser');
+                    if (userEl) userEl.textContent = '@' + d.username;
+                    const mark = document.getElementById('brandMark');
+                    if (mark) mark.title = '@' + d.username;
+                }
+                if (d.has_photo) {
+                    const img = document.getElementById('brandAvatarImg');
+                    const svg = document.getElementById('brandLogoSvg');
+                    img.src = '/bot-avatar?v=' + Date.now();
+                    img.onload = () => { img.style.display = 'block'; if (svg) svg.style.display = 'none'; };
+                }
+            }).catch(() => {});
+        })();
     </script>
     {% block scripts %}{% endblock %}
 </body>

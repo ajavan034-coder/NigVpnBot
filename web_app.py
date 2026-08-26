@@ -1008,6 +1008,73 @@ def menu_layout():
 
 # ─── Backup & Restore ───────────────────────────────────────────────
 BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ─── Bot identity (avatar + id) cache ───────────────────────────────
+_bot_info_cache = {"data": None, "checked_at": 0}
+
+
+async def _fetch_bot_info(bot):
+    """Fetch bot identity + profile photo from Telegram (runs on bot's loop)."""
+    import aiohttp
+
+    me = await bot.get_me()
+    info = {"id": me.id, "username": me.username, "name": me.first_name,
+            "has_photo": False}
+
+    photos = await bot.get_user_profile_photos(me.id, limit=1)
+    if photos.total_count:
+        largest = photos.photos[0][-1]
+        tg_file = await bot.get_file(largest.file_id)
+        url = f"https://api.telegram.org/file/bot{bot.token}/{tg_file.file_path}"
+        avatar_dir = os.path.join(BASE_DIR, "data")
+        os.makedirs(avatar_dir, exist_ok=True)
+        path = os.path.join(avatar_dir, "bot_avatar.jpg")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    payload = await resp.read()
+                    tmp = path + ".tmp"
+                    with open(tmp, "wb") as fh:
+                        fh.write(payload)
+                    os.replace(tmp, path)
+                    info["has_photo"] = True
+    return info
+
+
+@app.route("/api/bot-info")
+@login_required
+def api_bot_info():
+    """Bot identity for the panel branding (cached 10 minutes)."""
+    now = time.time()
+    cached = _bot_info_cache["data"]
+    if cached and now - _bot_info_cache["checked_at"] < 600:
+        return jsonify(cached)
+
+    import state
+    bot, loop = state.bot_instance, state.loop_instance
+    fresh = {"id": None, "username": None, "name": None, "has_photo": bool(
+        os.path.exists(os.path.join(BASE_DIR, "data", "bot_avatar.jpg")))}
+    if bot and loop:
+        try:
+            future = asyncio.run_coroutine_threadsafe(_fetch_bot_info(bot), loop)
+            fresh.update(future.result(timeout=20))
+            _bot_info_cache["data"] = fresh
+            _bot_info_cache["checked_at"] = now
+        except Exception as e:
+            app.logger.warning("bot-info fetch failed: %s", e)
+    return jsonify(cached or fresh)
+
+
+@app.route("/bot-avatar")
+@login_required
+def bot_avatar():
+    path = os.path.join(BASE_DIR, "data", "bot_avatar.jpg")
+    if os.path.exists(path):
+        from flask import send_file
+        resp = send_file(path, mimetype="image/jpeg", max_age=3600)
+        return resp
+    return "", 404
 
 
 def _format_size(size_bytes):
