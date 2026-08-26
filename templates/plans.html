@@ -1,24 +1,32 @@
 {% extends "base.html" %}
 {% block title %}پلن‌ها{% endblock %}
+{% block page_name %}پلن‌ها{% endblock %}
 {% block content %}
-<div class="page-header d-flex justify-content-between align-items-center">
-    <h3>مدیریت پلن‌ها</h3>
+<div class="page-header">
+    <div class="d-flex align-items-center gap-3">
+        <div class="ph-icon"><svg class="ic"><use href="#i-tags"/></svg></div>
+        <div>
+            <h3>پلن‌ها</h3>
+            <p>مدیریت پلن‌های فروش ربات</p>
+        </div>
+    </div>
     <a href="{{ url_for('plan_add') }}" class="btn btn-purple">
-        <i class="bi bi-plus-lg"></i> افزودن پلن
+        <svg class="ic ic-sm"><use href="#i-plus"/></svg> افزودن پلن
     </a>
 </div>
 
 <div class="card card-dark mb-4">
-    <div class="card-header"><i class="bi bi-chat-text"></i> متن هدر پلن‌ها</div>
+    <div class="card-header"><svg class="ic"><use href="#i-chat"/></svg> متن هدر لیست پلن‌ها</div>
     <div class="card-body">
         <form method="POST" action="{{ url_for('plans_save_header') }}">
             {{ csrf_field() }}
             <div class="mb-3">
-                <label class="form-label">متن نمایش داده شده بالای پلن‌ها در ربات</label>
-                <textarea name="plans_header_text" class="form-control" rows="3" placeholder="متن هدر را وارد کنید...">{{ plans_header }}</textarea>
-                <div class="form-text">از تگ‌های HTML مانند &lt;b&gt;بولد&lt;/b&gt; استفاده کنید</div>
+                <textarea name="plans_header_text" class="form-control" rows="3" placeholder="متنی که بالای لیست پلن‌ها در ربات نمایش داده می‌شود…">{{ plans_header }}</textarea>
+                <div class="form-text">از تگ‌های HTML پشتیبانی می‌شود؛ مثال: &lt;b&gt;متن بولد&lt;/b&gt;</div>
             </div>
-            <button type="submit" class="btn btn-purple"><i class="bi bi-check-lg"></i> ذخیره هدر</button>
+            <button type="submit" class="btn btn-purple">
+                <svg class="ic ic-sm"><use href="#i-check"/></svg> ذخیره متن
+            </button>
         </form>
     </div>
 </div>
@@ -28,33 +36,40 @@
         <table class="table table-dark align-middle mb-0">
             <thead>
                 <tr>
-                    <th>شناسه</th>
-                    <th>نام</th>
+                    <th>#</th>
+                    <th>نام پلن</th>
                     <th>حجم</th>
                     <th>مدت</th>
                     <th>قیمت</th>
                     <th>قیمت همکاری</th>
+                    <th>بخش</th>
                     <th>اینباندها</th>
                     <th>وضعیت</th>
-                    <th>عملیات</th>
+                    <th class="text-end">عملیات</th>
                 </tr>
             </thead>
             <tbody>
                 {% for plan in plans %}
                 <tr>
-                    <td>{{ plan.id }}</td>
-                    <td><strong>{{ plan.name }}</strong></td>
-                    <td>{{ plan.gb }} GB</td>
-                    <td>{{ plan.days }} روز</td>
-                    <td>{{ "{:,}".format(plan.price) }} {{ symbol }}</td>
+                    <td style="color:var(--text-muted);">{{ plan.id }}</td>
+                    <td>
+                        <strong>{{ plan.name }}</strong>
+                        {% if plan.is_ultimate %}<span class="badge badge-pending ms-1">ویژه</span>{% endif %}
+                    </td>
+                    <td>{{ plan.gb }} گیگ</td>
+                    <td>{{ plan.days }} روزه</td>
+                    <td style="font-weight:700;color:var(--violet-300);">{{ "{:,}".format(plan.price) }}</td>
                     <td>
                         {% if plan.collaborator_price %}
-                        {{ "{:,}".format(plan.collaborator_price) }} {{ symbol }}
-                        {% else %}
-                        <span class="text-muted">—</span>
-                        {% endif %}
+                        {{ "{:,}".format(plan.collaborator_price) }}
+                        {% else %}<span style="color:var(--text-muted);">—</span>{% endif %}
                     </td>
-                    <td><code>{{ plan.inbound_ids or 'جهانی' }}</code></td>
+                    <td>
+                        {% if plan.section_name %}
+                        <span class="badge badge-neutral">{{ plan.section_name }}</span>
+                        {% else %}<span style="color:var(--text-muted);">—</span>{% endif %}
+                    </td>
+                    <td><code class="vio" style="font-size:11px;">{{ plan.inbound_ids or 'همه' }}</code></td>
                     <td>
                         {% if plan.is_active %}
                         <span class="badge badge-active">فعال</span>
@@ -62,24 +77,27 @@
                         <span class="badge badge-expired">غیرفعال</span>
                         {% endif %}
                     </td>
-                    <td>
-                        <a href="{{ url_for('plan_edit', plan_id=plan.id) }}" class="btn btn-sm btn-outline-purple">
-                            <i class="bi bi-pencil"></i>
+                    <td class="text-end">
+                        <a href="{{ url_for('plan_edit', plan_id=plan.id) }}" class="btn btn-sm btn-ghost btn-icon" title="ویرایش">
+                            <svg class="ic ic-sm"><use href="#i-pencil"/></svg>
                         </a>
                         <form method="POST" action="{{ url_for('plan_delete', plan_id=plan.id) }}" class="d-inline"
-                              onsubmit="return confirm('آیا این پلن را حذف می‌کنید؟')">
-            {{ csrf_field() }}
-                            <button type="submit" class="btn btn-sm btn-outline-danger">
-                                <i class="bi bi-trash"></i>
+                              data-confirm="پلن «{{ plan.name }}» برای همیشه حذف می‌شود. مطمئن هستید؟">
+                            {{ csrf_field() }}
+                            <button type="submit" class="btn btn-sm btn-danger-soft btn-icon" title="حذف">
+                                <svg class="ic ic-sm"><use href="#i-trash"/></svg>
                             </button>
                         </form>
                     </td>
                 </tr>
                 {% endfor %}
                 {% if not plans %}
-                <tr>
-                    <td colspan="9" class="text-center text-muted py-4">پلنی یافت نشد</td>
-                </tr>
+                <tr><td colspan="10">
+                    <div class="empty-state">
+                        <div class="es-icon"><svg class="ic"><use href="#i-tags"/></svg></div>
+                        هنوز پلنی ساخته نشده است
+                    </div>
+                </td></tr>
                 {% endif %}
             </tbody>
         </table>

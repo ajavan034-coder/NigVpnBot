@@ -1,34 +1,43 @@
 {% extends "base.html" %}
 {% block title %}متن‌های ربات{% endblock %}
+{% block page_name %}متن‌های ربات{% endblock %}
 {% block content %}
-<div class="page-header d-flex justify-content-between align-items-center">
-    <h3>متن‌های ربات</h3>
+<div class="page-header">
+    <div class="d-flex align-items-center gap-3">
+        <div class="ph-icon"><svg class="ic"><use href="#i-chat"/></svg></div>
+        <div>
+            <h3>متن‌های ربات</h3>
+            <p>شخصی‌سازی پیام‌های ربات تلگرام</p>
+        </div>
+    </div>
     <button type="submit" form="textsForm" class="btn btn-purple">
-        <i class="bi bi-check-lg"></i> ذخیره همه
+        <svg class="ic ic-sm"><use href="#i-check"/></svg> ذخیره همه تغییرات
     </button>
 </div>
 
 <form id="textsForm" method="POST">
-            {{ csrf_field() }}
-<div class="row g-4">
-    {% for key, t in texts.items() %}
-    <div class="col-lg-6">
-        <div class="card card-dark">
-            <div class="card-header">
-                <i class="bi bi-chat-dots"></i> {{ t.label }}
-                {% if t.hint %}<small class="text-muted ms-2">— {{ t.hint }}</small>{% endif %}
-            </div>
-            <div class="card-body">
-                {% if t.variables and t.variables != "بدون متغیر" %}
-                <div class="mb-2 text-center">
-                    <small class="text-muted"><i class="bi bi-info-circle"></i> متغیرها: <code>{{ t.variables }}</code></small>
+    {{ csrf_field() }}
+    <div class="row g-4">
+        {% for key, t in texts.items() %}
+        <div class="col-lg-6">
+            <div class="card card-dark h-100">
+                <div class="card-header">
+                    {{ t.label }}
+                    {% if t.hint %}<small style="color:var(--text-muted);font-weight:400;">— {{ t.hint }}</small>{% endif %}
                 </div>
-                {% endif %}
-                <textarea name="{{ key }}" class="form-control" rows="4" dir="rtl" style="text-align:right;font-family:sans-serif;" placeholder="خالی بگذارید تا مقدار پیش‌فرض استفاده شود">{{ t.value }}</textarea>
+                <div class="card-body">
+                    {% if t.variables and t.variables != "بدون متغیر" %}
+                    <div class="mb-2 d-flex align-items-center gap-2" style="font-size:11.5px;color:var(--text-muted);">
+                        <svg class="ic ic-sm"><use href="#i-info"/></svg>
+                        متغیرها: <code class="vio">{{ t.variables }}</code>
+                    </div>
+                    {% endif %}
+                    <textarea name="{{ key }}" class="form-control" rows="4"
+                              placeholder="خالی بگذارید تا مقدار پیش‌فرض استفاده شود">{{ t.value }}</textarea>
+                </div>
             </div>
         </div>
+        {% endfor %}
     </div>
-    {% endfor %}
-</div>
 </form>
 {% endblock %}

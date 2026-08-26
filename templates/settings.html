@@ -1,10 +1,17 @@
 {% extends "base.html" %}
 {% block title %}تنظیمات{% endblock %}
+{% block page_name %}تنظیمات{% endblock %}
 {% block content %}
-<div class="page-header d-flex justify-content-between align-items-center">
-    <h3>تنظیمات ربات</h3>
+<div class="page-header">
+    <div class="d-flex align-items-center gap-3">
+        <div class="ph-icon"><svg class="ic"><use href="#i-sliders"/></svg></div>
+        <div>
+            <h3>تنظیمات ربات</h3>
+            <p>پیکربندی کلی ربات، پرداخت، پنل و اطلاع‌رسانی</p>
+        </div>
+    </div>
     <button type="submit" form="settingsForm" class="btn btn-purple">
-        <i class="bi bi-check-lg"></i> ذخیره همه تغییرات
+        <svg class="ic ic-sm"><use href="#i-check"/></svg> ذخیره همه تغییرات
     </button>
 </div>
 
@@ -13,7 +20,7 @@
 <div class="row g-4">
     <div class="col-lg-6">
         <div class="card card-dark">
-            <div class="card-header"><i class="bi bi-chat-dots"></i> عمومی</div>
+            <div class="card-header"><svg class="ic"><use href="#i-chat"/></svg> عمومی</div>
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label">توکن ربات</label>
@@ -50,7 +57,7 @@
         </div>
 
         <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-credit-card"></i> پرداخت</div>
+            <div class="card-header"><svg class="ic"><use href="#i-card"/></svg> پرداخت</div>
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label">شماره کارت</label>
@@ -72,7 +79,7 @@
         </div>
 
         <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-cloud-download"></i> تست رایگان</div>
+            <div class="card-header"><svg class="ic"><use href="#i-cloud-down"/></svg> تست رایگان</div>
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-6 mb-3">
@@ -91,7 +98,7 @@
         </div>
 
         <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-check-circle"></i> تایید خودکار</div>
+            <div class="card-header"><svg class="ic"><use href="#i-check-circle"/></svg> تایید خودکار</div>
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label">حداکثر مبلغ تایید خودکار (0 = غیرفعال)</label>
@@ -109,7 +116,7 @@
         </div>
 
         <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-plus-circle"></i> حجم اضافی</div>
+            <div class="card-header"><svg class="ic"><use href="#i-plus"/></svg> حجم اضافی</div>
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label">قیمت هر گیگابایت حجم اضافی</label>
@@ -120,7 +127,7 @@
         </div>
 
         <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-people"></i> زیرمجموعه گیری</div>
+            <div class="card-header"><svg class="ic"><use href="#i-users"/></svg> زیرمجموعه گیری</div>
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-6 mb-3">
@@ -180,7 +187,7 @@
         </div>
 
         <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-qr-code"></i> پس‌زمینه QR Code</div>
+            <div class="card-header"><svg class="ic"><use href="#i-qr"/></svg> پس‌زمینه QR Code</div>
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label">تصویر پس‌زمینه QR</label>
@@ -195,15 +202,15 @@
                         <div>
                             <input type="file" name="qr_bg" accept="image/*" id="qrBgInput" style="display:none" onchange="previewQrBg(this)">
                             <button type="button" class="btn btn-outline-purple btn-sm mb-2" onclick="document.getElementById('qrBgInput').click()">
-                                <i class="bi bi-upload"></i> آپلود تصویر
+                                <svg class="ic"><use href="#i-upload"/></svg> آپلود تصویر
                             </button>
                             <button type="button" class="btn btn-purple btn-sm mb-2" id="qrBgSubmit" style="display:none" onclick="uploadQrBg()">
-                                <i class="bi bi-check-lg"></i> ذخیره
+                                <svg class="ic"><use href="#i-check"/></svg> ذخیره
                             </button>
                             {% if qr_bg_exists %}
                             <br>
                             <button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteQrBg()">
-                                <i class="bi bi-trash"></i> حذف پس‌زمینه
+                                <svg class="ic"><use href="#i-trash"/></svg> حذف پس‌زمینه
                             </button>
                             {% endif %}
                         </div>
@@ -214,7 +221,7 @@
         </div>
 
         <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-bell"></i> اعلان‌ها</div>
+            <div class="card-header"><svg class="ic"><use href="#i-bell"/></svg> اعلان‌ها</div>
             <div class="card-body">
                 <div class="mb-0">
                     <label class="form-label">شناسه کانال اعلان</label>
@@ -225,7 +232,7 @@
         </div>
 
         <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-link-45deg"></i> لینک کانال و پشتیبانی</div>
+            <div class="card-header"><svg class="ic"><use href="#i-link"/></svg> لینک کانال و پشتیبانی</div>
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label">لینک کانال</label>
@@ -249,7 +256,7 @@
         </div>
 
         <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-broadcast"></i> عضویت اجباری در کانال</div>
+            <div class="card-header"><svg class="ic"><use href="#i-volume"/></svg> عضویت اجباری در کانال</div>
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-6 mb-3">
@@ -307,7 +314,7 @@
         </div>
 
         <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-hdd-network"></i> پنل 3x-ui</div>
+            <div class="card-header"><svg class="ic"><use href="#i-server"/></svg> پنل 3x-ui</div>
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label">آدرس پنل</label>
@@ -337,7 +344,7 @@
                     <label class="form-label">تست اتصال</label>
                     <div class="d-flex gap-2">
                         <button type="button" class="btn btn-outline-purple" onclick="testConnection()">
-                            <i class="bi bi-lightning"></i> تست اتصال
+                            <svg class="ic"><use href="#i-zap"/></svg> تست اتصال
                         </button>
                         <span id="testResult" class="align-self-center"></span>
                     </div>
@@ -348,7 +355,7 @@
 
     <div class="col-lg-6">
         <div class="card card-dark">
-            <div class="card-header"><i class="bi bi-hand-index-thumb"></i> دکمه‌های منوی کاربر</div>
+            <div class="card-header"><svg class="ic"><use href="#i-tap"/></svg> دکمه‌های منوی کاربر</div>
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label">دکمه کیف پول</label>
@@ -413,7 +420,7 @@
         </div>
 
         <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-shield-lock"></i> دکمه‌های منوی ادمین</div>
+            <div class="card-header"><svg class="ic"><use href="#i-shield-lock"/></svg> دکمه‌های منوی ادمین</div>
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label">دکمه آمار</label>
@@ -452,13 +459,13 @@ function testConnection() {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                result.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> ' + data.message + '</span>';
+                result.innerHTML = '<span class="text-success"><svg class="ic"><use href="#i-check-circle"/></svg> ' + data.message + '</span>';
             } else {
-                result.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle"></i> ' + data.message + '</span>';
+                result.innerHTML = '<span class="text-danger"><svg class="ic"><use href="#i-x-circle"/></svg> ' + data.message + '</span>';
             }
         })
         .catch(() => {
-            result.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle"></i> اتصال ناموفق</span>';
+            result.innerHTML = '<span class="text-danger"><svg class="ic"><use href="#i-x-circle"/></svg> اتصال ناموفق</span>';
         });
 }
 function previewQrBg(input) {
@@ -479,7 +486,7 @@ function uploadQrBg() {
     formData.append('qr_bg', input.files[0]);
     formData.append('_csrf_token', '{{ csrf_token() }}');
     var btn = document.getElementById('qrBgSubmit');
-    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> در حال آپلود...';
+    btn.innerHTML = '<svg class="ic"><use href="#i-hourglass"/></svg> در حال آپلود...';
     btn.disabled = true;
     fetch('/settings/upload-qr-bg', {method: 'POST', body: formData})
         .then(function() { location.reload(); })

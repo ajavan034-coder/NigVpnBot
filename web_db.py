@@ -39,6 +39,16 @@ def get_user_count():
     return row["cnt"]
 
 
+def get_new_users_today():
+    conn = get_conn()
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    row = conn.execute(
+        "SELECT COUNT(*) as cnt FROM users WHERE created_at LIKE ? || '%'", (today,)
+    ).fetchone()
+    conn.close()
+    return row["cnt"]
+
+
 def get_config_count():
     conn = get_conn()
     row = conn.execute("SELECT COUNT(*) as cnt FROM configs WHERE is_active = 1").fetchone()
@@ -64,13 +74,32 @@ def get_all_users(search=None):
     conn = get_conn()
     if search:
         rows = conn.execute(
-            "SELECT * FROM users WHERE id = ? OR username LIKE ? OR first_name LIKE ? ORDER BY created_at DESC",
+            "SELECT * FROM users WHERE CAST(id AS TEXT) = ? OR username LIKE ? OR first_name LIKE ? ORDER BY created_at DESC",
             (search, f"%{search}%", f"%{search}%"),
         ).fetchall()
     else:
         rows = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_users_page(page=1, per_page=25, search=None):
+    """Paginated users list. Returns (users, total, pages)."""
+    conn = get_conn()
+    where, params = "", []
+    if search:
+        where = "WHERE CAST(id AS TEXT) = ? OR username LIKE ? OR first_name LIKE ?"
+        params = [search, f"%{search}%", f"%{search}%"]
+    total = conn.execute(f"SELECT COUNT(*) as cnt FROM users {where}", params).fetchone()["cnt"]
+    pages = max(1, -(-total // per_page))
+    page = max(1, min(page, pages))
+    offset = (page - 1) * per_page
+    rows = conn.execute(
+        f"SELECT * FROM users {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        params + [per_page, offset],
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows], total, pages
 
 
 def get_user(user_id):
@@ -96,7 +125,11 @@ def set_banned(user_id, banned):
 
 def get_all_plans():
     conn = get_conn()
-    rows = conn.execute("SELECT * FROM plans ORDER BY price").fetchall()
+    rows = conn.execute(
+        "SELECT p.*, s.name AS section_name FROM plans p "
+        "LEFT JOIN plan_sections s ON p.section_id = s.id "
+        "ORDER BY s.display_order, p.price"
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -108,9 +141,12 @@ def get_plan(plan_id):
     return dict(row) if row else None
 
 
-def add_plan(name, gb, days, price, inbound_ids="", is_ultimate=False, collaborator_price=0):
+def add_plan(name, gb, days, price, inbound_ids="", is_ultimate=False, collaborator_price=0, section_id=None):
     conn = get_conn()
-    cur = conn.execute("INSERT INTO plans (name, gb, days, price, inbound_ids, is_ultimate, collaborator_price) VALUES (?, ?, ?, ?, ?, ?, ?)", (name, gb, days, price, inbound_ids, 1 if is_ultimate else 0, collaborator_price))
+    cur = conn.execute(
+        "INSERT INTO plans (name, gb, days, price, inbound_ids, is_ultimate, collaborator_price, section_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (name, gb, days, price, inbound_ids, 1 if is_ultimate else 0, collaborator_price, section_id),
+    )
     plan_id = cur.lastrowid
     conn.commit()
     conn.close()
@@ -204,22 +240,39 @@ def reject_receipt(receipt_id, admin_id=0):
     conn.close()
 
 
-def get_receipts(status=None, limit=50):
+def get_receipts(status=None, limit=50, page=None, per_page=None):
     conn = get_conn()
-    if status:
+    where, params = "", []
+    if status and status != "all":
+        where = "WHERE r.status = ?"
+        params.append(status)
+    if page is not None and per_page is not None:
+        total = conn.execute(
+            f"SELECT COUNT(*) as cnt FROM receipts r {where}", params
+        ).fetchone()["cnt"]
+        pages = max(1, -(-total // per_page))
+        page = max(1, min(page, pages))
         rows = conn.execute(
-            "SELECT r.*, u.username FROM receipts r LEFT JOIN users u ON r.user_id = u.id "
-            "WHERE r.status = ? ORDER BY r.created_at DESC LIMIT ?",
-            (status, limit),
+            f"SELECT r.*, u.username FROM receipts r LEFT JOIN users u ON r.user_id = u.id "
+            f"{where} ORDER BY r.created_at DESC LIMIT ? OFFSET ?",
+            params + [per_page, (page - 1) * per_page],
         ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT r.*, u.username FROM receipts r LEFT JOIN users u ON r.user_id = u.id "
-            "ORDER BY r.created_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows], total, pages
+    rows = conn.execute(
+        "SELECT r.*, u.username FROM receipts r LEFT JOIN users u ON r.user_id = u.id "
+        f"{where} ORDER BY r.created_at DESC LIMIT ?",
+        params + [limit],
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def count_receipts_by_status():
+    conn = get_conn()
+    rows = conn.execute("SELECT status, COUNT(*) as cnt FROM receipts GROUP BY status").fetchall()
+    conn.close()
+    return {r["status"]: r["cnt"] for r in rows}
 
 
 def get_user_configs(user_id):
@@ -231,11 +284,40 @@ def get_user_configs(user_id):
     return [dict(r) for r in rows]
 
 
-def get_all_configs(limit=100):
+def get_all_configs(limit=100, page=None, per_page=None):
     conn = get_conn()
+    if page is not None and per_page is not None:
+        total = conn.execute("SELECT COUNT(*) as cnt FROM configs").fetchone()["cnt"]
+        pages = max(1, -(-total // per_page))
+        page = max(1, min(page, pages))
+        rows = conn.execute(
+            "SELECT c.*, u.username FROM configs c LEFT JOIN users u ON c.user_id = u.id "
+            "ORDER BY c.created_at DESC LIMIT ? OFFSET ?",
+            (per_page, (page - 1) * per_page),
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows], total, pages
     rows = conn.execute(
         "SELECT c.*, u.username FROM configs c LEFT JOIN users u ON c.user_id = u.id "
         "ORDER BY c.created_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def activate_config(config_id):
+    conn = get_conn()
+    conn.execute("UPDATE configs SET is_active = 1 WHERE id = ?", (config_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_recent_receipts(limit=5):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT r.*, u.username FROM receipts r LEFT JOIN users u ON r.user_id = u.id "
+        "ORDER BY r.created_at DESC LIMIT ?",
         (limit,),
     ).fetchall()
     conn.close()

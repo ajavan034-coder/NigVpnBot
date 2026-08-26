@@ -1,68 +1,88 @@
 {% extends "base.html" %}
 {% block title %}کاربران{% endblock %}
+{% block page_name %}کاربران{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h3>مدیریت کاربران</h3>
-    <p style="color:var(--text-muted);font-size:14px;margin:4px 0 0;">مشاهده و مدیریت کاربران ربات</p>
-</div>
-<div class="card card-dark mb-4">
-    <div class="card-body p-3">
-        <form method="GET" class="d-flex gap-2">
-            <input type="text" name="q" class="form-control" placeholder="جستجو بر اساس ID، نام کاربری یا نام..."
-                   value="{{ search or '' }}" style="max-width:400px;">
-            <button type="submit" class="btn btn-purple"><i class="bi bi-search"></i> جستجو</button>
-            {% if search %}
-            <a href="{{ url_for('users') }}" class="btn btn-outline-purple">پاک کردن</a>
-            {% endif %}
-        </form>
+    <div class="d-flex align-items-center gap-3">
+        <div class="ph-icon"><svg class="ic"><use href="#i-users"/></svg></div>
+        <div>
+            <h3>کاربران</h3>
+            <p>{{ total }} کاربر ثبت‌نام شده در ربات</p>
+        </div>
     </div>
+    <form method="GET" class="d-flex gap-2" style="max-width:420px;flex:1;">
+        <input type="text" name="q" class="form-control" placeholder="جست‌وجو بر اساس نام، یوزرنیم یا ID…"
+               value="{{ search or '' }}">
+        <button type="submit" class="btn btn-purple btn-icon" title="جست‌وجو">
+            <svg class="ic"><use href="#i-search"/></svg>
+        </button>
+        {% if search %}
+        <a href="{{ url_for('users') }}" class="btn btn-ghost btn-icon" title="پاک کردن">
+            <svg class="ic"><use href="#i-x"/></svg>
+        </a>
+        {% endif %}
+    </form>
 </div>
+
 <div class="card card-dark">
     <div class="table-responsive">
         <table class="table table-dark align-middle mb-0">
             <thead>
                 <tr>
                     <th>شناسه</th>
-                    <th>نام کاربری</th>
+                    <th>یوزرنیم</th>
                     <th>نام</th>
                     <th>موجودی</th>
                     <th>تاریخ عضویت</th>
                     <th>وضعیت</th>
-                    <th>عملیات</th>
+                    <th class="text-end">عملیات</th>
                 </tr>
             </thead>
             <tbody>
                 {% for u in users %}
                 <tr>
-                    <td><code style="color:var(--purple-400);">{{ u.id }}</code></td>
-                    <td>{{ '@' + u.username if u.username else '-' }}</td>
-                    <td style="font-weight:500;">{{ u.first_name or '-' }}</td>
-                    <td style="font-weight:600;">{{ "{:,.0f}".format(u.balance) }}</td>
-                    <td style="color:var(--text-muted);font-size:13px;">{{ u.created_at[:10] if u.created_at else '-' }}</td>
+                    <td><span class="copy-chip" data-copy="{{ u.id }}" title="کپی شناسه">{{ u.id }} <svg class="ic"><use href="#i-copy"/></svg></span></td>
+                    <td>{{ '@' + u.username if u.username else '<span style="color:var(--text-muted)">—</span>' | safe }}</td>
+                    <td style="font-weight:500;">{{ u.first_name or '—' }}</td>
+                    <td style="font-weight:700;color:var(--violet-300);">{{ "{:,.0f}".format(u.balance) }}</td>
+                    <td style="color:var(--text-muted);font-size:12.5px;" dir="ltr">{{ u.created_at[:10] if u.created_at else '—' }}</td>
                     <td>
                         {% if u.is_banned %}
-                        <span class="badge badge-expired"><i class="bi bi-shield-x"></i> مسدود</span>
+                        <span class="badge badge-expired"><svg class="ic ic-sm"><use href="#i-lock"/></svg> مسدود</span>
                         {% else %}
-                        <span class="badge badge-active"><i class="bi bi-shield-check"></i> فعال</span>
+                        <span class="badge badge-active"><svg class="ic ic-sm"><use href="#i-shield-check"/></svg> فعال</span>
                         {% endif %}
                     </td>
-                    <td>
+                    <td class="text-end">
                         <a href="{{ url_for('user_detail', user_id=u.id) }}" class="btn btn-sm btn-outline-purple">
-                            <i class="bi bi-eye"></i> مشاهده
+                            <svg class="ic ic-sm"><use href="#i-eye"/></svg> مشاهده
                         </a>
                     </td>
                 </tr>
                 {% endfor %}
                 {% if not users %}
-                <tr>
-                    <td colspan="7" class="text-center py-5" style="color:var(--text-muted);">
-                        <i class="bi bi-people" style="font-size:40px;display:block;margin-bottom:12px;opacity:.3;"></i>
-                        کاربری یافت نشد
-                    </td>
-                </tr>
+                <tr><td colspan="7">
+                    <div class="empty-state">
+                        <div class="es-icon"><svg class="ic"><use href="#i-users"/></svg></div>
+                        {% if search %}کاربری با عبارت «{{ search }}» یافت نشد{% else %}هنوز کاربری ثبت‌نام نکرده است{% endif %}
+                    </div>
+                </td></tr>
                 {% endif %}
             </tbody>
         </table>
     </div>
+    {% if pages > 1 %}
+    <div class="d-flex justify-content-between align-items-center p-3" style="border-top:1px solid var(--border-subtle);">
+        <span class="pager pg-info">صفحه {{ page }} از {{ pages }}</span>
+        <div class="pager">
+            <a href="{{ url_for('users', q=search, page=page-1) }}" class="{% if page <= 1 %}disabled{% endif %}">
+                <svg class="ic ic-sm"><use href="#i-arrow-right"/></svg> قبلی
+            </a>
+            <a href="{{ url_for('users', q=search, page=page+1) }}" class="{% if page >= pages %}disabled{% endif %}">
+                بعدی <svg class="ic ic-sm"><use href="#i-arrow-left"/></svg>
+            </a>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

@@ -1,84 +1,115 @@
 {% extends "base.html" %}
 {% block title %}رسیدها{% endblock %}
+{% block page_name %}رسیدها{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h3>مدیریت رسیدها</h3>
+    <div class="d-flex align-items-center gap-3">
+        <div class="ph-icon"><svg class="ic"><use href="#i-receipt"/></svg></div>
+        <div>
+            <h3>رسیدها</h3>
+            <p>بررسی و تایید پرداخت‌های کاربران</p>
+        </div>
+    </div>
 </div>
-<div class="d-flex gap-2 mb-4">
-    <a href="{{ url_for('receipts', status='pending') }}"
-       class="btn {{ 'btn-warning' if status == 'pending' else 'btn-outline-warning' }} btn-sm">
-        در انتظار
+
+<div class="filter-pills mb-4">
+    <a href="{{ url_for('receipts', status='pending') }}" class="fpill {{ 'active' if status == 'pending' }}">
+        <svg class="ic ic-sm"><use href="#i-alert-circle"/></svg> در انتظار
+        <span class="cnt">{{ counts.get('pending', 0) }}</span>
     </a>
-    <a href="{{ url_for('receipts', status='approved') }}"
-       class="btn {{ 'btn-success' if status == 'approved' else 'btn-outline-success' }} btn-sm">
-        تایید شده
+    <a href="{{ url_for('receipts', status='approved') }}" class="fpill {{ 'active' if status == 'approved' }}">
+        <svg class="ic ic-sm"><use href="#i-check"/></svg> تایید شده
+        <span class="cnt">{{ counts.get('approved', 0) }}</span>
     </a>
-    <a href="{{ url_for('receipts', status='rejected') }}"
-       class="btn {{ 'btn-danger' if status == 'rejected' else 'btn-outline-danger' }} btn-sm">
-        رد شده
+    <a href="{{ url_for('receipts', status='rejected') }}" class="fpill {{ 'active' if status == 'rejected' }}">
+        <svg class="ic ic-sm"><use href="#i-x"/></svg> رد شده
+        <span class="cnt">{{ counts.get('rejected', 0) }}</span>
     </a>
-    <a href="{{ url_for('receipts', status='all') }}"
-       class="btn {{ 'btn-secondary' if status == 'all' else 'btn-outline-secondary' }} btn-sm">
-        همه
+    <a href="{{ url_for('receipts', status='all') }}" class="fpill {{ 'active' if status == 'all' }}">
+        <svg class="ic ic-sm"><use href="#i-list"/></svg> همه
+        <span class="cnt">{{ counts.get('pending', 0) + counts.get('approved', 0) + counts.get('rejected', 0) }}</span>
     </a>
 </div>
+
 <div class="card card-dark">
     <div class="table-responsive">
         <table class="table table-dark align-middle mb-0">
             <thead>
                 <tr>
-                    <th>شناسه</th>
+                    <th>#</th>
                     <th>کاربر</th>
                     <th>مبلغ</th>
-                    <th>تاریخ</th>
+                    <th>تاریخ ثبت</th>
                     <th>وضعیت</th>
-                    <th>عملیات</th>
+                    <th class="text-end">عملیات</th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in receipts %}
                 <tr>
-                    <td>#{{ r.id }}</td>
-                    <td>{{ '@' + r.username if r.username else r.user_id }}</td>
-                    <td>{{ "{:,.0f}".format(r.amount) }} {{ symbol }}</td>
-                    <td>{{ r.created_at[:16] if r.created_at else '-' }}</td>
+                    <td style="color:var(--text-muted);">#{{ r.id }}</td>
                     <td>
-                        {% if r.status == 'pending' %}
-                        <span class="badge badge-pending">در انتظار</span>
-                        {% elif r.status == 'approved' %}
-                        <span class="badge badge-active">تایید شده</span>
+                        {% if r.username %}
+                        <span class="copy-chip" data-copy="{{ '@' + r.username }}">@{{ r.username }} <svg class="ic"><use href="#i-copy"/></svg></span>
                         {% else %}
-                        <span class="badge badge-expired">رد شده</span>
+                        <span class="copy-chip" data-copy="{{ r.user_id }}">{{ r.user_id }} <svg class="ic"><use href="#i-copy"/></svg></span>
                         {% endif %}
                     </td>
+                    <td style="font-weight:700;color:var(--violet-300);">{{ "{:,.0f}".format(r.amount) }} {{ symbol }}</td>
+                    <td dir="ltr" style="text-align:right;color:var(--text-muted);font-size:12.5px;">{{ r.created_at[:16] if r.created_at else '—' }}</td>
                     <td>
                         {% if r.status == 'pending' %}
+                        <span class="badge badge-pending"><svg class="ic ic-sm"><use href="#i-alert-circle"/></svg> در انتظار</span>
+                        {% elif r.status == 'approved' %}
+                        <span class="badge badge-active"><svg class="ic ic-sm"><use href="#i-check"/></svg> تایید شده</span>
+                        {% else %}
+                        <span class="badge badge-expired"><svg class="ic ic-sm"><use href="#i-x"/></svg> رد شده</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if r.status == 'pending' %}
                         <form method="POST" action="{{ url_for('receipt_approve', receipt_id=r.id) }}" class="d-inline">
-            {{ csrf_field() }}
-                            <button type="submit" class="btn btn-sm btn-outline-success">
-                                <i class="bi bi-check-lg"></i>
+                            {{ csrf_field() }}
+                            <button type="submit" class="btn btn-sm btn-success-soft btn-icon" title="تایید و شارژ موجودی">
+                                <svg class="ic ic-sm"><use href="#i-check"/></svg>
                             </button>
                         </form>
-                        <form method="POST" action="{{ url_for('receipt_reject', receipt_id=r.id) }}" class="d-inline">
-            {{ csrf_field() }}
-                            <button type="submit" class="btn btn-sm btn-outline-danger"
-                                    onclick="return confirm('آیا این رسید را رد می‌کنید؟')">
-                                <i class="bi bi-x-lg"></i>
+                        <form method="POST" action="{{ url_for('receipt_reject', receipt_id=r.id) }}" class="d-inline"
+                              data-confirm="رسید #{{ r.id }} رد می‌شود و به کاربر اطلاع داده خواهد شد. ادامه؟">
+                            {{ csrf_field() }}
+                            <button type="submit" class="btn btn-sm btn-danger-soft btn-icon" title="رد رسید">
+                                <svg class="ic ic-sm"><use href="#i-x"/></svg>
                             </button>
                         </form>
                         {% else %}
-                        <span class="text-muted">-</span>
+                        <span style="color:var(--text-muted);">—</span>
                         {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
                 {% if not receipts %}
-                <tr>
-                    <td colspan="6" class="text-center text-muted py-4">رسیدی یافت نشد</td>
-                </tr>
+                <tr><td colspan="6">
+                    <div class="empty-state">
+                        <div class="es-icon"><svg class="ic"><use href="#i-inbox"/></svg></div>
+                        رسیدی در این دسته یافت نشد
+                    </div>
+                </td></tr>
                 {% endif %}
             </tbody>
         </table>
     </div>
+    {% if pages > 1 %}
+    <div class="d-flex justify-content-between align-items-center p-3" style="border-top:1px solid var(--border-subtle);">
+        <span class="pager pg-info">صفحه {{ page }} از {{ pages }} · {{ total }} مورد</span>
+        <div class="pager">
+            <a href="{{ url_for('receipts', status=status, page=page-1) }}" class="{% if page <= 1 %}disabled{% endif %}">
+                <svg class="ic ic-sm"><use href="#i-arrow-right"/></svg> قبلی
+            </a>
+            <a href="{{ url_for('receipts', status=status, page=page+1) }}" class="{% if page >= pages %}disabled{% endif %}">
+                بعدی <svg class="ic ic-sm"><use href="#i-arrow-left"/></svg>
+            </a>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

@@ -1,56 +1,64 @@
 {% extends "base.html" %}
 {% block title %}ادمین‌ها{% endblock %}
+{% block page_name %}ادمین‌ها{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h3>مدیریت ادمین‌ها</h3>
-    <p style="color:var(--text-muted);font-size:14px;margin:4px 0 0;">افزودن و حذف ادمین‌های ربات</p>
+    <div class="d-flex align-items-center gap-3">
+        <div class="ph-icon"><svg class="ic"><use href="#i-shield-check"/></svg></div>
+        <div>
+            <h3>ادمین‌ها</h3>
+            <p>مدیریت ادمین‌های ربات تلگرام</p>
+        </div>
+    </div>
 </div>
+
 <div class="row g-4">
     <div class="col-lg-5">
         <div class="card card-dark">
-            <div class="card-header"><i class="bi bi-person-plus" style="color:var(--purple-400);"></i> افزودن ادمین</div>
+            <div class="card-header"><svg class="ic" style="color:var(--green);"><use href="#i-person-plus"/></svg> افزودن ادمین جدید</div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('admin_add') }}">
-            {{ csrf_field() }}
+                    {{ csrf_field() }}
                     <div class="mb-3">
-                        <label class="form-label">شناسه تلگرام</label>
-                        <input type="number" name="user_id" class="form-control" required placeholder="123456789">
+                        <label class="form-label">شناسه عددی تلگرام</label>
+                        <input type="number" name="user_id" class="form-control" required placeholder="123456789" dir="ltr" style="text-align:left;">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">نام کاربری (اختیاری)</label>
-                        <input type="text" name="username" class="form-control" placeholder="@username">
+                        <label class="form-label">یوزرنیم (اختیاری)</label>
+                        <input type="text" name="username" class="form-control" placeholder="@username" dir="ltr" style="text-align:left;">
                     </div>
                     <button type="submit" class="btn btn-purple w-100">
-                        <i class="bi bi-plus-lg"></i> افزودن ادمین
+                        <svg class="ic ic-sm"><use href="#i-plus"/></svg> افزودن به لیست ادمین‌ها
                     </button>
                 </form>
             </div>
         </div>
     </div>
     <div class="col-lg-7">
-        <div class="card card-dark">
+        <div class="card card-dark h-100">
             <div class="card-header">
-                <i class="bi bi-shield-check" style="color:#4ade80;"></i> ادمین‌های فعلی ({{ admins|length }})
+                <svg class="ic"><use href="#i-shield"/></svg> ادمین‌های فعلی
+                <span class="badge badge-neutral ms-auto">{{ admins|length }} نفر</span>
             </div>
-            <div class="card-body">
+            <div class="card-body p-0">
                 {% if admins %}
                 <div class="table-responsive">
                     <table class="table table-dark mb-0">
                         <thead>
-                            <tr><th>شناسه</th><th>نام کاربری</th><th>تاریخ</th><th></th></tr>
+                            <tr><th>شناسه</th><th>یوزرنیم</th><th>تاریخ افزودن</th><th class="text-end"></th></tr>
                         </thead>
                         <tbody>
                             {% for a in admins %}
                             <tr>
-                                <td><code style="color:var(--purple-400);">{{ a.user_id }}</code></td>
-                                <td>{{ '@' + a.username if a.username else '-' }}</td>
-                                <td style="color:var(--text-muted);font-size:13px;">{{ a.added_at[:10] if a.added_at else '-' }}</td>
-                                <td>
-                                    <form method="POST" action="{{ url_for('admin_remove', user_id=a.user_id) }}" class="d-inline">
-            {{ csrf_field() }}
-                                        <button type="submit" class="btn btn-sm" style="background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.2);"
-                                                onclick="return confirm('آیا این ادمین را حذف می‌کنید؟')">
-                                            <i class="bi bi-trash"></i>
+                                <td><span class="copy-chip" data-copy="{{ a.user_id }}">{{ a.user_id }} <svg class="ic"><use href="#i-copy"/></svg></span></td>
+                                <td>{{ '@' + a.username if a.username else '—' }}</td>
+                                <td dir="ltr" style="text-align:right;color:var(--text-muted);font-size:12.5px;">{{ a.added_at[:10] if a.added_at else '—' }}</td>
+                                <td class="text-end">
+                                    <form method="POST" action="{{ url_for('admin_remove', user_id=a.user_id) }}"
+                                          data-confirm="ادمین {{ a.username or a.user_id }} حذف می‌شود. مطمئن هستید؟">
+                                        {{ csrf_field() }}
+                                        <button type="submit" class="btn btn-sm btn-danger-soft btn-icon" title="حذف ادمین">
+                                            <svg class="ic ic-sm"><use href="#i-trash"/></svg>
                                         </button>
                                     </form>
                                 </td>
@@ -60,10 +68,10 @@
                     </table>
                 </div>
                 {% else %}
-                <p class="text-center py-4" style="color:var(--text-muted);">
-                    <i class="bi bi-shield-x" style="font-size:32px;display:block;margin-bottom:8px;opacity:.3;"></i>
-                    ادمینی یافت نشد
-                </p>
+                <div class="empty-state">
+                    <div class="es-icon"><svg class="ic"><use href="#i-shield-x"/></svg></div>
+                    هنوز ادمینی افزوده نشده است
+                </div>
                 {% endif %}
             </div>
         </div>

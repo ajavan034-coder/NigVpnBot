@@ -1,42 +1,151 @@
 {% extends "base.html" %}
 {% block title %}ارسال همگانی{% endblock %}
+{% block page_name %}ارسال همگانی{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h3>ارسال پیام همگانی</h3>
+    <div class="d-flex align-items-center gap-3">
+        <div class="ph-icon"><svg class="ic"><use href="#i-volume"/></svg></div>
+        <div>
+            <h3>ارسال پیام همگانی</h3>
+            <p>ارسال مستقیم پیام به تمام کاربران ربات</p>
+        </div>
+    </div>
 </div>
-<div class="row">
+
+<div class="row g-4">
     <div class="col-lg-8">
         <div class="card card-dark">
-            <div class="card-header"><i class="bi bi-megaphone"></i> ارسال به همه کاربران</div>
+            <div class="card-header"><svg class="ic"><use href="#i-send"/></svg> متن پیام</div>
             <div class="card-body">
-                <form method="POST">
-            {{ csrf_field() }}
+                <form method="POST" id="broadcastForm">
+                    {{ csrf_field() }}
                     <div class="mb-3">
                         <label class="form-label">پیام (پشتیبانی از HTML)</label>
-                        <textarea name="message" class="form-control" rows="8"
-                                  placeholder="پیام خود را اینجا وارد کنید...&#10;&#10;پشتیبانی از HTML: &lt;b&gt;بولد&lt;/b&gt;, &lt;i&gt;ایتالیک&lt;/i&gt;, &lt;a href='...'&gt;لینک&lt;/a&gt;"></textarea>
+                        <textarea name="message" id="msgBox" class="form-control" rows="9"
+                                  placeholder="پیام خود را اینجا بنویسید…&#10;&#10;پشتیبانی از HTML:&#10;&lt;b&gt;متن بولد&lt;/b&gt;&#10;&lt;i&gt;ایتالیک&lt;/i&gt;&#10;&lt;a href='https://…'&gt;لینک&lt;/a&gt;"></textarea>
                     </div>
-                    <button type="submit" class="btn btn-purple"
-                            onclick="return confirm('آیا این پیام را به همه کاربران ارسال می‌کنید؟')">
-                        <i class="bi bi-send"></i> ارسال همگانی
-                    </button>
+                    <div class="d-flex gap-2 align-items-center flex-wrap">
+                        <button type="submit" class="btn btn-purple" id="sendBtn">
+                            <svg class="ic ic-sm"><use href="#i-send"/></svg> ارسال به همه کاربران
+                        </button>
+                        <button type="button" class="btn btn-danger-soft" id="cancelBtn" style="display:none;">
+                            <svg class="ic ic-sm"><use href="#i-x"/></svg> توقف ارسال
+                        </button>
+                        <span style="font-size:11.5px;color:var(--text-muted);" id="charCount"></span>
+                    </div>
                 </form>
+
+                <!-- Live progress -->
+                <div id="progressCard" style="display:none;" class="mt-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span style="font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px;">
+                            <svg class="ic ic-sm ic-spin" style="color:var(--violet-400);"><use href="#i-spinner"/></svg>
+                            در حال ارسال…
+                        </span>
+                        <span dir="ltr" id="progressText" style="font-size:12.5px;color:var(--text-secondary);">0 / 0</span>
+                    </div>
+                    <div style="height:10px;background:var(--bg-deep);border-radius:999px;overflow:hidden;border:1px solid var(--border-subtle);">
+                        <div id="progressBar" style="height:100%;width:0%;border-radius:999px;transition:width .4s ease;background:linear-gradient(90deg,var(--violet-500),var(--violet-300));"></div>
+                    </div>
+                    <div class="d-flex gap-3 mt-2" style="font-size:12px;color:var(--text-muted);">
+                        <span style="color:var(--green);">✓ موفق: <b id="sentCount">0</b></span>
+                        <span style="color:var(--red);">✗ ناموفق: <b id="failCount">0</b></span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
     <div class="col-lg-4">
+        <div class="card card-dark mb-4">
+            <div class="card-header"><svg class="ic"><use href="#i-info"/></svg> راهنما</div>
+            <div class="card-body" style="font-size:13px;color:var(--text-secondary);">
+                <p class="mb-2">پیام به‌صورت زنده برای همه کاربران ثبت‌نام‌شده ارسال می‌شود و پیشرفت آن همین‌جا نمایش داده می‌شود.</p>
+                <p class="mb-0"><strong style="color:var(--text-primary);">نکته:</strong> سرعت ارسال به‌گونه‌ای تنظیم شده که محدودیت تلگرام فعال نشود؛ ارسال به هر کاربر حدود ۰٫۵ ثانیه طول می‌کشد.</p>
+            </div>
+        </div>
         <div class="card card-dark">
-            <div class="card-header"><i class="bi bi-info-circle"></i> راهنما</div>
-            <div class="card-body">
-                <p class="text-muted mb-2">پیام از طریق ربات تلگرام به همه کاربران ثبت‌نام شده ارسال خواهد شد.</p>
-                <p class="text-muted mb-0">
-                    <strong>فرمت‌بندی پشتیبانی شده:</strong><br>
-                    <code>&lt;b&gt;بولد&lt;/b&gt;</code><br>
-                    <code>&lt;i&gt;ایتالیک&lt;/i&gt;</code><br>
-                    <code>&lt;a href="url"&gt;لینک&lt;/a&gt;</code>
-                </p>
+            <div class="card-header"><svg class="ic"><use href="#i-chat"/></svg> فرمت‌های پشتیبانی‌شده</div>
+            <div class="card-body" style="font-size:12.5px;">
+                <code class="vio d-block mb-1">&lt;b&gt;بولد&lt;/b&gt;</code>
+                <code class="vio d-block mb-1">&lt;i&gt;ایتالیک&lt;/i&gt;</code>
+                <code class="vio d-block mb-1">&lt;u&gt;زیرخط‌دار&lt;/u&gt;</code>
+                <code class="vio d-block mb-1">&lt;s&gt;خط‌خورده&lt;/s&gt;</code>
+                <code class="vio d-block">&lt;a href="url"&gt;لینک&lt;/a&gt;</code>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const form = document.getElementById('broadcastForm');
+    const sendBtn = document.getElementById('sendBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const progressCard = document.getElementById('progressCard');
+    const msgBox = document.getElementById('msgBox');
+
+    // Character counter
+    function updCount() {
+        const len = msgBox.value.length;
+        document.getElementById('charCount').textContent = len ? len + ' کاراکتر' : '';
+    }
+    msgBox.addEventListener('input', updCount); updCount();
+
+    // Confirm before sending
+    form.addEventListener('submit', e => {
+        if (!form.dataset.confirmed) {
+            e.preventDefault();
+            if (confirm('پیام برای همه کاربران ارسال می‌شود. مطمئن هستید؟')) {
+                form.dataset.confirmed = '1';
+                setBusy(true);
+                form.submit();
+            }
+        } else {
+            setBusy(true);
+        }
+    });
+
+    function setBusy(busy) {
+        sendBtn.disabled = busy;
+        cancelBtn.style.display = busy ? '' : 'none';
+        progressCard.style.display = busy ? '' : 'none';
+        if (busy) poll();
+    }
+
+    let timer = null;
+    function poll() {
+        clearInterval(timer);
+        timer = setInterval(() => {
+            fetch('/broadcast/status').then(r => r.json()).then(d => {
+                const pct = d.total > 0 ? Math.round((d.sent + d.failed) / d.total * 100) : 0;
+                document.getElementById('progressBar').style.width = pct + '%';
+                document.getElementById('progressText').textContent =
+                    (d.sent + d.failed) + ' / ' + (d.total || '…');
+                document.getElementById('sentCount').textContent = d.sent;
+                document.getElementById('failCount').textContent = d.failed;
+
+                if (!d.running) {
+                    clearInterval(timer);
+                    setBusy(false);
+                    if (d.error) {
+                        toast('خطا: ' + d.error, true);
+                    } else if (d.finished_at && d.sent > 0) {
+                        toast('ارسال کامل شد: ' + d.sent + ' موفق، ' + d.failed + ' ناموفق');
+                    }
+                }
+            }).catch(() => {});
+        }, 1200);
+    }
+
+    // If a broadcast is already running on page load, resume UI
+    fetch('/broadcast/status').then(r => r.json()).then(d => { if (d.running) setBusy(true); });
+
+    cancelBtn.addEventListener('click', () => {
+        fetch('/broadcast/cancel', {
+            method: 'POST',
+            headers: {'X-CSRF-Token': '{{ csrf_token() }}'}
+        }).then(() => toast('دستور توقف صادر شد'));
+    });
+</script>
 {% endblock %}

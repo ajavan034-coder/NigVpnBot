@@ -2,6 +2,7 @@ import os
 import secrets
 import asyncio
 import time
+import threading
 from functools import wraps
 from flask import (
     Flask, render_template, request, redirect, url_for, session, flash, jsonify,
@@ -204,11 +205,66 @@ def dashboard():
     return render_template(
         "dashboard.html",
         user_count=web_db.get_user_count(),
+        new_users_today=web_db.get_new_users_today(),
         config_count=web_db.get_config_count(),
         revenue=web_db.get_total_revenue(),
         pending=web_db.get_pending_receipt_count(),
+        recent_receipts=web_db.get_recent_receipts(5),
         symbol=web_db.get_setting("currency_symbol") or "تومان",
     )
+
+
+_panel_status_cache = {"ok": None, "checked_at": 0}
+
+
+@app.route("/api/system-status")
+@login_required
+def api_system_status():
+    """Live health checks for the topbar status pill."""
+    import sqlite3 as _sq
+    from config import DB_PATH as _dbp
+
+    # Bot process
+    bot_ok = False
+    try:
+        import state
+        bot_ok = state.bot_instance is not None
+    except Exception:
+        pass
+
+    # Database
+    db_ok = False
+    try:
+        c = _sq.connect(_dbp, timeout=3)
+        c.execute("SELECT 1")
+        c.close()
+        db_ok = True
+    except Exception:
+        pass
+
+    # Panel (cached 120s to avoid hammering)
+    now = time.time()
+    if now - _panel_status_cache["checked_at"] > 120:
+        panel_ok = False
+        try:
+            from api import panel_api
+            if panel_api.panel_url and panel_api.panel_user:
+                loop = asyncio.new_event_loop()
+                try:
+                    session = loop.run_until_complete(panel_api._get_session())
+                    resp = loop.run_until_complete(
+                        session.head(panel_api.panel_url, ssl=False, timeout=__import__("aiohttp").ClientTimeout(total=6))
+                    )
+                    panel_ok = resp.status < 500
+                    loop.run_until_complete(resp.release())
+                finally:
+                    loop.close()
+        except Exception:
+            panel_ok = False
+        _panel_status_cache["ok"] = panel_ok
+        _panel_status_cache["checked_at"] = now
+
+    return jsonify({"bot": bot_ok, "database": db_ok, "panel": _panel_status_cache["ok"]})
 
 
 @app.route("/settings", methods=["GET", "POST"])
@@ -344,12 +400,15 @@ def plan_add():
         price = int(request.form["price"])
         inbound_ids = request.form.get("inbound_ids", "").strip()
         is_ultimate = "is_ultimate" in request.form
+        is_active = "is_active" in request.form
         collaborator_price = int(request.form.get("collaborator_price", 0) or 0)
         section_id = request.form.get("section_id") or None
         if section_id:
             section_id = int(section_id)
-        web_db.add_plan(name, gb, days, price, inbound_ids, is_ultimate, collaborator_price)
-        flash(f"Plan '{name}' added!", "success")
+        plan_id = web_db.add_plan(name, gb, days, price, inbound_ids, is_ultimate, collaborator_price, section_id)
+        if not is_active:
+            web_db.update_plan(plan_id, is_active=False)
+        flash(f"پلن «{name}» با موفقیت اضافه شد!", "success")
         return redirect(url_for("plans"))
     return render_template("plan_form.html", plan=None, sections=web_db.get_plan_sections())
 
@@ -428,7 +487,12 @@ def plan_section_delete(section_id):
 @login_required
 def users():
     search = request.args.get("q", "").strip() or None
-    return render_template("users.html", users=web_db.get_all_users(search), search=search)
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        page = 1
+    users_list, total, pages = web_db.get_users_page(page=page, per_page=25, search=search)
+    return render_template("users.html", users=users_list, search=search, page=page, pages=pages, total=total)
 
 
 @app.route("/users/<int:user_id>")
@@ -480,12 +544,19 @@ def user_ban(user_id):
 @login_required
 def receipts():
     status_filter = request.args.get("status", "pending")
-    if status_filter == "all":
-        receipts_list = web_db.get_receipts(limit=100)
-    else:
-        receipts_list = web_db.get_receipts(status=status_filter, limit=100)
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        page = 1
+    receipts_list, total, pages = web_db.get_receipts(
+        status=status_filter, page=page, per_page=25
+    )
+    counts = web_db.count_receipts_by_status()
     symbol = web_db.get_setting("currency_symbol") or "تومان"
-    return render_template("receipts.html", receipts=receipts_list, status=status_filter, symbol=symbol)
+    return render_template(
+        "receipts.html", receipts=receipts_list, status=status_filter,
+        page=page, pages=pages, total=total, counts=counts, symbol=symbol,
+    )
 
 
 @app.route("/receipts/<int:receipt_id>/approve", methods=["POST"])
@@ -538,16 +609,28 @@ def receipt_reject(receipt_id):
 @app.route("/configs")
 @login_required
 def configs():
-    configs_list = web_db.get_all_configs()
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        page = 1
+    configs_list, total, pages = web_db.get_all_configs(page=page, per_page=25)
     symbol = web_db.get_setting("currency_symbol") or "تومان"
-    return render_template("configs.html", configs=configs_list, symbol=symbol)
+    return render_template("configs.html", configs=configs_list, page=page, pages=pages, total=total, symbol=symbol)
+
+
+@app.route("/configs/<int:config_id>/activate", methods=["POST"])
+@login_required
+def config_activate(config_id):
+    web_db.activate_config(config_id)
+    flash("کانفیگ فعال شد", "success")
+    return redirect(url_for("configs"))
 
 
 @app.route("/configs/<int:config_id>/delete", methods=["POST"])
 @login_required
 def config_delete(config_id):
     web_db.delete_config(config_id)
-    flash("Config deleted", "success")
+    flash("کانفیگ حذف شد", "success")
     return redirect(url_for("configs"))
 
 
@@ -555,7 +638,7 @@ def config_delete(config_id):
 @login_required
 def config_deactivate(config_id):
     web_db.deactivate_config(config_id)
-    flash("Config deactivated", "warning")
+    flash("کانفیگ غیرفعال شد", "warning")
     return redirect(url_for("configs"))
 
 
@@ -587,23 +670,104 @@ def admin_remove(user_id):
     return redirect(url_for("admins"))
 
 
+# ─── Broadcast state (shared with worker thread) ───────────────────
+_broadcast_state = {
+    "running": False, "total": 0, "sent": 0, "failed": 0,
+    "started_at": None, "finished_at": None, "error": None,
+}
+
+
+def _run_broadcast(message: str):
+    """Background worker that sends a message to all users via the bot."""
+    import sqlite3 as _sq
+    from config import DB_PATH as _dbp
+    import state as _state
+
+    try:
+        conn = _sq.connect(_dbp, timeout=10)
+        user_ids = [r[0] for r in conn.execute("SELECT id FROM users").fetchall()]
+        conn.close()
+
+        _broadcast_state["total"] = len(user_ids)
+        bot = _state.bot_instance
+
+        if bot is None or _state.loop_instance is None:
+            _broadcast_state["error"] = "ربات در حال اجرا نیست"
+            return
+
+        future = asyncio.run_coroutine_threadsafe(
+            _broadcast_send(bot, _state.loop_instance, user_ids, message),
+            _state.loop_instance,
+        )
+        future.result(timeout=3600)
+    except Exception as e:
+        _broadcast_state["error"] = str(e)
+    finally:
+        _broadcast_state["running"] = False
+        _broadcast_state["finished_at"] = time.time()
+
+
+async def _broadcast_send(bot, loop, user_ids, message):
+    from aiogram.exceptions import TelegramRetryAfter, TelegramBadRequest
+
+    for uid in user_ids:
+        if not _broadcast_state["running"]:
+            break  # cancelled
+        try:
+            await bot.send_message(
+                chat_id=uid, text=message,
+                parse_mode="HTML", disable_web_page_preview=True,
+            )
+            _broadcast_state["sent"] += 1
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after + 1)
+            try:
+                await bot.send_message(chat_id=uid, text=message, parse_mode="HTML",
+                                       disable_web_page_preview=True)
+                _broadcast_state["sent"] += 1
+            except Exception:
+                _broadcast_state["failed"] += 1
+        except (TelegramBadRequest, Exception):
+            _broadcast_state["failed"] += 1
+        await asyncio.sleep(0.05)  # ~20 msg/s
+
+
 @app.route("/broadcast", methods=["GET", "POST"])
 @login_required
 def broadcast():
     if request.method == "POST":
+        if _broadcast_state["running"]:
+            flash("یک ارسال همگانی در حال اجراست. لطفاً صبر کنید.", "warning")
+            return redirect(url_for("broadcast"))
         text = request.form.get("message", "").strip()
         if not text:
-            flash("Message cannot be empty", "danger")
+            flash("متن پیام نمی‌تواند خالی باشد.", "danger")
             return redirect(url_for("broadcast"))
-        import sqlite3
-        from config import DB_PATH
-        conn = sqlite3.connect(DB_PATH)
-        users = conn.execute("SELECT id FROM users").fetchall()
-        conn.close()
-        count = len(users)
-        flash(f"Broadcast prepared for {count} users. Use the Telegram bot /admin > Broadcast to send.", "info")
+
+        # Reset and launch background job
+        _broadcast_state.update({
+            "running": True, "sent": 0, "failed": 0, "total": 0,
+            "error": None, "finished_at": None,
+            "started_at": time.time(),
+        })
+        threading.Thread(target=_run_broadcast, args=(text,), daemon=True).start()
+        flash("ارسال همگانی آغاز شد! پیشرفت به‌صورت زنده نمایش داده می‌شود.", "success")
         return redirect(url_for("broadcast"))
     return render_template("broadcast.html")
+
+
+@app.route("/broadcast/cancel", methods=["POST"])
+@login_required
+def broadcast_cancel():
+    _broadcast_state["running"] = False
+    flash("دستور توقف ارسال صادر شد.", "info")
+    return redirect(url_for("broadcast"))
+
+
+@app.route("/broadcast/status")
+@login_required
+def broadcast_status():
+    return jsonify({k: v for k, v in _broadcast_state.items() if k != "message"})
 
 
 @app.route("/bot-texts", methods=["GET", "POST"])

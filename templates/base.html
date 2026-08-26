@@ -6,397 +6,526 @@
     <title>{% block title %}پنل مدیریت{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
     <style>
         :root {
-            --purple-50: #faf5ff;
-            --purple-100: #f3e8ff;
-            --purple-200: #e9d5ff;
-            --purple-300: #d8b4fe;
-            --purple-400: #c084fc;
-            --purple-500: #a855f7;
-            --purple-600: #9333ea;
-            --purple-700: #7e22ce;
-            --purple-800: #6b21a8;
-            --purple-900: #581c87;
-            --purple-950: #3b0764;
-            --bg-deep: #0a0612;
-            --bg-surface: #110b1f;
-            --bg-card: #160e2a;
-            --bg-elevated: #1d1336;
-            --border-subtle: #2a1d4a;
-            --border-default: #362660;
-            --text-primary: #f0eaf8;
-            --text-secondary: #a89bc4;
-            --text-muted: #6d5f8a;
+            --violet-300: #c4b5fd; --violet-400: #a78bfa; --violet-500: #8b5cf6;
+            --violet-600: #7c3aed; --violet-700: #6d28d9;
+            --bg-deep: #0b0714;
+            --bg-surface: #120c20;
+            --bg-card: #171028;
+            --bg-elevated: #1e1535;
+            --border-subtle: rgba(167, 139, 250, .10);
+            --border-default: rgba(167, 139, 250, .22);
+            --text-primary: #f2eefb;
+            --text-secondary: #b3a6d4;
+            --text-muted: #71648f;
+            --green: #34d399; --red: #f87171; --amber: #fbbf24; --blue: #60a5fa;
         }
-        * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+        * { font-family: 'Vazirmatn', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
         body { background: var(--bg-deep); color: var(--text-primary); direction: rtl; min-height: 100vh; }
 
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
+        /* ─── SVG icon base ─── */
+        svg.ic { width: 18px; height: 18px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -.18em; }
+        svg.ic-sm { width: 15px; height: 15px; }
+        svg.ic-lg { width: 24px; height: 24px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        svg.ic-spin { animation: spin 1s linear infinite; }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: var(--bg-surface); }
-        ::-webkit-scrollbar-thumb { background: var(--purple-800); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--purple-700); }
+        ::-webkit-scrollbar-thumb { background: rgba(139,92,246,.35); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,.55); }
 
-        /* Sidebar */
+        /* ─── Sidebar ─── */
         .sidebar {
-            background: var(--bg-surface);
-            min-height: 100vh;
-            width: 270px;
-            position: fixed;
-            top: 0; right: 0; left: auto;
-            z-index: 100;
-            border-left: 1px solid var(--border-subtle);
-            padding: 0;
-            transition: transform .3s cubic-bezier(.4,0,.2,1);
-            display: flex;
-            flex-direction: column;
-            backdrop-filter: blur(20px);
+            background: linear-gradient(180deg, #140d24 0%, #100a1c 100%);
+            min-height: 100vh; width: 272px; position: fixed; top: 0; right: 0;
+            z-index: 1040; border-left: 1px solid var(--border-subtle);
+            display: flex; flex-direction: column;
+            transition: transform .28s cubic-bezier(.4,0,.2,1);
         }
-        .sidebar .brand {
-            padding: 24px 20px 20px;
-            border-bottom: 1px solid var(--border-subtle);
-            background: linear-gradient(180deg, rgba(139,92,246,.08) 0%, transparent 100%);
-        }
-        .sidebar .brand .brand-icon {
-            width: 42px; height: 42px;
-            background: linear-gradient(135deg, var(--purple-600), var(--purple-800));
-            border-radius: 12px;
+        .sidebar .brand { padding: 22px 20px; border-bottom: 1px solid var(--border-subtle); }
+        .brand-mark {
+            width: 44px; height: 44px; border-radius: 13px; color: #fff;
+            background: linear-gradient(135deg, var(--violet-500), var(--violet-700));
             display: flex; align-items: center; justify-content: center;
-            font-size: 20px; color: white;
-            box-shadow: 0 4px 15px rgba(139,92,246,.3);
+            box-shadow: 0 6px 20px rgba(124,58,237,.35), inset 0 1px 0 rgba(255,255,255,.15);
         }
-        .sidebar .brand h5 { color: var(--text-primary); font-weight: 700; margin: 0; font-size: 16px; }
-        .sidebar .brand small { color: var(--text-muted); font-size: 12px; }
-        .sidebar .nav-section { padding: 16px 0 8px; }
-        .sidebar .nav-section-title {
-            padding: 0 20px 8px;
-            font-size: 10px;
-            font-weight: 600;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
+        .brand-mark svg.ic { width: 24px; height: 24px; stroke-width: 1.8; }
+        .sidebar .brand h5 { color: var(--text-primary); font-weight: 800; margin: 0; font-size: 15.5px; letter-spacing: -.2px; }
+        .sidebar .brand small { color: var(--text-muted); font-size: 11.5px; }
+        .sidebar-nav { flex: 1; overflow-y: auto; padding: 10px 0; }
+        .nav-section-title { padding: 14px 22px 6px; font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 2px; }
+        .sidebar a.nav-item {
+            display: flex; align-items: center; gap: 12px; position: relative;
+            padding: 10px 14px; margin: 2px 10px; color: var(--text-secondary);
+            text-decoration: none; font-size: 13.5px; font-weight: 500;
+            transition: all .18s ease; border-radius: 11px;
         }
-        .sidebar a {
+        .sidebar a.nav-item:hover { color: var(--text-primary); background: rgba(139,92,246,.08); }
+        .sidebar a.nav-item.active {
+            color: #fff; background: linear-gradient(90deg, rgba(139,92,246,.18), rgba(139,92,246,.06));
+        }
+        .sidebar a.nav-item.active::before {
+            content: ''; position: absolute; right: -10px; top: 22%; height: 56%; width: 3.5px;
+            border-radius: 4px; background: linear-gradient(180deg, var(--violet-400), var(--violet-600));
+            box-shadow: 0 0 12px rgba(139,92,246,.6);
+        }
+        .sidebar a.nav-item .nav-badge {
+            margin-inline-start: auto; font-size: 10.5px; font-weight: 700; min-width: 20px;
+            text-align: center; padding: 2px 7px; border-radius: 999px;
+            background: rgba(251,191,36,.15); color: var(--amber); border: 1px solid rgba(251,191,36,.25);
+        }
+        .sidebar-footer { padding: 14px 20px; border-top: 1px solid var(--border-subtle); }
+        .sidebar-footer a.nav-item { margin: 0; color: #fca5a5; }
+        .sidebar-footer a.nav-item:hover { background: rgba(248,113,113,.08); color: #fecaca; }
+
+        /* ─── Layout / Topbar ─── */
+        .main-content { margin-right: 272px; min-height: 100vh; display: flex; flex-direction: column; }
+        .topbar {
+            position: sticky; top: 0; z-index: 1020;
             display: flex; align-items: center; gap: 12px;
-            padding: 10px 20px; margin: 2px 8px;
-            color: var(--text-secondary); text-decoration: none;
-            font-size: 13.5px; font-weight: 500;
-            transition: all .2s ease;
-            border-radius: 10px;
-            border-right: 3px solid transparent;
-            border-left: none;
-        }
-        .sidebar a:hover {
-            color: var(--text-primary);
-            background: rgba(139,92,246,.08);
-        }
-        .sidebar a.active {
-            color: var(--purple-300);
-            background: rgba(139,92,246,.12);
-            border-right-color: var(--purple-500);
-            box-shadow: 0 0 20px rgba(139,92,246,.05);
-        }
-        .sidebar a i { width: 20px; text-align: center; font-size: 16px; opacity: .8; }
-        .sidebar a.active i { opacity: 1; }
-        .sidebar-nav { flex: 1; overflow-y: auto; padding: 8px 0; }
-        .sidebar-footer {
-            padding: 16px 20px;
-            border-top: 1px solid var(--border-subtle);
-            background: rgba(10,6,18,.5);
-        }
-        .sidebar-footer a { color: #f87171 !important; border-right: none !important; margin: 0 !important; }
-        .sidebar-footer a:hover { background: rgba(248,113,113,.1) !important; }
-
-        /* Main Content */
-        .main-content { margin-right: 270px; margin-left: 0; padding: 32px; min-height: 100vh; }
-
-        /* Cards */
-        .stat-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-subtle);
-            border-radius: 16px;
-            padding: 24px;
-            transition: all .3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0; right: 0;
-            width: 100%; height: 3px;
-            background: linear-gradient(90deg, transparent, var(--purple-600), transparent);
-            opacity: 0;
-            transition: opacity .3s;
-        }
-        .stat-card:hover { border-color: var(--border-default); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(139,92,246,.08); }
-        .stat-card:hover::before { opacity: 1; }
-        .stat-card .stat-icon {
-            width: 50px; height: 50px;
-            border-radius: 14px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 22px;
-            transition: all .3s;
-        }
-        .stat-card:hover .stat-icon { transform: scale(1.05); }
-        .stat-card .stat-value { font-size: 28px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.5px; }
-        .stat-card .stat-label { color: var(--text-muted); font-size: 13px; font-weight: 500; }
-
-        .card-dark {
-            background: var(--bg-card);
-            border: 1px solid var(--border-subtle);
-            border-radius: 16px;
-            overflow: hidden;
-            transition: all .3s;
-        }
-        .card-dark:hover { border-color: var(--border-default); }
-        .card-dark .card-header {
-            background: var(--bg-elevated);
+            padding: 14px 32px; margin-bottom: 8px;
+            background: rgba(11,7,20,.75); backdrop-filter: blur(14px);
             border-bottom: 1px solid var(--border-subtle);
-            color: var(--text-primary);
-            font-weight: 600;
-            font-size: 14px;
-            padding: 16px 20px;
         }
+        .topbar .page-title { font-size: 16px; font-weight: 700; margin: 0; }
+        .topbar .page-sub { font-size: 11.5px; color: var(--text-muted); }
+        .content-wrap { padding: 20px 32px 40px; flex: 1; animation: fadeIn .35s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Table */
-        .table-dark {
-            --bs-table-bg: transparent;
-            --bs-table-border-color: var(--border-subtle);
+        .burger { display: none; }
+        .status-pill {
+            display: inline-flex; align-items: center; gap: 8px;
+            font-size: 11.5px; font-weight: 600; color: var(--text-secondary);
+            border: 1px solid var(--border-subtle); background: var(--bg-card);
+            padding: 6px 12px; border-radius: 999px;
         }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); transition: background .3s; }
+        .dot.ok { background: var(--green); box-shadow: 0 0 0 0 rgba(52,211,153,.5); animation: pulse-dot 2s infinite; }
+        .dot.bad { background: var(--red); }
+        @keyframes pulse-dot { 0% { box-shadow: 0 0 0 0 rgba(52,211,153,.45);} 70% { box-shadow: 0 0 0 6px rgba(52,211,153,0);} 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0);} }
+
+        /* ─── Page header ─── */
+        .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 26px; flex-wrap: wrap; }
+        .page-header h3 { font-weight: 800; font-size: 22px; letter-spacing: -.3px; display: flex; align-items: center; gap: 12px; margin: 0; }
+        .ph-icon {
+            width: 46px; height: 46px; border-radius: 14px; flex-shrink: 0;
+            background: linear-gradient(135deg, rgba(139,92,246,.18), rgba(109,40,217,.08));
+            border: 1px solid rgba(139,92,246,.22); color: var(--violet-300);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .ph-icon svg.ic { width: 22px; height: 22px; }
+        .page-header p { color: var(--text-muted); font-size: 13px; margin: 6px 2px 0; }
+
+        /* ─── Cards ─── */
+        .stat-card {
+            background: linear-gradient(160deg, var(--bg-card) 0%, #140d26 100%);
+            border: 1px solid var(--border-subtle); border-radius: 18px; padding: 22px;
+            transition: all .25s ease; position: relative; overflow: hidden; height: 100%;
+        }
+        .stat-card::after {
+            content: ''; position: absolute; inset-inline-start: 0; bottom: 0;
+            width: 100%; height: 2.5px; border-radius: 3px;
+            background: linear-gradient(90deg, transparent, var(--sc, var(--violet-500)), transparent);
+            opacity: 0; transition: opacity .3s;
+        }
+        .stat-card:hover { transform: translateY(-3px); border-color: var(--border-default); box-shadow: 0 12px 34px rgba(0,0,0,.35); }
+        .stat-card:hover::after { opacity: 1; }
+        .stat-icon {
+            width: 48px; height: 48px; border-radius: 14px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: color-mix(in srgb, var(--sc) 12%, transparent);
+            color: var(--sc); border: 1px solid color-mix(in srgb, var(--sc) 22%, transparent);
+        }
+        .stat-icon svg.ic { width: 22px; height: 22px; }
+        .stat-value { font-size: 26px; font-weight: 800; letter-spacing: -.5px; line-height: 1.2; }
+        .stat-label { color: var(--text-muted); font-size: 12.5px; font-weight: 500; }
+        .stat-trend { font-size: 11px; font-weight: 600; color: var(--green); background: rgba(52,211,153,.1); border-radius: 999px; padding: 2px 9px; }
+
+        .card-dark { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 18px; overflow: hidden; }
+        .card-dark > .card-header {
+            background: transparent; border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-primary); font-weight: 700; font-size: 13.5px; padding: 15px 20px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .card-dark > .card-header svg.ic { color: var(--violet-400); }
+        .quick-action {
+            background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 14px;
+            padding: 13px 16px; text-decoration: none; color: var(--text-secondary);
+            transition: all .2s; display: flex; align-items: center; gap: 13px;
+        }
+        .quick-action:hover { background: #251a42; border-color: var(--violet-600); color: var(--text-primary); transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,0,0,.3); }
+        .qa-icon { width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: color-mix(in srgb, var(--qc, #8b5cf6) 13%, transparent); color: var(--qc, #8b5cf6); }
+
+        /* ─── Tables ─── */
+        .table-dark { --bs-table-bg: transparent; --bs-table-border-color: var(--border-subtle); margin: 0; }
         .table-dark thead th {
-            color: var(--text-muted);
-            font-weight: 600;
-            font-size: 11px;
-            letter-spacing: .8px;
-            text-transform: uppercase;
-            border-bottom-color: var(--border-subtle) !important;
-            padding: 12px 16px;
+            color: var(--text-muted); font-weight: 700; font-size: 10.5px; letter-spacing: 1px;
+            text-transform: uppercase; padding: 12px 16px; white-space: nowrap;
+            border-bottom: 1px solid var(--border-subtle) !important; background: rgba(255,255,255,.015);
         }
-        .table-dark tbody td { padding: 14px 16px; vertical-align: middle; }
+        .table-dark tbody td { padding: 13px 16px; vertical-align: middle; font-size: 13.5px; }
         .table-dark tbody tr { transition: background .15s; }
-        .table-dark tbody tr:hover { background: rgba(139,92,246,.04); }
+        .table-dark tbody tr:hover { background: rgba(139,92,246,.05); }
 
-        /* Badges */
-        .badge-active { background: rgba(34,197,94,.12); color: #4ade80; border: 1px solid rgba(34,197,94,.2); font-weight: 500; }
-        .badge-expired { background: rgba(239,68,68,.12); color: #f87171; border: 1px solid rgba(239,68,68,.2); font-weight: 500; }
-        .badge-pending { background: rgba(251,191,36,.12); color: #fbbf24; border: 1px solid rgba(251,191,36,.2); font-weight: 500; }
-        .badge { padding: 5px 10px; border-radius: 8px; font-size: 12px; }
+        /* ─── Badges & chips ─── */
+        .badge { padding: 5px 11px; border-radius: 999px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+        .badge-active { background: rgba(52,211,153,.12); color: var(--green); border: 1px solid rgba(52,211,153,.22); }
+        .badge-expired { background: rgba(248,113,113,.12); color: var(--red); border: 1px solid rgba(248,113,113,.22); }
+        .badge-pending { background: rgba(251,191,36,.12); color: var(--amber); border: 1px solid rgba(251,191,36,.22); }
+        .badge-neutral { background: rgba(147,133,180,.1); color: var(--text-secondary); border: 1px solid rgba(147,133,180,.2); }
+        .copy-chip {
+            display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+            font-size: 12px; color: var(--text-secondary); background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle); border-radius: 8px; padding: 4px 9px;
+            transition: all .15s;
+        }
+        .copy-chip:hover { color: var(--violet-300); border-color: var(--border-default); }
+        .copy-chip svg.ic { width: 13px; height: 13px; opacity: .7; }
+        code.vio { color: var(--violet-300); background: rgba(139,92,246,.1); padding: 2px 8px; border-radius: 7px; font-size: 12px; }
 
-        /* Buttons */
+        /* ─── Buttons ─── */
+        .btn { border-radius: 11px; font-weight: 600; font-size: 13.5px; }
         .btn-purple {
-            background: linear-gradient(135deg, var(--purple-600), var(--purple-700));
-            border-color: var(--purple-600);
-            color: white;
-            font-weight: 600;
-            border-radius: 10px;
-            padding: 8px 18px;
-            transition: all .2s;
-            box-shadow: 0 2px 10px rgba(139,92,246,.2);
-        }
-        .btn-purple:hover {
-            background: linear-gradient(135deg, var(--purple-500), var(--purple-600));
-            border-color: var(--purple-500);
-            color: white;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 20px rgba(139,92,246,.3);
-        }
-        .btn-outline-purple {
-            border-color: var(--border-default);
-            color: var(--purple-400);
-            border-radius: 10px;
-            font-weight: 500;
+            background: linear-gradient(135deg, var(--violet-500), var(--violet-700));
+            border: none; color: #fff; padding: 9px 20px;
+            box-shadow: 0 4px 16px rgba(124,58,237,.28), inset 0 1px 0 rgba(255,255,255,.12);
             transition: all .2s;
         }
-        .btn-outline-purple:hover {
-            background: rgba(139,92,246,.1);
-            border-color: var(--purple-600);
-            color: var(--purple-300);
+        .btn-purple:hover, .btn-purple:focus {
+            background: linear-gradient(135deg, var(--violet-400), var(--violet-600));
+            color: #fff; transform: translateY(-1px); box-shadow: 0 7px 24px rgba(124,58,237,.4);
         }
+        .btn-purple:disabled { opacity: .55; transform: none; }
+        .btn-outline-purple { border: 1px solid var(--border-default); color: var(--violet-300); background: transparent; transition: all .2s; }
+        .btn-outline-purple:hover { background: rgba(139,92,246,.12); border-color: var(--violet-500); color: #ddd3fb; }
+        .btn-ghost { border: 1px solid var(--border-subtle); color: var(--text-secondary); background: var(--bg-elevated); }
+        .btn-ghost:hover { color: var(--text-primary); border-color: var(--border-default); background: #251a42; }
+        .btn-danger-soft { background: rgba(248,113,113,.1); color: var(--red); border: 1px solid rgba(248,113,113,.25); }
+        .btn-danger-soft:hover { background: rgba(248,113,113,.18); color: #fca5a5; }
+        .btn-success-soft { background: rgba(52,211,153,.1); color: var(--green); border: 1px solid rgba(52,211,153,.25); }
+        .btn-success-soft:hover { background: rgba(52,211,153,.18); color: #6ee7b7; }
+        .btn-warn-soft { background: rgba(251,191,36,.1); color: var(--amber); border: 1px solid rgba(251,191,36,.25); }
+        .btn-warn-soft:hover { background: rgba(251,191,36,.18); color: #fde68a; }
+        .btn-icon { width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; }
 
-        /* Forms */
+        /* ─── Forms ─── */
         .form-control, .form-select {
-            background: var(--bg-elevated);
-            border: 1px solid var(--border-subtle);
-            color: var(--text-primary);
-            border-radius: 10px;
-            padding: 10px 14px;
-            font-size: 14px;
+            background: var(--bg-elevated); border: 1px solid var(--border-subtle);
+            color: var(--text-primary); border-radius: 12px; padding: 10px 14px; font-size: 13.5px;
             transition: all .2s;
         }
         .form-control:focus, .form-select:focus {
-            background: var(--bg-elevated);
-            border-color: var(--purple-600);
-            color: var(--text-primary);
-            box-shadow: 0 0 0 3px rgba(139,92,246,.15);
+            background: var(--bg-elevated); border-color: var(--violet-500); color: var(--text-primary);
+            box-shadow: 0 0 0 3.5px rgba(139,92,246,.14);
         }
         .form-control::placeholder { color: var(--text-muted); }
-        .form-label { color: var(--text-secondary); font-weight: 500; font-size: 13px; margin-bottom: 6px; }
-        .form-text { color: var(--text-muted); font-size: 12px; }
+        .form-label { color: var(--text-secondary); font-weight: 600; font-size: 12.5px; margin-bottom: 7px; }
+        .form-text { color: var(--text-muted); font-size: 11.5px; }
+        .form-check-input:checked { background-color: var(--violet-600); border-color: var(--violet-600); }
+        .input-group-text { background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-muted); border-radius: 12px; }
 
-        /* Alerts */
-        .alert { border-radius: 12px; border: none; font-size: 14px; }
-        .alert-success { background: rgba(34,197,94,.1); color: #4ade80; }
-        .alert-danger { background: rgba(239,68,68,.1); color: #f87171; }
-        .alert-warning { background: rgba(251,191,36,.1); color: #fbbf24; }
-        .alert-info { background: rgba(96,165,250,.1); color: #60a5fa; }
+        /* ─── Alerts (flash) ─── */
+        .flash-zone { position: sticky; top: 64px; z-index: 1010; display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+        .alert { border-radius: 14px; border: 1px solid; font-size: 13.5px; font-weight: 500; display: flex; align-items: center; gap: 10px; padding: 12px 16px; margin: 0; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
+        .alert-success { background: rgba(52,211,153,.09); color: var(--green); border-color: rgba(52,211,153,.22); }
+        .alert-danger { background: rgba(248,113,113,.09); color: var(--red); border-color: rgba(248,113,113,.22); }
+        .alert-warning { background: rgba(251,191,36,.09); color: var(--amber); border-color: rgba(251,191,36,.22); }
+        .alert-info { background: rgba(96,165,250,.09); color: var(--blue); border-color: rgba(96,165,250,.22); }
+        .alert .btn-close { margin-inline-start: auto; filter: invert(1); opacity: .5; }
 
-        /* Page Header */
-        .page-header { margin-bottom: 32px; }
-        .page-header h3 { font-weight: 800; color: var(--text-primary); font-size: 24px; letter-spacing: -0.3px; }
-
-        /* Animations */
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        .main-content > * { animation: fadeIn .4s ease-out; }
-
-        /* Quick action cards */
-        .quick-action {
-            background: var(--bg-card);
-            border: 1px solid var(--border-subtle);
-            border-radius: 12px;
-            padding: 16px;
-            text-decoration: none;
-            color: var(--text-secondary);
-            transition: all .2s;
-            display: flex;
-            align-items: center;
-            gap: 12px;
+        /* ─── Empty state ─── */
+        .empty-state { text-align: center; padding: 52px 20px; color: var(--text-muted); }
+        .empty-state .es-icon {
+            width: 68px; height: 68px; margin: 0 auto 16px; border-radius: 20px;
+            background: var(--bg-elevated); border: 1px dashed var(--border-default);
+            display: flex; align-items: center; justify-content: center; color: var(--text-muted);
         }
-        .quick-action:hover {
-            background: var(--bg-elevated);
-            border-color: var(--purple-700);
-            color: var(--text-primary);
-            transform: translateY(-1px);
-        }
-        .quick-action i {
-            width: 36px; height: 36px;
-            border-radius: 10px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 16px;
-        }
+        .empty-state .es-icon svg.ic { width: 30px; height: 30px; opacity: .6; }
 
-        /* Status indicator */
-        .status-dot {
-            width: 8px; height: 8px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-left: 6px;
+        /* ─── Pagination ─── */
+        .pager { display: flex; align-items: center; gap: 8px; }
+        .pager .pg-info { font-size: 12px; color: var(--text-muted); }
+        .pager a, .pager span.cur {
+            min-width: 34px; height: 34px; padding: 0 10px; border-radius: 10px;
+            display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+            font-size: 13px; font-weight: 600; text-decoration: none;
+            background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-secondary);
+            transition: all .15s;
         }
-        .status-dot.active { background: #4ade80; box-shadow: 0 0 8px rgba(74,222,128,.4); }
-        .status-dot.inactive { background: #f87171; }
+        .pager a:hover { border-color: var(--violet-500); color: var(--text-primary); }
+        .pager span.cur { background: linear-gradient(135deg, var(--violet-500), var(--violet-700)); color: #fff; border-color: transparent; }
+        .pager a.disabled { opacity: .35; pointer-events: none; }
 
-        /* Pagination */
-        .pagination .page-link {
-            background: var(--bg-card);
-            border-color: var(--border-subtle);
-            color: var(--text-secondary);
-            border-radius: 8px;
-            margin: 0 2px;
-            font-size: 13px;
+        /* ─── Filter pills ─── */
+        .filter-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+        .fpill {
+            display: inline-flex; align-items: center; gap: 7px; padding: 7px 15px;
+            border-radius: 999px; font-size: 12.5px; font-weight: 600; text-decoration: none;
+            background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-secondary);
+            transition: all .18s;
         }
-        .pagination .page-link:hover { background: var(--bg-elevated); border-color: var(--purple-700); color: var(--text-primary); }
-        .pagination .page-item.active .page-link { background: var(--purple-700); border-color: var(--purple-700); }
+        .fpill:hover { border-color: var(--border-default); color: var(--text-primary); }
+        .fpill.active { background: linear-gradient(135deg, var(--violet-500), var(--violet-700)); color: #fff; border-color: transparent; box-shadow: 0 4px 14px rgba(124,58,237,.3); }
+        .fpill .cnt { font-size: 10.5px; background: rgba(0,0,0,.25); border-radius: 999px; padding: 1px 7px; }
+
+        /* ─── Confirm modal ─── */
+        .modal-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(5,3,10,.7); backdrop-filter: blur(6px); display: none; align-items: center; justify-content: center; padding: 20px; }
+        .modal-overlay.show { display: flex; }
+        .confirm-box {
+            background: var(--bg-card); border: 1px solid var(--border-default); border-radius: 20px;
+            max-width: 400px; width: 100%; padding: 28px; text-align: center;
+            box-shadow: 0 30px 80px rgba(0,0,0,.6); animation: pop-in .22s cubic-bezier(.34,1.56,.64,1);
+        }
+        @keyframes pop-in { from { transform: scale(.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .confirm-box .cb-icon { width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 18px; display: flex; align-items: center; justify-content: center; background: rgba(248,113,113,.12); color: var(--red); border: 1px solid rgba(248,113,113,.25); }
+        .confirm-box h5 { font-weight: 800; font-size: 16px; margin-bottom: 8px; }
+        .confirm-box p { color: var(--text-secondary); font-size: 13px; margin-bottom: 22px; }
+
+        /* ─── Toast ─── */
+        #toast-zone { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 3000; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+        .mini-toast {
+            background: var(--bg-elevated); border: 1px solid var(--border-default); color: var(--text-primary);
+            border-radius: 999px; padding: 9px 20px; font-size: 12.5px; font-weight: 600;
+            display: flex; align-items: center; gap: 8px; box-shadow: 0 12px 34px rgba(0,0,0,.45);
+            animation: toast-in .25s ease-out;
+        }
+        .mini-toast svg.ic { color: var(--green); }
+        @keyframes toast-in { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
         /* Mobile */
-        @media (max-width: 768px) {
+        @media (max-width: 991px) {
             .sidebar { transform: translateX(100%); }
-            .sidebar.show { transform: translateX(0); box-shadow: -10px 0 40px rgba(0,0,0,.5); }
-            .main-content { margin-right: 0; padding: 20px; }
+            .sidebar.show { transform: translateX(0); box-shadow: -16px 0 50px rgba(0,0,0,.55); }
+            .main-content { margin-right: 0; }
+            .topbar { padding: 12px 16px; }
+            .content-wrap { padding: 16px 16px 40px; }
+            .burger { display: inline-flex; }
+            .sidebar-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1030; }
         }
     </style>
     {% block head %}{% endblock %}
 </head>
 <body>
+    {% include "_icons.html" %}
     {% macro csrf_field() %}<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">{% endmacro %}
+
+    <!-- Sidebar -->
     <nav class="sidebar" id="sidebar">
         <div class="brand">
             <div class="d-flex align-items-center gap-3">
-                <div class="brand-icon"><i class="bi bi-robot"></i></div>
+                <div class="brand-mark"><svg class="ic"><use href="#i-logo"/></svg></div>
                 <div>
-                    <h5>مدیریت ربات</h5>
-                    <small>پنل مدیریت</small>
+                    <h5>نیگ‌سیتی</h5>
+                    <small>پنل مدیریت ربات</small>
                 </div>
             </div>
         </div>
         <div class="sidebar-nav">
-            <div class="nav-section">
-                <div class="nav-section-title">اصلی</div>
-                <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
-                    <i class="bi bi-grid-1x2"></i> داشبورد
-                </a>
-                <a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">
-                    <i class="bi bi-gear"></i> تنظیمات
-                </a>
-            </div>
-            <div class="nav-section">
-                <div class="nav-section-title">مدیریت</div>
-                <a href="{{ url_for('plans') }}" class="{% if request.endpoint in ['plans','plan_add','plan_edit'] %}active{% endif %}">
-                    <i class="bi bi-tags"></i> پلن‌ها
-                </a>
-                <a href="{{ url_for('plan_sections') }}" class="{% if request.endpoint in ['plan_sections','plan_section_add','plan_section_edit'] %}active{% endif %}">
-                    <i class="bi bi-collection"></i> بخش‌های پلن
-                </a>
-                <a href="{{ url_for('users') }}" class="{% if request.endpoint in ['users','user_detail'] %}active{% endif %}">
-                    <i class="bi bi-people"></i> کاربران
-                </a>
-                <a href="{{ url_for('configs') }}" class="{% if request.endpoint == 'configs' %}active{% endif %}">
-                    <i class="bi bi-key"></i> کانفیگ‌ها
-                </a>
-                <a href="{{ url_for('receipts') }}" class="{% if request.endpoint == 'receipts' %}active{% endif %}">
-                    <i class="bi bi-receipt"></i> رسیدها
-                </a>
-            </div>
-            <div class="nav-section">
-                <div class="nav-section-title">ابزارها</div>
-                <a href="{{ url_for('admins') }}" class="{% if request.endpoint == 'admins' %}active{% endif %}">
-                    <i class="bi bi-shield-check"></i> ادمین‌ها
-                </a>
-                <a href="{{ url_for('broadcast') }}" class="{% if request.endpoint == 'broadcast' %}active{% endif %}">
-                    <i class="bi bi-megaphone"></i> ارسال همگانی
-                </a>
-                <a href="{{ url_for('bot_texts') }}" class="{% if request.endpoint == 'bot_texts' %}active{% endif %}">
-                    <i class="bi bi-chat-text"></i> متن‌های ربات
-                </a>
-                <a href="{{ url_for('buttons') }}" class="{% if request.endpoint == 'buttons' %}active{% endif %}">
-                    <i class="bi bi-hand-index-thumb"></i> دکمه‌ها
-                </a>
-                <a href="{{ url_for('menu_layout') }}" class="{% if request.endpoint == 'menu_layout' %}active{% endif %}">
-                    <i class="bi bi-menu-button-wide"></i> لایوت منو
-                </a>
-                <a href="{{ url_for('backups') }}" class="{% if request.endpoint == 'backups' %}active{% endif %}">
-                    <i class="bi bi-cloud-download"></i> بکاپ و بازیابی
-                </a>
-            </div>
+            <div class="nav-section-title">اصلی</div>
+            <a href="{{ url_for('dashboard') }}" class="nav-item {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                <svg class="ic"><use href="#i-grid"/></svg> داشبورد
+            </a>
+            <a href="{{ url_for('settings') }}" class="nav-item {% if request.endpoint == 'settings' %}active{% endif %}">
+                <svg class="ic"><use href="#i-sliders"/></svg> تنظیمات
+            </a>
+            <div class="nav-section-title">مدیریت</div>
+            <a href="{{ url_for('plans') }}" class="nav-item {% if request.endpoint in ['plans','plan_add','plan_edit'] %}active{% endif %}">
+                <svg class="ic"><use href="#i-tags"/></svg> پلن‌ها
+            </a>
+            <a href="{{ url_for('plan_sections') }}" class="nav-item {% if request.endpoint in ['plan_sections','plan_section_add','plan_section_edit'] %}active{% endif %}">
+                <svg class="ic"><use href="#i-layers"/></svg> بخش‌های پلن
+            </a>
+            <a href="{{ url_for('users') }}" class="nav-item {% if request.endpoint in ['users','user_detail'] %}active{% endif %}">
+                <svg class="ic"><use href="#i-users"/></svg> کاربران
+            </a>
+            <a href="{{ url_for('configs') }}" class="nav-item {% if request.endpoint == 'configs' %}active{% endif %}">
+                <svg class="ic"><use href="#i-key"/></svg> کانفیگ‌ها
+            </a>
+            <a href="{{ url_for('receipts') }}" class="nav-item {% if request.endpoint == 'receipts' %}active{% endif %}">
+                <svg class="ic"><use href="#i-receipt"/></svg> رسیدها
+                {% if pending_receipts %}<span class="nav-badge">{{ pending_receipts }}</span>{% endif %}
+            </a>
+            <div class="nav-section-title">ابزارها</div>
+            <a href="{{ url_for('admins') }}" class="nav-item {% if request.endpoint == 'admins' %}active{% endif %}">
+                <svg class="ic"><use href="#i-shield-check"/></svg> ادمین‌ها
+            </a>
+            <a href="{{ url_for('broadcast') }}" class="nav-item {% if request.endpoint == 'broadcast' %}active{% endif %}">
+                <svg class="ic"><use href="#i-volume"/></svg> ارسال همگانی
+            </a>
+            <a href="{{ url_for('bot_texts') }}" class="nav-item {% if request.endpoint == 'bot_texts' %}active{% endif %}">
+                <svg class="ic"><use href="#i-chat"/></svg> متن‌های ربات
+            </a>
+            <a href="{{ url_for('buttons') }}" class="nav-item {% if request.endpoint == 'buttons' %}active{% endif %}">
+                <svg class="ic"><use href="#i-tap"/></svg> دکمه‌ها
+            </a>
+            <a href="{{ url_for('menu_layout') }}" class="nav-item {% if request.endpoint == 'menu_layout' %}active{% endif %}">
+                <svg class="ic"><use href="#i-layout-rows"/></svg> چیدمان منو
+            </a>
+            <a href="{{ url_for('backups') }}" class="nav-item {% if request.endpoint == 'backups' %}active{% endif %}">
+                <svg class="ic"><use href="#i-cloud-down"/></svg> بکاپ و بازیابی
+            </a>
         </div>
         <div class="sidebar-footer">
-            <a href="{{ url_for('logout') }}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;font-weight:500;">
-                <i class="bi bi-box-arrow-left"></i> خروج
+            <a href="{{ url_for('logout') }}" class="nav-item">
+                <svg class="ic"><use href="#i-logout"/></svg> خروج از پنل
             </a>
         </div>
     </nav>
 
     <div class="main-content">
-        <button class="btn btn-sm btn-outline-purple d-md-none mb-3" onclick="document.getElementById('sidebar').classList.toggle('show')">
-            <i class="bi bi-list"></i> منو
-        </button>
-
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        {% for cat, msg in messages %}
-        <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">
-            {{ msg }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <!-- Topbar -->
+        <div class="topbar">
+            <button class="btn btn-ghost btn-icon burger" id="burgerBtn" aria-label="باز کردن منو">
+                <svg class="ic"><use href="#i-menu"/></svg>
+            </button>
+            <div class="me-auto ms-auto d-none d-sm-block">
+                <h1 class="page-title">{% block page_name %}{% endblock %}</h1>
+            </div>
+            <div class="ms-auto"></div>
+            <span class="status-pill" id="sysStatus" title="وضعیت سامانه">
+                <span class="dot" id="sysDot"></span>
+                <span id="sysText">در حال بررسی…</span>
+            </span>
+            <span class="status-pill" style="cursor:pointer;" onclick="location.reload()" title="به‌روزرسانی">
+                <svg class="ic ic-sm"><use href="#i-refresh"/></svg>
+            </span>
         </div>
-        {% endfor %}
-        {% endif %}
-        {% endwith %}
 
-        {% block content %}{% endblock %}
+        <div class="content-wrap">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="flash-zone" id="flashZone">
+                {% for cat, msg in messages %}
+                <div class="alert alert-{{ cat }}" role="alert">
+                    <svg class="ic ic-sm"><use href="#i-{% if cat == 'success' %}check-circle{% elif cat == 'danger' %}x-circle{% elif cat == 'warning' %}alert-triangle{% else %}info{% endif %}"/></svg>
+                    {{ msg }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="بستن"></button>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </div>
     </div>
 
+    <!-- Confirm modal -->
+    <div class="modal-overlay" id="confirmOverlay">
+        <div class="confirm-box">
+            <div class="cb-icon"><svg class="ic" style="width:28px;height:28px;"><use href="#i-alert-triangle"/></svg></div>
+            <h5>تایید عملیات</h5>
+            <p id="confirmMsg">آیا مطمئن هستید؟</p>
+            <div class="d-flex gap-2 justify-content-center">
+                <button class="btn btn-ghost px-4" id="confirmCancel">انصراف</button>
+                <button class="btn btn-danger-soft px-4" id="confirmOk">تایید و اجرا</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-zone"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // ── Sidebar mobile toggle ──
+        const sidebar = document.getElementById('sidebar');
+        document.getElementById('burgerBtn')?.addEventListener('click', () => {
+            sidebar.classList.add('show');
+            const bd = document.createElement('div');
+            bd.className = 'sidebar-backdrop';
+            bd.onclick = () => { sidebar.classList.remove('show'); bd.remove(); };
+            document.body.appendChild(bd);
+        });
+
+        // ── Auto-dismiss flash after 6s ──
+        setTimeout(() => {
+            document.getElementById('flashZone')?.querySelectorAll('.alert').forEach(a => {
+                a.style.transition = 'opacity .5s'; a.style.opacity = '0';
+                setTimeout(() => a.remove(), 500);
+            });
+        }, 6000);
+
+        // ── Confirm modal for forms/buttons with data-confirm ──
+        let pendingForm = null, pendingBtn = null;
+        const overlay = document.getElementById('confirmOverlay');
+        function showConfirm(msg) {
+            document.getElementById('confirmMsg').textContent = msg || 'آیا مطمئن هستید؟';
+            overlay.classList.add('show');
+        }
+        function hideConfirm() { overlay.classList.remove('show'); pendingForm = null; pendingBtn = null; }
+        document.addEventListener('submit', e => {
+            const f = e.target.closest('form[data-confirm]');
+            if (!f) return;
+            e.preventDefault();
+            pendingForm = f; pendingBtn = null;
+            showConfirm(f.dataset.confirm);
+        });
+        document.addEventListener('click', e => {
+            const b = e.target.closest('button[data-confirm]');
+            if (!b || !b.closest('form')) return;
+            e.preventDefault();
+            pendingBtn = b; pendingForm = null;
+            showConfirm(b.dataset.confirm);
+        });
+        document.getElementById('confirmCancel').onclick = hideConfirm;
+        overlay.addEventListener('click', e => { if (e.target === overlay) hideConfirm(); });
+        document.getElementById('confirmOk').onclick = () => {
+            overlay.classList.remove('show');
+            if (pendingForm) {
+                const btn = pendingForm.querySelector('button[type="submit"]');
+                if (btn) { btn.disabled = true; btn.innerHTML = '<svg class="ic ic-sm ic-spin"><use href="#i-spinner"/></svg>'; }
+                pendingForm.submit();
+            } else if (pendingBtn) {
+                const f = pendingBtn.form;
+                if (pendingBtn.name) {
+                    const h = document.createElement('input');
+                    h.type = 'hidden'; h.name = pendingBtn.name; h.value = pendingBtn.value;
+                    f.appendChild(h);
+                }
+                f.querySelectorAll('button[type="submit"]').forEach(x => x.disabled = true);
+                f.submit();
+            }
+            pendingForm = null; pendingBtn = null;
+        };
+
+        // ── Copy to clipboard ──
+        function copyText(txt) {
+            navigator.clipboard.writeText(txt).then(() => toast('در کلیپ‌بورد کپی شد'));
+        }
+        document.addEventListener('click', e => {
+            const c = e.target.closest('[data-copy]');
+            if (c) copyText(c.dataset.copy);
+        });
+        function toast(msg, isError = false) {
+            const t = document.createElement('div');
+            t.className = 'mini-toast';
+            if (isError) { t.style.borderColor = 'rgba(248,113,113,.4)'; }
+            t.innerHTML = '<svg class="ic ic-sm" style="' + (isError ? 'color:var(--red);' : 'color:var(--green);') + '"><use href="#i-' + (isError ? 'x-circle' : 'check-circle') + '"/></svg>' + msg;
+            document.getElementById('toast-zone').appendChild(t);
+            setTimeout(() => { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 3500);
+        }
+
+        // ── Live system status ──
+        function refreshStatus() {
+            fetch('/api/system-status').then(r => r.json()).then(d => {
+                const dot = document.getElementById('sysDot');
+                const txt = document.getElementById('sysText');
+                const okCount = [d.bot, d.database, d.panel].filter(Boolean).length;
+                if (okCount === 3) { dot.className = 'dot ok'; txt.textContent = 'همه سامانه‌ها فعال'; }
+                else if (okCount === 0) { dot.className = 'dot bad'; txt.textContent = 'خطا در سامانه'; }
+                else { dot.className = 'dot bad'; txt.textContent = okCount + '/3 سرویس فعال'; }
+                dot.title = 'ربات: ' + (d.bot ? '✓' : '✗') + ' | دیتابیس: ' + (d.database ? '✓' : '✗') + ' | پنل: ' + (d.panel ? '✓' : '✗');
+            }).catch(() => {
+                document.getElementById('sysDot').className = 'dot bad';
+                document.getElementById('sysText').textContent = 'بدون اتصال';
+            });
+        }
+        refreshStatus();
+        setInterval(refreshStatus, 30000);
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

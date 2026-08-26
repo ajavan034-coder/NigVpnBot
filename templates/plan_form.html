@@ -1,25 +1,38 @@
 {% extends "base.html" %}
 {% block title %}{{ 'ویرایش پلن' if plan else 'افزودن پلن' }}{% endblock %}
+{% block page_name %}{{ 'ویرایش پلن' if plan else 'افزودن پلن' }}{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h3>{{ 'ویرایش پلن' if plan else 'افزودن پلن جدید' }}</h3>
+    <div class="d-flex align-items-center gap-3">
+        <div class="ph-icon"><svg class="ic"><use href="#i-tags"/></svg></div>
+        <div>
+            <h3>{{ 'ویرایش پلن' if plan else 'افزودن پلن جدید' }}</h3>
+            <p>مشخصات پلن را تکمیل کنید</p>
+        </div>
+    </div>
+    <a href="{{ url_for('plans') }}" class="btn btn-ghost">
+        <svg class="ic ic-sm"><use href="#i-arrow-right"/></svg> بازگشت
+    </a>
 </div>
+
 <div class="row">
-    <div class="col-lg-6">
+    <div class="col-lg-7">
         <div class="card card-dark">
-            <div class="card-body">
+            <div class="card-header"><svg class="ic"><use href="#i-tags"/></svg> مشخصات پلن</div>
+            <div class="card-body p-4">
                 <form method="POST">
-            {{ csrf_field() }}
+                    {{ csrf_field() }}
                     <div class="mb-3">
                         <label class="form-label">نام پلن</label>
                         <input type="text" name="name" class="form-control" required
-                               value="{{ plan.name if plan else '' }}" placeholder="مثلاً ۱ ماهه">
+                               value="{{ plan.name if plan else '' }}" placeholder="مثلاً پلن ۱ ماهه">
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">حجم (GB)</label>
+                            <label class="form-label">حجم (گیگابایت)</label>
                             <input type="number" name="gb" class="form-control" required min="1"
                                    value="{{ plan.gb if plan else '' }}" placeholder="50">
+                            <div class="form-text">برای پلن نامحدود مقدار نمایش داده نمی‌شود</div>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label">مدت (روز)</label>
@@ -27,22 +40,24 @@
                                    value="{{ plan.days if plan else '' }}" placeholder="30">
                         </div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">قیمت</label>
-                        <input type="number" name="price" class="form-control" required min="1"
-                               value="{{ plan.price if plan else '' }}" placeholder="150000">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">قیمت همکاری</label>
-                        <input type="number" name="collaborator_price" class="form-control" min="0"
-                               value="{{ plan.collaborator_price if plan and plan.collaborator_price else '' }}" placeholder="0">
-                        <div class="form-text">قیمتی که همکاران تایید شده پرداخت می‌کنند. 0 یا خالی = غیرفعال</div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">قیمت</label>
+                            <input type="number" name="price" class="form-control" required min="1"
+                                   value="{{ plan.price if plan else '' }}" placeholder="150000">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">قیمت همکاری</label>
+                            <input type="number" name="collaborator_price" class="form-control" min="0"
+                                   value="{{ plan.collaborator_price if plan and plan.collaborator_price else '' }}" placeholder="0">
+                            <div class="form-text">۰ یا خالی = بدون قیمت همکاری</div>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">شناسه اینباندها</label>
-                        <input type="text" name="inbound_ids" class="form-control"
-                               value="{{ plan.inbound_ids if plan else '' }}" placeholder="مثلاً 1,2,3">
-                        <div class="form-text">با کاما جدا کنید. خالی بگذارید تا از تنظیمات جهانی استفاده شود.</div>
+                        <input type="text" name="inbound_ids" class="form-control" dir="ltr" style="text-align:left;"
+                               value="{{ plan.inbound_ids if plan else '' }}" placeholder="مثلاً 124,125">
+                        <div class="form-text">با کاما جدا کنید؛ خالی = استفاده از تنظیمات جهانی</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">بخش پلن</label>
@@ -52,30 +67,27 @@
                             <option value="{{ s.id }}" {{ 'selected' if plan and plan.section_id == s.id }}>{{ s.name }}</option>
                             {% endfor %}
                         </select>
-                        <div class="form-text">پلن در کدام بخش نمایش داده شود</div>
+                        <div class="form-text">محل نمایش پلن در ربات</div>
                     </div>
-                    {% if plan %}
-                    <div class="mb-3 form-check form-switch">
-                        <input class="form-check-input" type="checkbox" name="is_active" id="isActive"
-                               {{ 'checked' if plan.is_active }}>
-                        <label class="form-check-label" for="isActive">فعال</label>
+
+                    <div class="d-flex flex-column gap-2 py-3 mb-2" style="border-top:1px solid var(--border-subtle);border-bottom:1px solid var(--border-subtle);">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="is_active" id="isActive"
+                                   {{ 'checked' if not plan or plan.is_active }}>
+                            <label class="form-check-label" for="isActive" style="font-size:13.5px;">پلن فعال باشد (قابل خرید در ربات)</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="is_ultimate" id="isUltimate"
+                                   {{ 'checked' if plan and plan.is_ultimate }}>
+                            <label class="form-check-label" for="isUltimate" style="font-size:13.5px;">پلن نامحدود (بدون نمایش حجم در ربات)</label>
+                        </div>
                     </div>
-                    <div class="mb-3 form-check form-switch">
-                        <input class="form-check-input" type="checkbox" name="is_ultimate" id="isUltimate"
-                               {{ 'checked' if plan.is_ultimate }}>
-                        <label class="form-check-label" for="isUltimate">پلن نامحدود (عدم نمایش حجم در ربات)</label>
-                    </div>
-                    {% else %}
-                    <div class="mb-3 form-check form-switch">
-                        <input class="form-check-input" type="checkbox" name="is_ultimate" id="isUltimate">
-                        <label class="form-check-label" for="isUltimate">پلن نامحدود (عدم نمایش حجم در ربات)</label>
-                    </div>
-                    {% endif %}
+
                     <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-purple">
-                            <i class="bi bi-check-lg"></i> {{ 'بروزرسانی' if plan else 'ایجاد' }}
+                        <button type="submit" class="btn btn-purple px-4">
+                            <svg class="ic ic-sm"><use href="#i-check"/></svg> {{ 'ذخیره تغییرات' if plan else 'ایجاد پلن' }}
                         </button>
-                        <a href="{{ url_for('plans') }}" class="btn btn-outline-purple">لغو</a>
+                        <a href="{{ url_for('plans') }}" class="btn btn-ghost">لغو</a>
                     </div>
                 </form>
             </div>

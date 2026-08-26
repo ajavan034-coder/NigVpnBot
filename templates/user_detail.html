@@ -1,65 +1,85 @@
 {% extends "base.html" %}
 {% block title %}کاربر #{{ user.id }}{% endblock %}
+{% block page_name %}پروفایل کاربر{% endblock %}
 {% block content %}
-<div class="page-header d-flex justify-content-between align-items-center">
-    <h3>کاربر #{{ user.id }}</h3>
-    <a href="{{ url_for('users') }}" class="btn btn-outline-purple btn-sm">
-        <i class="bi bi-arrow-right"></i> بازگشت به لیست کاربران
+<div class="page-header">
+    <div class="d-flex align-items-center gap-3">
+        <div class="ph-icon"><svg class="ic"><use href="#i-users"/></svg></div>
+        <div>
+            <h3>کاربر #{{ user.id }} {{ '· مسدود' if user.is_banned }}</h3>
+            <p>{{ '@' + user.username if user.username else (user.first_name or 'بدون نام') }}</p>
+        </div>
+    </div>
+    <a href="{{ url_for('users') }}" class="btn btn-ghost">
+        <svg class="ic ic-sm"><use href="#i-arrow-right"/></svg> بازگشت به کاربران
     </a>
 </div>
+
 <div class="row g-4">
-    <div class="col-lg-6">
-        <div class="card card-dark">
-            <div class="card-header"><i class="bi bi-person"></i> اطلاعات کاربر</div>
-            <div class="card-body">
+    <div class="col-lg-5">
+        <div class="card card-dark mb-4">
+            <div class="card-header"><svg class="ic"><use href="#i-info"/></svg> اطلاعات کاربر</div>
+            <div class="card-body p-0">
                 <table class="table table-dark mb-0">
-                    <tr><td class="text-muted">شناسه</td><td><code>{{ user.id }}</code></td></tr>
-                    <tr><td class="text-muted">نام کاربری</td><td>{{ '@' + user.username if user.username else '-' }}</td></tr>
-                    <tr><td class="text-muted">نام</td><td>{{ user.first_name or '-' }}</td></tr>
-                    <tr><td class="text-muted">موجودی</td><td><strong>{{ "{:,.0f}".format(user.balance) }} {{ symbol }}</strong></td></tr>
-                    <tr><td class="text-muted">تاریخ عضویت</td><td>{{ user.created_at }}</td></tr>
-                    <tr>
-                        <td class="text-muted">وضعیت</td>
-                        <td>
-                            {% if user.is_banned %}
-                            <span class="badge badge-expired">مسدود</span>
-                            {% else %}
-                            <span class="badge badge-active">فعال</span>
-                            {% endif %}
-                        </td>
-                    </tr>
+                    <tbody>
+                        <tr>
+                            <td style="color:var(--text-muted);width:38%;">شناسه</td>
+                            <td><span class="copy-chip" data-copy="{{ user.id }}">{{ user.id }} <svg class="ic"><use href="#i-copy"/></svg></span></td>
+                        </tr>
+                        <tr><td style="color:var(--text-muted);">یوزرنیم</td><td>{{ '@' + user.username if user.username else '—' }}</td></tr>
+                        <tr><td style="color:var(--text-muted);">نام</td><td>{{ user.first_name or '—' }}</td></tr>
+                        <tr><td style="color:var(--text-muted);">موجودی</td><td><strong style="color:var(--violet-300);font-size:15px;">{{ "{:,.0f}".format(user.balance) }} {{ symbol }}</strong></td></tr>
+                        <tr><td style="color:var(--text-muted);">عضویت</td><td dir="ltr" style="text-align:right;">{{ user.created_at or '—' }}</td></tr>
+                        <tr>
+                            <td style="color:var(--text-muted);">وضعیت</td>
+                            <td>
+                                {% if user.is_banned %}
+                                <span class="badge badge-expired"><svg class="ic ic-sm"><use href="#i-lock"/></svg> مسدود</span>
+                                {% else %}
+                                <span class="badge badge-active"><svg class="ic ic-sm"><use href="#i-shield-check"/></svg> فعال</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
                 </table>
             </div>
         </div>
 
-        <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-wallet2"></i> تنظیم موجودی</div>
+        <div class="card card-dark mb-4">
+            <div class="card-header"><svg class="ic" style="color:var(--green);"><use href="#i-wallet"/></svg> تنظیم موجودی</div>
             <div class="card-body">
-                <form method="POST" action="{{ url_for('user_balance', user_id=user.id) }}" class="d-flex gap-2">
-            {{ csrf_field() }}
-                    <input type="number" name="amount" class="form-control" placeholder="مبلغ" min="1" required>
-                    <button type="submit" name="action" value="add" class="btn btn-outline-success btn-sm">
-                        <i class="bi bi-plus-lg"></i> افزودن
-                    </button>
-                    <button type="submit" name="action" value="remove" class="btn btn-outline-danger btn-sm">
-                        <i class="bi bi-dash-lg"></i> کسر
-                    </button>
+                <form method="POST" action="{{ url_for('user_balance', user_id=user.id) }}">
+                    {{ csrf_field() }}
+                    <div class="mb-3">
+                        <label class="form-label">مبلغ ({{ symbol }})</label>
+                        <input type="number" name="amount" class="form-control" placeholder="مثلاً 500000" min="1" required>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" name="action" value="add" class="btn btn-success-soft flex-fill">
+                            <svg class="ic ic-sm"><use href="#i-plus"/></svg> افزودن
+                        </button>
+                        <button type="submit" name="action" value="remove" class="btn btn-danger-soft flex-fill"
+                                data-confirm="آیا از کسر این مبلغ از موجودی کاربر مطمئن هستید؟">
+                            <svg class="ic ic-sm"><use href="#i-minus"/></svg> کسر
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
 
-        <div class="card card-dark mt-4">
-            <div class="card-header"><i class="bi bi-shield"></i> وضعیت مسدودی</div>
+        <div class="card card-dark">
+            <div class="card-header"><svg class="ic" style="color:var(--red);"><use href="#i-shield-lock"/></svg> دسترسی کاربر</div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('user_ban', user_id=user.id) }}">
-            {{ csrf_field() }}
+                    {{ csrf_field() }}
                     {% if user.is_banned %}
-                    <button type="submit" class="btn btn-outline-success">
-                        <i class="bi bi-unlock"></i> رفع مسدودی
+                    <button type="submit" class="btn btn-success-soft w-100">
+                        <svg class="ic ic-sm"><use href="#i-unlock"/></svg> رفع مسدودی
                     </button>
                     {% else %}
-                    <button type="submit" class="btn btn-outline-danger" onclick="return confirm('آیا این کاربر را مسدود می‌کنید؟')">
-                        <i class="bi bi-lock"></i> مسدود کردن
+                    <button type="submit" class="btn btn-danger-soft w-100"
+                            data-confirm="با مسدودسازی، کاربر به ربات دسترسی نخواهد داشت. ادامه می‌دهید؟">
+                        <svg class="ic ic-sm"><use href="#i-lock"/></svg> مسدود کردن کاربر
                     </button>
                     {% endif %}
                 </form>
@@ -67,27 +87,30 @@
         </div>
     </div>
 
-    <div class="col-lg-6">
-        <div class="card card-dark">
-            <div class="card-header"><i class="bi bi-key"></i> کانفیگ‌ها ({{ configs|length }})</div>
-            <div class="card-body">
+    <div class="col-lg-7">
+        <div class="card card-dark h-100">
+            <div class="card-header">
+                <svg class="ic"><use href="#i-key"/></svg> کانفیگ‌های کاربر
+                <span class="badge badge-neutral ms-auto">{{ configs|length }} کانفیگ</span>
+            </div>
+            <div class="card-body p-0">
                 {% if configs %}
                 <div class="table-responsive">
                     <table class="table table-dark mb-0">
                         <thead>
-                            <tr><th>#</th><th>ایمیل</th><th>تاریخ انقضا</th><th>وضعیت</th></tr>
+                            <tr><th>#</th><th>ایمیل</th><th>انقضا</th><th>وضعیت</th></tr>
                         </thead>
                         <tbody>
                             {% for c in configs %}
                             <tr>
                                 <td>{{ c.id }}</td>
-                                <td><code>{{ c.email }}</code></td>
-                                <td>{{ c.expire_date[:10] if c.expire_date else '-' }}</td>
+                                <td><code class="vio">{{ c.email }}</code></td>
+                                <td dir="ltr" style="text-align:right;color:var(--text-muted);">{{ c.expire_date[:10] if c.expire_date else '—' }}</td>
                                 <td>
                                     {% if c.is_active %}
                                     <span class="badge badge-active">فعال</span>
                                     {% else %}
-                                    <span class="badge badge-expired">منقضی شده</span>
+                                    <span class="badge badge-expired">غیرفعال</span>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -96,7 +119,10 @@
                     </table>
                 </div>
                 {% else %}
-                <p class="text-muted mb-0">کانفیگی یافت نشد.</p>
+                <div class="empty-state">
+                    <div class="es-icon"><svg class="ic"><use href="#i-key"/></svg></div>
+                    این کاربر هنوز کانفیگی ندارد
+                </div>
                 {% endif %}
             </div>
         </div>
