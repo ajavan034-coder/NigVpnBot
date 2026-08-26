@@ -373,100 +373,22 @@ async def init_db():
         if not await existing.fetchone():
             await db.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (admin_id,))
 
-    defaults = {
-        "welcome_text": "به NigVpn خوش آمدید! خرید آسان و امن VPN",
-        "currency": "IRR",
-        "currency_symbol": "تومان",
-        "min_topup": "50000",
-        "btn_wallet": "\U0001f4b3 Wallet",
-        "btn_free_test": "\U0001f195 Free Test",
-        "btn_buy_config": "\U0001f6d2 Buy Config",
-        "btn_my_configs": "\U0001f4cb سرویس‌های من",
-        "btn_topup": "\U0001f4b5 Top Up",
-        "btn_tx_history": "\U0001f4ca History",
-        "btn_back": "\u2b05\ufe0f Back",
-        "btn_back_to_menu": "\u2b05\ufe0f Menu",
-        "btn_admin_stats": "\U0001f4ca Statistics",
-        "btn_admin_receipts": "\U0001f4cb Receipts",
-        "btn_admin_users": "\U0001f465 Users",
-        "btn_admin_settings": "\u2699\ufe0f Settings",
-        "btn_admin_admins": "\U0001f511 Admins",
-        "btn_admin_plans": "\U0001f4c8 Plans",
-        "card_number": "1234-5678-9012-3456",
-        "card_owner": "Card Owner Name",
-        "btn_c2c_payment": "\U0001f4b3 کارت به کارت",
-        "btn_wallet_payment": "\U0001f4b0 Pay with Wallet",
-        "c2c_title": "\U0001f4b3 **Card to Card Payment**",
-        "c2c_instruction": "Send the exact amount to the card below, then upload your payment receipt.",
-        "free_test_mb": "102400",
-        "free_test_enabled": "1",
-        "free_test_days": "1",
-        "free_test_inbound_ids": "",
-        "auto_approve_max": "0",
-        "expiry_reminder_enabled": "1",
-        "expired_config_notify": "0",
-        "invite_enabled": "0",
-        "invite_reward_amount": "5000",
-        "text_invite": "",
-        "text_invite_fixed": "",
-        "text_invite_commission": "",
-        "force_join_enabled": "0",
-        "required_channel_id": "",
-        "force_join_text": "⚠️ برای استفاده از ربات، ابتدا باید در کانال ما عضو شوید!",
-        "force_join_fail_text": "❌ شما هنوز در کانال عضو نیستید! لطفاً ابتدا عضو شوید و سپس دوباره بررسی کنید.",
-        "force_join_btn_join": "🔗 عضویت در کانال",
-        "force_join_btn_check": "✅ بررسی عضویت",
-        "panel_url": "",
-        "panel_user": "",
-        "panel_pass": "",
-        "sub_link_template": "",
-        "inbound_id": "",
-        "extra_volume_price_per_gb": "6000",
-        "notification_channel_id": "",
-        "text_new_user_notification": "",
-        "text_free_test_notification": "",
-        "text_new_config_notification": "",
-        "text_receipt_notification": "",
-        "collab_enabled": "1",
-        "collab_notification_channel": "",
-        "btn_collab_request": "🤝 درخواست همکاری",
-        "backup_enabled": "1",
-        "backup_hour": "4",
-        "backup_minute": "0",
-        "shop_open": "1",
-        "shop_close_message": "فروش به دلیل بروزرسانی موقتاً بسته شده است.",
-        "operating_mode": "NORMAL",
-        "phone_verification_enabled": "0",
-        "cashback_percent": "0",
-        "service_monitor_enabled": "0",
-        "service_monitor_interval": "300",
-        "volume_warning_percent": "80",
-        "expiry_warning_hours": "48",
-        "maintenance_message": "🔧 ربات در حال بروزرسانی است. لطفاً بعداً تلاش کنید.",
-        "sales_paused_message": "⛔ فروش موقتاً متوقف شده است.",
-        "btn_redeem_gift": "🎁 کد هدیه",
-        "btn_guides": "📖 راهنمای اتصال",
-    }
-    for key, value in defaults.items():
-        existing = await db.execute("SELECT key FROM settings WHERE key = ?", (key,))
-        if not await existing.fetchone():
-            await db.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, value))
-
-    plan_exists = await db.execute("SELECT COUNT(*) as cnt FROM plans")
-    if (await plan_exists.fetchone())["cnt"] == 0:
-        default_plans = [
-            ("1 Month", 50, 30, 150000),
-            ("3 Months", 100, 90, 350000),
-            ("6 Months", 200, 180, 600000),
-        ]
-        for name, gb, days, price in default_plans:
-            await db.execute(
-                "INSERT INTO plans (name, gb, days, price) VALUES (?, ?, ?, ?)",
-                (name, gb, days, price),
-            )
-
     await db.commit()
     await db.close()
+
+    # Seed full default configuration from defaults/*.json.
+    # Insert-if-absent semantics: existing installations are never modified,
+    # and plan/section catalog is only seeded into a completely empty database.
+    try:
+        import asyncio
+        import seed_defaults
+        stats = await asyncio.to_thread(seed_defaults.seed_all, DB_PATH)
+        if any(stats.values()):
+            logger.info("Seeded default configuration: %s", stats)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        logger.warning("Default configuration seeding skipped: %s", e)
 
 
 async def get_setting(key: str) -> str | None:

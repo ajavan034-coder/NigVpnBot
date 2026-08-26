@@ -1,0 +1,162 @@
+{
+  "plan_sections": [
+    {
+      "name": "V2ray(مستقیم)",
+      "display_order": 0
+    },
+    {
+      "name": "V2ray(تانل)",
+      "display_order": 0
+    },
+    {
+      "name": "Wireguard",
+      "display_order": 0
+    }
+  ],
+  "plans": [
+    {
+      "name": "V2ray",
+      "gb": 5,
+      "days": 30,
+      "price": 25000,
+      "is_active": true,
+      "is_ultimate": false,
+      "section_index": 1,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    },
+    {
+      "name": "V2ray",
+      "gb": 10,
+      "days": 30,
+      "price": 50000,
+      "is_active": true,
+      "is_ultimate": false,
+      "section_index": 1,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    },
+    {
+      "name": "V2ray",
+      "gb": 20,
+      "days": 30,
+      "price": 100000,
+      "is_active": true,
+      "is_ultimate": false,
+      "section_index": 1,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    },
+    {
+      "name": "V2ray",
+      "gb": 30,
+      "days": 30,
+      "price": 150000,
+      "is_active": true,
+      "is_ultimate": false,
+      "section_index": 1,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    },
+    {
+      "name": "V2ray",
+      "gb": 20,
+      "days": 30,
+      "price": 30000,
+      "is_active": true,
+      "is_ultimate": false,
+      "section_index": 0,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    },
+    {
+      "name": "V2ray",
+      "gb": 40,
+      "days": 30,
+      "price": 60000,
+      "is_active": true,
+      "is_ultimate": false,
+      "section_index": 0,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    },
+    {
+      "name": "V2ray",
+      "gb": 60,
+      "days": 30,
+      "price": 90000,
+      "is_active": true,
+      "is_ultimate": false,
+      "section_index": 0,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    },
+    {
+      "name": "نامحدود",
+      "gb": 100,
+      "days": 30,
+      "price": 150000,
+      "is_active": true,
+      "is_ultimate": true,
+      "section_index": 0,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    },
+    {
+      "name": "WireGuard",
+      "gb": 10,
+      "days": 30,
+      "price": 60000,
+      "is_active": true,
+      "is_ultimate": false,
+      "section_index": 2,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    },
+    {
+      "name": "WireGuard",
+      "gb": 20,
+      "days": 30,
+      "price": 110000,
+      "is_active": true,
+      "is_ultimate": false,
+      "section_index": 2,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    },
+    {
+      "name": "WireGuard",
+      "gb": 30,
+      "days": 30,
+      "price": 160000,
+      "is_active": true,
+      "is_ultimate": false,
+      "section_index": 2,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    },
+    {
+      "name": "WireGuard",
+      "gb": 40,
+      "days": 30,
+      "price": 200000,
+      "is_active": true,
+      "is_ultimate": false,
+      "section_index": 2,
+      "collaborator_price": 0,
+      "ip_limit": 0,
+      "service_type": "v2ray"
+    }
+  ]
+}
