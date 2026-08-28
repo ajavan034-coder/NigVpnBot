@@ -1,0 +1,34 @@
+<style>
+.emoji-toolbar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.emoji-chip{cursor:pointer;font-size:11px;font-weight:600;color:#c4b5fd;
+background:rgba(139,92,246,.08);border:1px solid rgba(167,139,250,.22);
+border-radius:999px;padding:3px 10px;transition:.15s;direction:ltr;user-select:none}
+.emoji-chip:hover{background:rgba(139,92,246,.2);color:#fff}
+.emoji-toolbar-empty{display:none}
+</style>
+<script>
+(function(){
+fetch('/api/premium-emojis').then(function(r){return r.json()}).then(function(map){
+var names=Object.keys(map||{});
+if(!names.length)return;
+document.querySelectorAll('textarea').forEach(function(ta){
+if(ta.dataset.noEmoji!==undefined)return;
+if(ta.parentElement.querySelector('.emoji-toolbar'))return;
+var bar=document.createElement('div');bar.className='emoji-toolbar';
+names.forEach(function(n){
+var c=document.createElement('span');c.className='emoji-chip';
+c.textContent=':'+n+':';c.title='درج در محل نشانگر';
+c.addEventListener('click',function(){insertAtCaret(ta,':'+n+':')});
+bar.appendChild(c);
+});
+ta.parentElement.insertBefore(bar,ta);
+});
+}).catch(function(){});
+function insertAtCaret(el,text){
+var s=el.selectionStart,e=el.selectionEnd;
+if(s===null||s===undefined){s=el.value.length;e=s;}
+el.value=el.value.slice(0,s)+text+el.value.slice(e);
+el.selectionStart=el.selectionEnd=s+text.length;el.focus();
+}
+})();
+</script>

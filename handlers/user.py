@@ -32,7 +32,19 @@ from utils.texts import (
     no_balance_for_extra, regenerate_link_confirm_text, regenerate_link_success_text,
     volume_detail_text, extract_configs_text,
 )
-from utils.premium_emoji import pe, get_button_emoji_id
+from utils.premium_emoji import pe, get_button_emoji_id, render_shortcodes
+
+
+async def rich_get(key: str):
+    """get_setting + :shortcode: rendering for admin-editable rich texts."""
+    value = await get_setting(key)
+    if not value:
+        return value
+    try:
+        return await render_shortcodes(value)
+    except Exception:
+        return value
+
 from utils.stickers import send_sticker
 from utils.qr_generator import generate_qr
 from io import BytesIO
@@ -65,7 +77,7 @@ async def _is_channel_member(bot, user_id: int) -> bool:
 
 async def _send_force_join(bot, chat_id: int):
     channel_id = await get_setting("required_channel_id") or ""
-    text = await get_setting("force_join_text") or "⚠️ برای استفاده از ربات، ابتدا باید در کانال ما عضو شوید!"
+    text = await rich_get("force_join_text") or "⚠️ برای استفاده از ربات، ابتدا باید در کانال ما عضو شوید!"
     await bot.send_message(chat_id=chat_id, text=text, reply_markup=await force_join_keyboard(channel_id))
 
 
@@ -186,7 +198,7 @@ class ForceJoinMiddleware(BaseMiddleware):
         if event.data == "check_membership":
             return await handler(event, data)
         if not await _is_channel_member(event.bot, event.from_user.id):
-            fail_text = await get_setting("force_join_fail_text") or "⚠️ ابتدا در کانال عضو شوید!"
+            fail_text = await rich_get("force_join_fail_text") or "⚠️ ابتدا در کانال عضو شوید!"
             await event.answer(fail_text, show_alert=True)
             return
         return await handler(event, data)
@@ -388,7 +400,7 @@ async def cmd_start(message: Message, state: FSMContext):
                 text = "━━━━━━━━━━━━━━━━━━━━\n  🛒 <b>خرید سرویس</b>\n━━━━━━━━━━━━━━━━━━━━\n\n  بخش مورد نظر را انتخاب کنید:"
                 reply_markup = await sections_menu()
             else:
-                text = await get_setting("plans_header_text") or (
+                text = await rich_get("plans_header_text") or (
                     "━━━━━━━━━━━━━━━━━━━━\n"
                     "  🛒 <b>خرید سرویس</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -557,7 +569,7 @@ async def cmd_start(message: Message, state: FSMContext):
             return
 
     we = await get_setting("welcome_emoji") or ""
-    welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
+    welcome = await rich_get("welcome_text") or WELCOME_TEXT_DEFAULT
     user = message.from_user
     welcome = welcome.replace("{name}", user.first_name or "دوست عزیز")
     welcome = welcome.replace("{{username}}", f"@{user.username}" if user.username else "")
@@ -606,7 +618,7 @@ async def btn_start(message: Message):
             return
 
     we = await get_setting("welcome_emoji") or ""
-    welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
+    welcome = await rich_get("welcome_text") or WELCOME_TEXT_DEFAULT
     user = message.from_user
     welcome = welcome.replace("{name}", user.first_name or "دوست عزیز")
     welcome = welcome.replace("{{username}}", f"@{user.username}" if user.username else "")
@@ -642,7 +654,7 @@ async def handle_contact(message: Message, state: FSMContext):
     await message.answer("✅ شماره تلفن شما تایید شد.", reply_markup=ReplyKeyboardRemove())
 
     we = await get_setting("welcome_emoji") or ""
-    welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
+    welcome = await rich_get("welcome_text") or WELCOME_TEXT_DEFAULT
     user = message.from_user
     welcome = welcome.replace("{name}", user.first_name or "دوست عزیز")
     welcome = welcome.replace("{{username}}", f"@{user.username}" if user.username else "")
@@ -669,7 +681,7 @@ async def cb_check_membership(callback: CallbackQuery):
             await callback.message.delete()
         except Exception:
             pass
-        welcome = await get_setting("welcome_text") or WELCOME_TEXT_DEFAULT
+        welcome = await rich_get("welcome_text") or WELCOME_TEXT_DEFAULT
         user = callback.from_user
         welcome = welcome.replace("{name}", user.first_name or "دوست عزیز")
         welcome = welcome.replace("{{username}}", f"@{user.username}" if user.username else "")
@@ -686,7 +698,7 @@ async def cb_check_membership(callback: CallbackQuery):
         except Exception:
             pass
     else:
-        fail_text = await get_setting("force_join_fail_text") or "❌ شما هنوز در کانال عضو نیستید! لطفاً ابتدا عضو شوید و سپس دوباره بررسی کنید."
+        fail_text = await rich_get("force_join_fail_text") or "❌ شما هنوز در کانال عضو نیستید! لطفاً ابتدا عضو شوید و سپس دوباره بررسی کنید."
         await callback.answer(fail_text, show_alert=True)
 
 
@@ -776,11 +788,11 @@ async def cb_free_test(callback: CallbackQuery):
     await _ensure_start_kb(callback.message.bot, callback.message.chat.id)
     mode = await get_setting("operating_mode") or "NORMAL"
     if mode == "MAINTENANCE":
-        msg = await get_setting("maintenance_message") or "ربات در حال بروزرسانی است."
+        msg = await rich_get("maintenance_message") or "ربات در حال بروزرسانی است."
         await callback.answer(msg, show_alert=True)
         return
     if mode == "SALES_PAUSED":
-        msg = await get_setting("sales_paused_message") or "فروش موقتاً متوقف شده."
+        msg = await rich_get("sales_paused_message") or "فروش موقتاً متوقف شده."
         await callback.answer(msg, show_alert=True)
         return
 
@@ -1389,17 +1401,17 @@ async def cb_buy_config(callback: CallbackQuery):
     await _ensure_start_kb(callback.message.bot, callback.message.chat.id)
     mode = await get_setting("operating_mode") or "NORMAL"
     if mode == "MAINTENANCE":
-        msg = await get_setting("maintenance_message") or "ربات در حال بروزرسانی است."
+        msg = await rich_get("maintenance_message") or "ربات در حال بروزرسانی است."
         await callback.answer(msg, show_alert=True)
         return
     if mode == "SALES_PAUSED":
-        msg = await get_setting("sales_paused_message") or "فروش موقتاً متوقف شده."
+        msg = await rich_get("sales_paused_message") or "فروش موقتاً متوقف شده."
         await callback.answer(msg, show_alert=True)
         return
 
     shop_open = await get_setting("shop_open") or "1"
     if shop_open == "0":
-        msg = await get_setting("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
+        msg = await rich_get("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
         await callback.answer(msg, show_alert=True)
         return
     user = await get_user(callback.from_user.id)
@@ -1412,7 +1424,7 @@ async def cb_buy_config(callback: CallbackQuery):
         text = "━━━━━━━━━━━━━━━━━━━━\n  🛒 <b>خرید کانفیگ</b>\n━━━━━━━━━━━━━━━━━━━━\n\n  بخش مورد نظر را انتخاب کنید:"
         reply_markup = await sections_menu()
     else:
-        text = await get_setting("plans_header_text") or (
+        text = await rich_get("plans_header_text") or (
             "━━━━━━━━━━━━━━━━━━━━\n"
             "  🛒 <b>خرید کانفیگ</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -1450,7 +1462,7 @@ async def cb_buy_config(callback: CallbackQuery):
 async def cb_select_section(callback: CallbackQuery):
     shop_open = await get_setting("shop_open") or "1"
     if shop_open == "0":
-        msg = await get_setting("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
+        msg = await rich_get("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
         await callback.answer(msg, show_alert=True)
         return
     section_id = int(callback.data.split("_")[-1])
@@ -1467,10 +1479,10 @@ async def cb_select_section(callback: CallbackQuery):
 async def cb_all_plans(callback: CallbackQuery):
     shop_open = await get_setting("shop_open") or "1"
     if shop_open == "0":
-        msg = await get_setting("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
+        msg = await rich_get("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
         await callback.answer(msg, show_alert=True)
         return
-    text = await get_setting("plans_header_text") or (
+    text = await rich_get("plans_header_text") or (
         "━━━━━━━━━━━━━━━━━━━━\n"
         "  🛒 <b>خرید کانفیگ</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -1486,7 +1498,7 @@ async def cb_all_plans(callback: CallbackQuery):
 async def cb_select_plan(callback: CallbackQuery, state: FSMContext):
     shop_open = await get_setting("shop_open") or "1"
     if shop_open == "0":
-        msg = await get_setting("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
+        msg = await rich_get("shop_close_message") or "فروش به دلیل بروزرسانی موقتاً بسته شده است."
         await callback.answer(msg, show_alert=True)
         return
     plan_id = int(callback.data.split("_")[-1])

@@ -78,3 +78,40 @@ async def pe(name: str) -> str:
 async def get_button_emoji_id(name: str) -> str | None:
     mapping = await load_emoji_ids()
     return mapping.get(name) or None
+
+
+SHORTCODE_RE = re.compile(r":([a-z][a-z0-9_]{0,30}):")
+
+
+async def render_shortcodes(text: str) -> str:
+    """Convert :name: shortcodes into <tg-emoji> tags.
+
+    Unknown names are left untouched so URLs and times like 12:30 pass
+    through safely, and existing raw <tg-emoji> HTML keeps working.
+    """
+    if not text or ":" not in text:
+        return text
+    try:
+        mapping = await load_emoji_ids()
+    except Exception:
+        return text
+    if not mapping:
+        return text
+    defaults = await get_available_emojis()
+
+    def _sub(match):
+        name = match.group(1)
+        eid = mapping.get(name)
+        if eid:
+            return f'<tg-emoji emoji-id="{eid}">🔹</tg-emoji>'
+        return defaults.get(name) or match.group(0)
+
+    return SHORTCODE_RE.sub(_sub, text)
+
+
+async def rich_setting(key: str, default=None):
+    """Fetch a setting and render its :shortcodes:. None passes through."""
+    value = await get_setting(key)
+    if value is None:
+        return default
+    return await render_shortcodes(value)

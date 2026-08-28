@@ -31,7 +31,14 @@ async def _get_setting(key: str) -> str | None:
 
 async def _get_text(key, default):
     from database import get_setting
-    return await get_setting(key) or default
+    from utils.premium_emoji import render_shortcodes
+    val = await get_setting(key)
+    if not val:
+        return default
+    try:
+        return await render_shortcodes(val)
+    except Exception:
+        return val
 
 
 WELCOME_TEXT_DEFAULT = "سلام {name}! 👋\nبه NigVpn خوش آمدید.\nخرید آسان و امن VPN"

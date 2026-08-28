@@ -2,6 +2,7 @@ import os
 import secrets
 import asyncio
 import time
+import json
 import threading
 from functools import wraps
 from flask import (
@@ -1075,6 +1076,18 @@ def bot_avatar():
         resp = send_file(path, mimetype="image/jpeg", max_age=3600)
         return resp
     return "", 404
+
+
+@app.route("/api/premium-emojis")
+@login_required
+def api_premium_emojis():
+    """Registered premium emoji names for the shortcode picker."""
+    raw = web_db.get_setting("premium_emojis") or "{}"
+    try:
+        mapping = json.loads(raw)
+    except Exception:
+        mapping = {}
+    return jsonify(mapping if isinstance(mapping, dict) else {})
 
 
 def _format_size(size_bytes):
