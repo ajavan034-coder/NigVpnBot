@@ -3,39 +3,94 @@
 {% block page_name %}داشبورد{% endblock %}
 {% block content %}
 <style>
-    .chart-card .card-body { padding: 20px 24px 16px; }
-    .chart-card .card-header { padding: 16px 24px; font-size: 14.5px; }
-    .stat-card .stat-icon { width: 44px; height: 44px; border-radius: 12px; }
-    .stat-card .stat-icon svg.ic { width: 24px; height: 24px; }
-    .stat-card .stat-value { font-size: 24px; }
-    .stat-card .stat-label { font-size: 12px; margin-top: 2px; }
-    .doughnut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        text-align: center; pointer-events: none; }
-    .doughnut-center .dc-val { font-size: 22px; font-weight: 800; color: var(--text-primary); }
-    .doughnut-center .dc-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-    .earnings-row .stat-card { position: relative; overflow: hidden; }
-    .earnings-row .stat-card::before {
-        content: ''; position: absolute; top: -30%; right: -10%; width: 80px; height: 80px;
-        border-radius: 50%; background: var(--sc); opacity: .06; filter: blur(20px);
+    /* ── Dashboard overrides ── */
+    .dash-hero {
+        background: linear-gradient(135deg, rgba(139,92,246,.06) 0%, rgba(109,40,217,.03) 50%, transparent 100%);
+        border: 1px solid var(--border-subtle); border-radius: 20px;
+        padding: 28px 32px 24px; margin-bottom: 28px;
     }
+    .dash-hero .page-header { margin-bottom: 0; }
+
+    .stat-row .stat-card { min-height: 100px; }
+    .stat-row .stat-card .stat-icon {
+        width: 48px; height: 48px; border-radius: 14px;
+        background: linear-gradient(135deg,
+            color-mix(in srgb, var(--sc) 14%, transparent),
+            color-mix(in srgb, var(--sc) 6%, transparent));
+        border: 1px solid color-mix(in srgb, var(--sc) 18%, transparent);
+    }
+    .stat-row .stat-card .stat-icon svg.ic { width: 23px; height: 23px; }
+    .stat-row .stat-value { font-size: 25px; font-weight: 800; letter-spacing: -.4px; line-height: 1.15; }
+    .stat-row .stat-label { font-size: 11.5px; font-weight: 600; color: var(--text-muted); margin-top: 3px; }
+    .stat-row .stat-card::before {
+        content: ''; position: absolute; top: -40px; right: -30px;
+        width: 100px; height: 100px; border-radius: 50%;
+        background: var(--sc); opacity: .04; filter: blur(28px); pointer-events: none;
+    }
+
+    .earnings-card {
+        position: relative; overflow: hidden;
+        background: linear-gradient(160deg, var(--bg-card) 0%, #150e28 100%);
+    }
+    .earnings-card .ew-accent {
+        position: absolute; top: 0; right: 0; width: 60%; height: 100%;
+        background: linear-gradient(225deg, color-mix(in srgb, var(--sc) 8%, transparent), transparent 70%);
+        pointer-events: none; border-radius: 0 18px 0 0;
+    }
+    .earnings-card .stat-value { color: var(--sc); }
+    .earnings-card .stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+
+    .chart-section .card-dark { border-radius: 20px; }
+    .chart-section .card-header {
+        font-size: 14px; letter-spacing: -.1px; padding: 18px 26px;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+    .chart-section .card-body { padding: 24px 28px 16px; }
+
+    .doughnut-wrap { position: relative; display: flex; align-items: center; justify-content: center; }
+    .doughnut-center {
+        position: absolute; text-align: center; pointer-events: none;
+    }
+    .doughnut-center .dc-icon { font-size: 18px; margin-bottom: 4px; opacity: .5; }
+    .doughnut-center .dc-val { font-size: 24px; font-weight: 800; color: var(--text-primary); line-height: 1.1; }
+    .doughnut-center .dc-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 500; }
+
+    .receipts-table .table-dark tbody td { font-size: 13px; }
+    .receipts-table .table-dark thead th { letter-spacing: .8px; }
+
+    .qa-section .quick-action { padding: 14px 18px; border-radius: 14px; }
+    .qa-section .qa-icon {
+        width: 40px; height: 40px; border-radius: 12px;
+        background: linear-gradient(135deg,
+            color-mix(in srgb, var(--qc) 16%, transparent),
+            color-mix(in srgb, var(--qc) 6%, transparent));
+        border: 1px solid color-mix(in srgb, var(--qc) 15%, transparent);
+    }
+    .qa-section .qa-icon svg.ic { width: 20px; height: 20px; }
+    .qa-section .quick-action:hover { transform: translateY(-2px); }
 </style>
 
-<div class="page-header">
-    <div class="d-flex align-items-center gap-3">
-        <div class="ph-icon"><svg class="ic"><use href="#i-grid"/></svg></div>
-        <div>
-            <h3>داشبورد</h3>
-            <p>نمای کلی وضعیت ربات و فروش</p>
+<!-- ─── Hero Header ─── -->
+<div class="dash-hero">
+    <div class="page-header">
+        <div class="d-flex align-items-center gap-3">
+            <div class="ph-icon">
+                <svg class="ic"><use href="#i-grid"/></svg>
+            </div>
+            <div>
+                <h3 style="font-size:21px;">داشبورد</h3>
+                <p style="margin-top:4px;">نمای کلی وضعیت ربات و فروش</p>
+            </div>
         </div>
-    </div>
-    <div class="text-muted" style="font-size:12.5px;" id="liveClock">
-        <svg class="ic ic-sm" style="opacity:.6;"><use href="#i-clock"/></svg>
-        <span dir="ltr"></span>
+        <div class="text-muted" style="font-size:12.5px;" id="liveClock">
+            <svg class="ic ic-sm" style="opacity:.6;"><use href="#i-clock"/></svg>
+            <span dir="ltr"></span>
+        </div>
     </div>
 </div>
 
-<!-- ─── Core Stats ─── -->
-<div class="row g-3 mb-3">
+<!-- ─── Core Stats (4) ─── -->
+<div class="row g-3 mb-4 stat-row">
     <div class="col-xl-3 col-md-6">
         <div class="stat-card" style="--sc:#8b5cf6;">
             <div class="d-flex align-items-center gap-3">
@@ -81,54 +136,58 @@
                         <div class="stat-value" id="pendingVal">{{ pending }}</div>
                         <div class="stat-label">رسید در انتظار</div>
                     </div>
-                    <svg class="ic ic-sm me-auto" style="color:var(--text-muted);"><use href="#i-arrow-left"/></svg>
+                    <svg class="ic ic-sm me-auto" style="color:var(--text-muted);opacity:.5;"><use href="#i-arrow-left"/></svg>
                 </div>
             </div>
         </a>
     </div>
 </div>
 
-<!-- ─── Earnings Row ─── -->
-<div class="row g-3 mb-4 earnings-row">
+<!-- ─── Earnings Cards (4) ─── -->
+<div class="row g-3 mb-4 stat-row">
     <div class="col-lg-3 col-md-6">
-        <div class="stat-card" style="--sc:#22d3ee;">
-            <div class="d-flex align-items-center gap-3">
+        <div class="stat-card earnings-card" style="--sc:#22d3ee;">
+            <div class="ew-accent"></div>
+            <div class="d-flex align-items-center gap-3" style="position:relative;z-index:1;">
                 <div class="stat-icon"><svg class="ic"><use href="#i-zap"/></svg></div>
                 <div>
-                    <div class="stat-value" id="todayVal" style="color:#22d3ee;">—</div>
-                    <div class="stat-label">درآمد امروز</div>
+                    <div class="stat-value" id="todayVal">—</div>
+                    <div class="stat-label">امروز</div>
                 </div>
             </div>
         </div>
     </div>
     <div class="col-lg-3 col-md-6">
-        <div class="stat-card" style="--sc:#a78bfa;">
-            <div class="d-flex align-items-center gap-3">
+        <div class="stat-card earnings-card" style="--sc:#a78bfa;">
+            <div class="ew-accent"></div>
+            <div class="d-flex align-items-center gap-3" style="position:relative;z-index:1;">
                 <div class="stat-icon"><svg class="ic"><use href="#i-calendar"/></svg></div>
                 <div>
-                    <div class="stat-value" id="weekVal" style="color:#a78bfa;">—</div>
+                    <div class="stat-value" id="weekVal">—</div>
                     <div class="stat-label">این هفته</div>
                 </div>
             </div>
         </div>
     </div>
     <div class="col-lg-3 col-md-6">
-        <div class="stat-card" style="--sc:#f472b6;">
-            <div class="d-flex align-items-center gap-3">
+        <div class="stat-card earnings-card" style="--sc:#f472b6;">
+            <div class="ew-accent"></div>
+            <div class="d-flex align-items-center gap-3" style="position:relative;z-index:1;">
                 <div class="stat-icon"><svg class="ic"><use href="#i-chart"/></svg></div>
                 <div>
-                    <div class="stat-value" id="lastWeekVal" style="color:#f472b6;">—</div>
-                    <div class="stat-label">هفته گذشته</div>
+                    <div class="stat-value" id="lastWeekVal">—</div>
+                    <div class="stat-label">هفته قبل</div>
                 </div>
             </div>
         </div>
     </div>
     <div class="col-lg-3 col-md-6">
-        <div class="stat-card" style="--sc:#fb923c;">
-            <div class="d-flex align-items-center gap-3">
+        <div class="stat-card earnings-card" style="--sc:#fb923c;">
+            <div class="ew-accent"></div>
+            <div class="d-flex align-items-center gap-3" style="position:relative;z-index:1;">
                 <div class="stat-icon"><svg class="ic"><use href="#i-bar-chart"/></svg></div>
                 <div>
-                    <div class="stat-value" id="monthVal" style="color:#fb923c;">—</div>
+                    <div class="stat-value" id="monthVal">—</div>
                     <div class="stat-label">این ماه</div>
                 </div>
             </div>
@@ -136,10 +195,10 @@
     </div>
 </div>
 
-<!-- ─── Charts Row 1: Daily + Status ─── -->
-<div class="row g-3 mb-4">
+<!-- ─── Charts ─── -->
+<div class="row g-3 mb-4 chart-section">
     <div class="col-lg-8">
-        <div class="card card-dark chart-card">
+        <div class="card card-dark">
             <div class="card-header">
                 <svg class="ic"><use href="#i-chart"/></svg> درآمد روزانه — ۳۰ روز اخیر
             </div>
@@ -149,14 +208,14 @@
         </div>
     </div>
     <div class="col-lg-4">
-        <div class="card card-dark chart-card h-100">
+        <div class="card card-dark h-100">
             <div class="card-header">
                 <svg class="ic"><use href="#i-pie"/></svg> وضعیت رسیدها
             </div>
-            <div class="card-body d-flex align-items-center justify-content-center" style="position:relative;height:320px;">
+            <div class="card-body doughnut-wrap" style="height:320px;">
                 <div class="doughnut-center">
                     <div class="dc-val" id="doughnutTotal">—</div>
-                    <div class="dc-label">کل درآمد</div>
+                    <div class="dc-sub">کل درآمد تایید شده</div>
                 </div>
                 <canvas id="statusChart"></canvas>
             </div>
@@ -164,24 +223,23 @@
     </div>
 </div>
 
-<!-- ─── Charts Row 2: Monthly ─── -->
-<div class="row g-3 mb-4">
+<div class="row g-3 mb-4 chart-section">
     <div class="col-lg-12">
-        <div class="card card-dark chart-card">
+        <div class="card card-dark">
             <div class="card-header">
                 <svg class="ic"><use href="#i-bar-chart"/></svg> درآمد ماهانه — ۱۲ ماه اخیر
             </div>
-            <div class="card-body" style="position:relative;height:280px;">
+            <div class="card-body" style="position:relative;height:270px;">
                 <canvas id="monthlyChart"></canvas>
             </div>
         </div>
     </div>
 </div>
 
-<!-- ─── Bottom Row: Receipts + Quick Actions ─── -->
+<!-- ─── Bottom ─── -->
 <div class="row g-3">
     <div class="col-lg-7">
-        <div class="card card-dark h-100">
+        <div class="card card-dark h-100 receipts-table">
             <div class="card-header">
                 <svg class="ic"><use href="#i-receipt"/></svg> آخرین رسیدها
                 <a href="{{ url_for('receipts') }}" class="btn btn-outline-purple btn-sm ms-auto">مشاهده همه</a>
@@ -195,8 +253,8 @@
                         {% for r in recent_receipts %}
                         <tr>
                             <td>{{ '@' + r.username if r.username else r.user_id }}</td>
-                            <td style="font-weight:600;">{{ "{:,.0f}".format(r.amount) }} {{ symbol }}</td>
-                            <td style="color:var(--text-muted);font-size:12.5px;" dir="ltr">{{ r.created_at[:16] if r.created_at else '-' }}</td>
+                            <td style="font-weight:700;color:var(--violet-300);">{{ "{:,.0f}".format(r.amount) }} {{ symbol }}</td>
+                            <td style="color:var(--text-muted);font-size:12px;" dir="ltr">{{ r.created_at[:16] if r.created_at else '-' }}</td>
                             <td>
                                 {% if r.status == 'pending' %}
                                 <span class="badge badge-pending"><svg class="ic ic-sm"><use href="#i-alert-circle"/></svg> در انتظار</span>
@@ -222,7 +280,7 @@
         </div>
     </div>
     <div class="col-lg-5">
-        <div class="card card-dark h-100">
+        <div class="card card-dark h-100 qa-section">
             <div class="card-header">
                 <svg class="ic" style="color:var(--green);"><use href="#i-zap"/></svg> دسترسی سریع
             </div>
@@ -263,118 +321,156 @@
 
 {% block scripts %}
 <script>
+    /* ── clock ── */
     function tick() {
         const el = document.querySelector('#liveClock span');
         if (el) el.textContent = new Date().toLocaleString('fa-IR');
     }
     tick(); setInterval(tick, 30000);
 
+    /* ── palette ── */
     const fmt = v => new Intl.NumberFormat('fa-IR').format(Math.round(v));
-    const purple = '#8b5cf6', green = '#34d399', blue = '#60a5fa',
-          amber = '#fbbf24', cyan = '#22d3ee', red = '#ef4444', pink = '#f472b6', orange = '#fb923c';
+    const C = {
+        purple: '#8b5cf6', violet: '#7c3aed', deepViolet: '#6d28d9',
+        green: '#34d399', teal: '#2dd4bf',
+        blue: '#60a5fa', sky: '#38bdf8',
+        amber: '#fbbf24', orange: '#fb923c',
+        cyan: '#22d3ee', pink: '#f472b6', red: '#ef4444',
+    };
 
     const jalaliMonths = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
-    const jalaliMonthShort = ['فرو','ارد','خرداد','تیر','مرداد','شهر','مهر','آبان','آذر','دی','بهم','اسف'];
+    const jalaliShort   = ['فرو','ارد','خرداد','تیر','مرداد','شهر','مهر','آبان','آذر','دی','بهم','اسف'];
+
+    /* ── shared defaults ── */
+    const tickColor = '#94a3b8';
+    const tickFont  = { size: 12, family: 'Vazirmatn' };
+    const gridColor = 'rgba(148,163,184,.10)';
+    const tipCfg = {
+        backgroundColor: 'rgba(20,13,36,.94)', titleColor: '#e2e8f0', bodyColor: '#cbd5e1',
+        borderColor: 'rgba(139,92,246,.30)', borderWidth: 1, padding: 14,
+        titleFont: { size: 12.5, weight: '600', family: 'Vazirmatn' },
+        bodyFont: { size: 13, family: 'Vazirmatn' },
+        cornerRadius: 10, displayColors: true, boxPadding: 4,
+    };
 
     fetch('/api/earnings-chart').then(r => r.json()).then(d => {
-        /* ── stat cards ── */
-        document.getElementById('todayVal').textContent = fmt(d.today.total);
-        document.getElementById('weekVal').textContent = fmt(d.weekly.this_week.total);
-        document.getElementById('lastWeekVal').textContent = fmt(d.weekly.last_week.total);
-        document.getElementById('pendingVal').textContent = fmt(d.pending.count);
-        const currentMonthTotal = d.monthly.length ? d.monthly[d.monthly.length - 1].total : 0;
-        document.getElementById('monthVal').textContent = fmt(currentMonthTotal);
 
-        /* ── doughnut center ── */
+        /* ── stat cards ── */
+        document.getElementById('todayVal').textContent     = fmt(d.today.total);
+        document.getElementById('weekVal').textContent      = fmt(d.weekly.this_week.total);
+        document.getElementById('lastWeekVal').textContent  = fmt(d.weekly.last_week.total);
+        document.getElementById('pendingVal').textContent   = fmt(d.pending.count);
+        const currentMonthTotal = d.monthly.length ? d.monthly[d.monthly.length - 1].total : 0;
+        document.getElementById('monthVal').textContent     = fmt(currentMonthTotal);
+
         const totalApproved = d.by_status.approved ? d.by_status.approved.total : 0;
         document.getElementById('doughnutTotal').textContent = fmt(totalApproved);
 
-        /* ── shared tooltip config ── */
-        const tipCfg = {
-            backgroundColor: '#1e1b2e', titleColor: '#e2e8f0', bodyColor: '#cbd5e1',
-            borderColor: 'rgba(139,92,246,.35)', borderWidth: 1, padding: 14,
-            titleFont: { size: 12, weight: '600' }, bodyFont: { size: 13 },
-            cornerRadius: 10, displayColors: true, boxPadding: 4,
-        };
-        const gridColor = 'rgba(100,116,139,.12)';
-        const tickColor = '#94a3b8';
-        const tickFont = { size: 12 };
-
-        /* ── daily line chart ── */
+        /* ════════════════════════════════════════════
+           DAILY LINE CHART
+           ════════════════════════════════════════════ */
         const dailyLabels = d.daily.map(r => {
             const p = r.day.split('-');
             return parseInt(p[2], 10) + '/' + parseInt(p[1], 10);
         });
-        const dailyCanvas = document.getElementById('dailyChart');
-        const dailyCtx = dailyCanvas.getContext('2d');
-        const purpleGrad = dailyCtx.createLinearGradient(0, 0, 0, 320);
-        purpleGrad.addColorStop(0, 'rgba(139,92,246,.28)');
-        purpleGrad.addColorStop(1, 'rgba(139,92,246,.01)');
+        const dCanvas = document.getElementById('dailyChart');
+        const dCtx = dCanvas.getContext('2d');
+        const purpleGrad = dCtx.createLinearGradient(0, 0, 0, 320);
+        purpleGrad.addColorStop(0, 'rgba(139,92,246,.30)');
+        purpleGrad.addColorStop(0.6, 'rgba(139,92,246,.08)');
+        purpleGrad.addColorStop(1, 'rgba(139,92,246,0)');
 
-        new Chart(dailyCanvas, {
+        new Chart(dCanvas, {
             type: 'line',
             data: {
                 labels: dailyLabels,
                 datasets: [{
                     label: 'درآمد (تومان)',
                     data: d.daily.map(r => r.total),
-                    borderColor: purple,
-                    backgroundColor: purpleGrad,
-                    fill: true, tension: .4,
+                    borderColor: C.purple, backgroundColor: purpleGrad,
+                    fill: true, tension: .4, borderWidth: 2.5,
                     pointRadius: 4, pointHoverRadius: 7,
-                    pointBackgroundColor: purple, pointBorderColor: '#1e1b2e', pointBorderWidth: 2,
-                    borderWidth: 2.5,
+                    pointBackgroundColor: C.purple, pointBorderColor: '#171028', pointBorderWidth: 2.5,
+                    pointHoverBackgroundColor: '#fff', pointHoverBorderColor: C.purple, pointHoverBorderWidth: 2.5,
                 }, {
                     label: 'تعداد رسید',
                     data: d.daily.map(r => r.count),
-                    borderColor: cyan, backgroundColor: 'transparent',
-                    borderDash: [6, 4], tension: .4,
+                    borderColor: C.cyan, backgroundColor: 'transparent',
+                    borderDash: [6, 4], tension: .4, borderWidth: 2,
                     pointRadius: 3, pointHoverRadius: 5,
-                    pointBackgroundColor: cyan, pointBorderColor: '#1e1b2e', pointBorderWidth: 1.5,
-                    borderWidth: 2, yAxisID: 'y1',
+                    pointBackgroundColor: C.cyan, pointBorderColor: '#171028', pointBorderWidth: 2,
+                    yAxisID: 'y1',
                 }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 interaction: { intersect: false, mode: 'index' },
+                animation: { duration: 900, easing: 'easeOutQuart' },
                 plugins: {
-                    legend: { labels: { color: tickColor, font: { size: 12, weight: '500' }, padding: 20, usePointStyle: true, pointStyleWidth: 12 } },
-                    tooltip: { ...tipCfg, callbacks: { label: ctx => '  ' + ctx.dataset.label + ': ' + fmt(ctx.raw) } }
+                    legend: {
+                        labels: { color: tickColor, font: { size: 12, family: 'Vazirmatn' }, padding: 20, usePointStyle: true, pointStyleWidth: 14 }
+                    },
+                    tooltip: {
+                        ...tipCfg,
+                        callbacks: {
+                            title: items => items[0].label,
+                            label: ctx => '  ' + ctx.dataset.label + ': ' + fmt(ctx.raw),
+                        }
+                    }
                 },
                 scales: {
-                    x: { ticks: { color: tickColor, font: tickFont, maxRotation: 0, autoSkip: true, maxTicksLimit: 15 }, grid: { color: gridColor, drawBorder: false } },
-                    y: { position: 'right', ticks: { color: tickColor, font: tickFont, callback: v => v >= 1000 ? (v/1000).toFixed(0)+'K' : fmt(v) }, grid: { color: gridColor, drawBorder: false } },
-                    y1: { position: 'left', ticks: { color: '#64748b', font: { size: 11 } }, grid: { display: false } },
+                    x: {
+                        ticks: { color: tickColor, font: tickFont, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+                        grid: { color: gridColor, drawBorder: false },
+                        border: { display: false },
+                    },
+                    y: {
+                        position: 'right',
+                        ticks: { color: tickColor, font: tickFont, padding: 8, callback: v => v >= 1000 ? (v/1000).toFixed(0)+'K' : v },
+                        grid: { color: gridColor, drawBorder: false },
+                        border: { display: false },
+                    },
+                    y1: {
+                        position: 'left',
+                        ticks: { color: '#64748b', font: { size: 11, family: 'Vazirmatn' }, padding: 8 },
+                        grid: { display: false },
+                        border: { display: false },
+                    },
                 }
             }
         });
 
-        /* ── monthly bar chart ── */
+        /* ════════════════════════════════════════════
+           MONTHLY BAR CHART
+           ════════════════════════════════════════════ */
         const monthlyLabels = d.monthly.map(r => {
             const parts = r.month.split('-');
-            const mi = parseInt(parts[1], 10) - 1;
-            return jalaliMonthShort[mi] || parts[1];
+            return jalaliShort[parseInt(parts[1], 10) - 1] || parts[1];
         });
-        const monthlyCanvas = document.getElementById('monthlyChart');
-        const monthlyCtx = monthlyCanvas.getContext('2d');
-        const barGrad = monthlyCtx.createLinearGradient(0, 0, 0, 280);
-        barGrad.addColorStop(0, 'rgba(139,92,246,.9)');
-        barGrad.addColorStop(1, 'rgba(109,40,217,.6)');
+        const mCanvas = document.getElementById('monthlyChart');
+        const mCtx = mCanvas.getContext('2d');
+        const barGrad = mCtx.createLinearGradient(0, 0, 0, 270);
+        barGrad.addColorStop(0, 'rgba(139,92,246,.85)');
+        barGrad.addColorStop(1, 'rgba(109,40,217,.45)');
+        const barDim = mCtx.createLinearGradient(0, 0, 0, 270);
+        barDim.addColorStop(0, 'rgba(139,92,246,.28)');
+        barDim.addColorStop(1, 'rgba(139,92,246,.08)');
 
-        new Chart(monthlyCanvas, {
+        new Chart(mCanvas, {
             type: 'bar',
             data: {
                 labels: monthlyLabels,
                 datasets: [{
                     label: 'درآمد',
                     data: d.monthly.map(r => r.total),
-                    backgroundColor: d.monthly.map((_, i) => i === d.monthly.length - 1 ? barGrad : 'rgba(139,92,246,.25)'),
-                    hoverBackgroundColor: d.monthly.map((_, i) => i === d.monthly.length - 1 ? purple : 'rgba(139,92,246,.5)'),
-                    borderRadius: 8, borderSkipped: false, barPercentage: .65,
+                    backgroundColor: d.monthly.map((_, i) => i === d.monthly.length - 1 ? barGrad : barDim),
+                    hoverBackgroundColor: d.monthly.map((_, i) => i === d.monthly.length - 1 ? C.purple : 'rgba(139,92,246,.45)'),
+                    borderRadius: 8, borderSkipped: false, barPercentage: .6, categoryPercentage: .8,
                 }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
+                animation: { duration: 800, easing: 'easeOutQuart' },
                 plugins: {
                     legend: { display: false },
                     tooltip: {
@@ -390,16 +486,27 @@
                     }
                 },
                 scales: {
-                    x: { ticks: { color: tickColor, font: tickFont }, grid: { display: false } },
-                    y: { ticks: { color: tickColor, font: tickFont, callback: v => v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(0)+'K' : fmt(v) }, grid: { color: gridColor, drawBorder: false } },
+                    x: {
+                        ticks: { color: tickColor, font: tickFont },
+                        grid: { display: false },
+                        border: { display: false },
+                    },
+                    y: {
+                        ticks: { color: tickColor, font: tickFont, padding: 8, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'K' : v },
+                        grid: { color: gridColor, drawBorder: false },
+                        border: { display: false },
+                    },
                 }
             }
         });
 
-        /* ── status doughnut ── */
-        const statusColors = { approved: green, pending: amber, rejected: red };
+        /* ════════════════════════════════════════════
+           STATUS DOUGHNUT
+           ════════════════════════════════════════════ */
+        const statusColors = { approved: C.green, pending: C.amber, rejected: C.red };
         const statusLabels = { approved: 'تایید شده', pending: 'در انتظار', rejected: 'رد شده' };
         const statusKeys = Object.keys(d.by_status);
+
         new Chart(document.getElementById('statusChart'), {
             type: 'doughnut',
             data: {
@@ -407,16 +514,19 @@
                 datasets: [{
                     data: statusKeys.map(k => d.by_status[k].total),
                     backgroundColor: statusKeys.map(k => statusColors[k] || '#64748b'),
-                    borderColor: '#1e1b2e', borderWidth: 3,
-                    hoverBorderColor: '#2a1f4e', hoverBorderWidth: 4,
-                    hoverOffset: 8,
+                    borderColor: '#171028', borderWidth: 3,
+                    hoverBorderColor: '#1e1535', hoverBorderWidth: 4, hoverOffset: 10,
                 }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                cutout: '65%',
+                cutout: '64%',
+                animation: { animateRotate: true, duration: 1000 },
                 plugins: {
-                    legend: { position: 'bottom', labels: { color: tickColor, font: { size: 12.5, weight: '500' }, padding: 18, usePointStyle: true, pointStyleWidth: 10 } },
+                    legend: {
+                        position: 'bottom',
+                        labels: { color: tickColor, font: { size: 12.5, weight: '500', family: 'Vazirmatn' }, padding: 18, usePointStyle: true, pointStyleWidth: 10 }
+                    },
                     tooltip: {
                         ...tipCfg,
                         callbacks: {
@@ -431,6 +541,7 @@
                 }
             }
         });
+
     }).catch(() => {});
 </script>
 {% endblock %}
