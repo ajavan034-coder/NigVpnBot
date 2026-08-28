@@ -464,3 +464,83 @@ def delete_plan_section(section_id):
     conn.execute("DELETE FROM plan_sections WHERE id = ?", (section_id,))
     conn.commit()
     conn.close()
+
+
+# ── Earnings / Charts ──────────────────────────────────────────────
+
+
+def get_monthly_revenue(months=12):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT strftime('%Y-%m', created_at) as month, "
+        "COUNT(*) as count, COALESCE(SUM(amount), 0) as total "
+        "FROM receipts WHERE status = 'approved' "
+        "GROUP BY month ORDER BY month DESC LIMIT ?",
+        (months,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in reversed(rows)]
+
+
+def get_daily_revenue(days=30):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT date(created_at) as day, "
+        "COUNT(*) as count, COALESCE(SUM(amount), 0) as total "
+        "FROM receipts WHERE status = 'approved' "
+        "AND created_at >= date('now', ?) "
+        "GROUP BY day ORDER BY day",
+        (f"-{days} days",),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_weekly_revenue():
+    conn = get_conn()
+    this_week = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count "
+        "FROM receipts WHERE status = 'approved' "
+        "AND created_at >= date('now', 'weekday 0', '-7 days')",
+    ).fetchone()
+    last_week = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count "
+        "FROM receipts WHERE status = 'approved' "
+        "AND created_at >= date('now', 'weekday 0', '-14 days') "
+        "AND created_at < date('now', 'weekday 0', '-7 days')",
+    ).fetchone()
+    conn.close()
+    return {
+        "this_week": dict(this_week) if this_week else {"total": 0, "count": 0},
+        "last_week": dict(last_week) if last_week else {"total": 0, "count": 0},
+    }
+
+
+def get_revenue_by_status():
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT status, COUNT(*) as count, COALESCE(SUM(amount), 0) as total "
+        "FROM receipts GROUP BY status"
+    ).fetchall()
+    conn.close()
+    return {r["status"]: {"count": r["count"], "total": r["total"]} for r in rows}
+
+
+def get_today_revenue():
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count "
+        "FROM receipts WHERE status = 'approved' AND date(created_at) = date('now')"
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else {"total": 0, "count": 0}
+
+
+def get_pending_amount():
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count "
+        "FROM receipts WHERE status = 'pending'"
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else {"total": 0, "count": 0}

@@ -17,55 +17,113 @@
 </div>
 
 <div class="row g-3 mb-4">
-    <div class="col-xl-3 col-md-6">
+    <div class="col-xl-2 col-md-4 col-6">
         <div class="stat-card" style="--sc:#8b5cf6;">
             <div class="d-flex align-items-center gap-3">
                 <div class="stat-icon"><svg class="ic"><use href="#i-users"/></svg></div>
                 <div>
                     <div class="d-flex align-items-center gap-2">
                         <span class="stat-value">{{ user_count }}</span>
-                        {% if new_users_today %}<span class="stat-trend">+{{ new_users_today }} امروز</span>{% endif %}
+                        {% if new_users_today %}<span class="stat-trend">+{{ new_users_today }}</span>{% endif %}
                     </div>
-                    <div class="stat-label">کل کاربران</div>
+                    <div class="stat-label">کاربران</div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-xl-3 col-md-6">
+    <div class="col-xl-2 col-md-4 col-6">
         <div class="stat-card" style="--sc:#34d399;">
             <div class="d-flex align-items-center gap-3">
                 <div class="stat-icon"><svg class="ic"><use href="#i-key"/></svg></div>
                 <div>
                     <div class="stat-value">{{ config_count }}</div>
-                    <div class="stat-label">کانفیگ‌های فعال</div>
+                    <div class="stat-label">کانفیگ فعال</div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-xl-3 col-md-6">
+    <div class="col-xl-2 col-md-4 col-6">
         <div class="stat-card" style="--sc:#60a5fa;">
             <div class="d-flex align-items-center gap-3">
                 <div class="stat-icon"><svg class="ic"><use href="#i-coins"/></svg></div>
                 <div>
                     <div class="stat-value">{{ "{:,.0f}".format(revenue) }}</div>
-                    <div class="stat-label">درآمد کل ({{ symbol }})</div>
+                    <div class="stat-label">درآمد کل</div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-xl-3 col-md-6">
+    <div class="col-xl-2 col-md-4 col-6">
+        <div class="stat-card" style="--sc:#22d3ee;" id="todayRevenue">
+            <div class="d-flex align-items-center gap-3">
+                <div class="stat-icon"><svg class="ic"><use href="#i-zap"/></svg></div>
+                <div>
+                    <div class="stat-value" id="todayVal">—</div>
+                    <div class="stat-label">درآمد امروز</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-6">
+        <div class="stat-card" style="--sc:#a78bfa;" id="weekRevenue">
+            <div class="d-flex align-items-center gap-3">
+                <div class="stat-icon"><svg class="ic"><use href="#i-calendar"/></svg></div>
+                <div>
+                    <div class="stat-value" id="weekVal">—</div>
+                    <div class="stat-label">این هفته</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-6">
         <a href="{{ url_for('receipts') }}" class="text-decoration-none">
             <div class="stat-card" style="--sc:#fbbf24;">
                 <div class="d-flex align-items-center gap-3">
                     <div class="stat-icon"><svg class="ic"><use href="#i-hourglass"/></svg></div>
                     <div>
-                        <div class="stat-value">{{ pending }}</div>
-                        <div class="stat-label">رسید در انتظار بررسی</div>
+                        <div class="stat-value" id="pendingVal">{{ pending }}</div>
+                        <div class="stat-label">در انتظار</div>
                     </div>
                     <svg class="ic ic-sm me-auto" style="color:var(--text-muted);"><use href="#i-arrow-left"/></svg>
                 </div>
             </div>
         </a>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-8">
+        <div class="card card-dark">
+            <div class="card-header">
+                <svg class="ic"><use href="#i-chart"/></svg> درآمد روزانه (۳۰ روز اخیر)
+            </div>
+            <div class="card-body" style="position:relative;height:280px;">
+                <canvas id="dailyChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card card-dark h-100">
+            <div class="card-header">
+                <svg class="ic"><use href="#i-pie"/></svg> وضعیت رسیدها
+            </div>
+            <div class="card-body d-flex align-items-center justify-content-center" style="position:relative;height:280px;">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-12">
+        <div class="card card-dark">
+            <div class="card-header">
+                <svg class="ic"><use href="#i-bar-chart"/></svg> درآمد ماهانه (۱۲ ماه اخیر)
+            </div>
+            <div class="card-body" style="position:relative;height:260px;">
+                <canvas id="monthlyChart"></canvas>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -153,11 +211,148 @@
 
 {% block scripts %}
 <script>
-    // Live clock
     function tick() {
         const el = document.querySelector('#liveClock span');
         if (el) el.textContent = new Date().toLocaleString('fa-IR');
     }
     tick(); setInterval(tick, 30000);
+
+    const fmt = v => new Intl.NumberFormat('fa-IR').format(Math.round(v));
+    const purple = '#8b5cf6', green = '#34d399', blue = '#60a5fa',
+          amber = '#fbbf24', cyan = '#22d3ee', red = '#ef4444';
+
+    fetch('/api/earnings-chart').then(r => r.json()).then(d => {
+        // ── stat cards ──
+        document.getElementById('todayVal').textContent = fmt(d.today.total);
+        document.getElementById('weekVal').textContent = fmt(d.weekly.this_week.total);
+        document.getElementById('pendingVal').textContent = fmt(d.pending.count);
+
+        // ── daily line chart ──
+        const dailyLabels = d.daily.map(r => {
+            const p = r.day.split('-');
+            return p[2] + '/' + p[1];
+        });
+        new Chart(document.getElementById('dailyChart'), {
+            type: 'line',
+            data: {
+                labels: dailyLabels,
+                datasets: [{
+                    label: 'درآمد روزانه',
+                    data: d.daily.map(r => r.total),
+                    borderColor: purple,
+                    backgroundColor: 'rgba(139,92,246,.12)',
+                    fill: true,
+                    tension: .35,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
+                    borderWidth: 2,
+                }, {
+                    label: 'تعداد رسید',
+                    data: d.daily.map(r => r.count),
+                    borderColor: cyan,
+                    backgroundColor: 'transparent',
+                    borderDash: [5, 4],
+                    tension: .35,
+                    pointRadius: 2,
+                    borderWidth: 1.5,
+                    yAxisID: 'y1',
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+                    tooltip: {
+                        backgroundColor: '#1e1b2e',
+                        titleColor: '#e2e8f0',
+                        bodyColor: '#cbd5e1',
+                        borderColor: 'rgba(139,92,246,.3)',
+                        borderWidth: 1,
+                        padding: 10,
+                        callbacks: { label: ctx => ctx.dataset.label + ': ' + fmt(ctx.raw) }
+                    }
+                },
+                scales: {
+                    x: { ticks: { color: '#64748b', font: { size: 10 }, maxRotation: 45 }, grid: { color: 'rgba(100,116,139,.1)' } },
+                    y: { position: 'right', ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(100,116,139,.08)' } },
+                    y1: { position: 'left', ticks: { color: '#64748b', font: { size: 10 } }, grid: { display: false } },
+                }
+            }
+        });
+
+        // ── monthly bar chart ──
+        const monthNames = ['ژانویه','فوریه','مارس','آوریل','مه','ژوئن','ژوئیه','آگوست','سپتامبر','اکتبر','نوامبر','دسامبر'];
+        const monthlyLabels = d.monthly.map(r => {
+            const parts = r.month.split('-');
+            const mi = parseInt(parts[1], 10) - 1;
+            return monthNames[mi] + ' ' + parts[0];
+        });
+        new Chart(document.getElementById('monthlyChart'), {
+            type: 'bar',
+            data: {
+                labels: monthlyLabels,
+                datasets: [{
+                    label: 'درآمد',
+                    data: d.monthly.map(r => r.total),
+                    backgroundColor: d.monthly.map((_, i) => i === d.monthly.length - 1 ? purple : 'rgba(139,92,246,.35)'),
+                    borderRadius: 6,
+                    borderSkipped: false,
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1e1b2e', titleColor: '#e2e8f0', bodyColor: '#cbd5e1',
+                        borderColor: 'rgba(139,92,246,.3)', borderWidth: 1, padding: 10,
+                        callbacks: {
+                            label: ctx => fmt(ctx.raw) + ' تومان',
+                            afterLabel: ctx => d.monthly[ctx.dataIndex].count + ' رسید'
+                        }
+                    }
+                },
+                scales: {
+                    x: { ticks: { color: '#64748b', font: { size: 10 }, maxRotation: 45 }, grid: { display: false } },
+                    y: { ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(100,116,139,.08)' } },
+                }
+            }
+        });
+
+        // ── status doughnut ──
+        const statusColors = { approved: green, pending: amber, rejected: red };
+        const statusLabels = { approved: 'تایید شده', pending: 'در انتظار', rejected: 'رد شده' };
+        const statusKeys = Object.keys(d.by_status);
+        new Chart(document.getElementById('statusChart'), {
+            type: 'doughnut',
+            data: {
+                labels: statusKeys.map(k => statusLabels[k] || k),
+                datasets: [{
+                    data: statusKeys.map(k => d.by_status[k].total),
+                    backgroundColor: statusKeys.map(k => statusColors[k] || '#64748b'),
+                    borderColor: '#1e1b2e', borderWidth: 3,
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                cutout: '62%',
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 11 }, padding: 16 } },
+                    tooltip: {
+                        backgroundColor: '#1e1b2e', titleColor: '#e2e8f0', bodyColor: '#cbd5e1',
+                        borderColor: 'rgba(139,92,246,.3)', borderWidth: 1, padding: 10,
+                        callbacks: {
+                            label: ctx => {
+                                const k = statusKeys[ctx.dataIndex];
+                                const s = d.by_status[k];
+                                return fmt(s.total) + ' تومان (' + s.count + ' رسید)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }).catch(() => {});
 </script>
 {% endblock %}

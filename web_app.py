@@ -1090,6 +1090,26 @@ def api_premium_emojis():
     return jsonify(mapping if isinstance(mapping, dict) else {})
 
 
+@app.route("/api/earnings-chart")
+@login_required
+def api_earnings_chart():
+    """Earnings data for dashboard charts."""
+    monthly = web_db.get_monthly_revenue(12)
+    daily = web_db.get_daily_revenue(30)
+    weekly = web_db.get_weekly_revenue()
+    today = web_db.get_today_revenue()
+    pending = web_db.get_pending_amount()
+    by_status = web_db.get_revenue_by_status()
+    return jsonify({
+        "monthly": monthly,
+        "daily": daily,
+        "weekly": weekly,
+        "today": today,
+        "pending": pending,
+        "by_status": by_status,
+    })
+
+
 def _format_size(size_bytes):
     if size_bytes < 1024:
         return f"{size_bytes} B"
