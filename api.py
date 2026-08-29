@@ -2,6 +2,7 @@ import uuid
 import json
 import re
 import logging
+import asyncio
 import aiohttp
 from urllib.parse import urlencode
 from datetime import datetime, timedelta
@@ -55,10 +56,25 @@ class PanelAPI:
         return f"{self.panel_url}{self.base_path}/panel/api"
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        if self.session is None or self.session.closed:
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+        needs_new = (
+            self.session is None
+            or self.session.closed
+            or (current_loop is not None and getattr(self, '_session_loop', None) is not current_loop)
+        )
+        if needs_new:
+            if self.session and not self.session.closed:
+                try:
+                    await self.session.close()
+                except Exception:
+                    pass
             self.session = aiohttp.ClientSession(
                 cookie_jar=aiohttp.CookieJar(unsafe=True)
             )
+            self._session_loop = current_loop
         return self.session
 
     def _headers(self) -> dict:
