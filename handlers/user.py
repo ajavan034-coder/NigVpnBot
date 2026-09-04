@@ -959,7 +959,7 @@ async def cb_free_test_select(callback: CallbackQuery):
                 try:
                     wg_inb = await ft_panel_api.get_inbound(wg_iid)
                     wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"
-                    wg_conf = await ft_panel_api.download_wireguard_conf(_wsub)
+                    wg_conf = await ft_panel_api.download_wireguard_conf(_wsub, inbound_id=wg_iid)
                     if wg_conf:
                         cf = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rid}.conf")
                         await callback.message.answer_document(document=cf, caption=f"\U0001f4c4 {wg_name}")
@@ -1923,29 +1923,26 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
         if _is_wg_pw:
             from aiogram.types import BufferedInputFile
             import random as _r
+            import uuid as _u
             wg_ids = plan_inbound_ids or []
             expire_date = (datetime.utcnow() + timedelta(days=plan["days"])).isoformat()
+            _rid = _r.randint(100000, 999999)
+            _wemail = "wg_" + "_".join(str(iid) for iid in wg_ids) + f"_{_rid}@bot"
+            _wuuid = str(_u.uuid4())
+            _wcli = await plan_panel.add_client(wg_ids, _wemail, total_gb=plan["gb"], days=plan["days"])
+            if not _wcli:
+                logger.error("WG pay: failed to add client for inbounds %s", wg_ids)
+                await update_balance(user_id, pay_price)
+                await callback.message.edit_text("ساخت کانفیگ WireGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu())
+                return
+            _wsub = _wcli["sub_id"]
+            _wlink = plan_panel.get_sub_link("", _wsub)
             sent_any = False
-            first_sub_link = ""
-            first_uuid = ""
-            first_email = email
             for wg_iid in wg_ids:
                 try:
                     wg_inb = await plan_panel.get_inbound(wg_iid)
                     wg_name = (wg_inb.get("remark") or wg_inb.get("tag") or f"inbound-{wg_iid}").strip() if wg_inb else f"inbound-{wg_iid}"
-                    _rid = _r.randint(100000, 999999)
-                    _wemail = f"wg_{wg_iid}_{_rid}@bot"
-                    _wcli = await plan_panel.add_client([wg_iid], _wemail, total_gb=plan["gb"], days=plan["days"])
-                    if not _wcli:
-                        logger.error("WG pay: failed add client inbound %s", wg_iid)
-                        continue
-                    _wsub = _wcli["sub_id"]
-                    _wlink = plan_panel.get_sub_link("", _wsub)
-                    if not first_sub_link:
-                        first_sub_link = _wlink
-                        first_uuid = _wcli["uuid"]
-                        first_email = _wemail
-                    wg_conf = await plan_panel.download_wireguard_conf(_wsub)
+                    wg_conf = await plan_panel.download_wireguard_conf(_wsub, inbound_id=wg_iid)
                     if wg_conf:
                         cf = BufferedInputFile(wg_conf.encode("utf-8"), filename=f"{wg_name}_{_rid}.conf")
                         await callback.message.answer_document(document=cf, caption=f"📄 {wg_name}")
@@ -1960,8 +1957,8 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                 await callback.message.edit_text("ساخت کانفیگ WireGuard ناموفق بود. موجودی بازگردانده شد.", reply_markup=await back_to_menu())
                 return
 
-            email = first_email
-            result = {"sub_link": first_sub_link, "uuid": first_uuid, "expire_date": expire_date}
+            email = _wemail
+            result = {"sub_link": _wlink, "uuid": _wuuid, "expire_date": expire_date}
         else:
             result = await plan_panel.create_config(email, days=plan["days"], total_gb=plan["gb"], inbound_ids=plan_inbound_ids, ip_limit=ip_limit)
             if not result:

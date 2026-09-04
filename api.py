@@ -223,7 +223,7 @@ class PanelAPI:
             return inbound.get("protocol", "unknown")
         return "unknown"
 
-    async def download_wireguard_conf(self, sub_id: str) -> str | None:
+    async def download_wireguard_conf(self, sub_id: str, inbound_id: int | None = None) -> str | None:
         import base64 as _b64
         import urllib.parse as _url
         session = await self._get_session()
@@ -238,8 +238,29 @@ class PanelAPI:
                         decoded = _b64.b64decode(text).decode("utf-8", errors="replace")
                     except Exception:
                         decoded = text
-                    if decoded.startswith("wireguard://"):
-                        parsed = _url.urlparse(decoded)
+                    decoded = decoded.strip()
+                    if "wireguard://" in decoded:
+                        # Sub may contain multiple URIs (one per inbound) – pick matching inbound
+                        lines = [l.strip() for l in decoded.splitlines() if "wireguard://" in l]
+                        target_line = None
+                        if inbound_id is not None:
+                            try:
+                                detail = await self.get_inbound(inbound_id)
+                                target_port = detail.get("port") if detail else None
+                            except Exception:
+                                target_port = None
+                            if target_port:
+                                for line in lines:
+                                    try:
+                                        p = _url.urlparse(line.strip())
+                                        if p.port == target_port:
+                                            target_line = line.strip()
+                                            break
+                                    except Exception:
+                                        continue
+                        if not target_line:
+                            target_line = lines[0] if lines else decoded
+                        parsed = _url.urlparse(target_line)
                         pk_b64 = _url.unquote(parsed.username) if parsed.username else ""
                         params = _url.parse_qs(parsed.query)
                         address = params.get("address", [""])[0]
@@ -257,9 +278,9 @@ class PanelAPI:
         except Exception:
             pass
 
-        return await self._build_wg_conf_locally(sub_id)
+        return await self._build_wg_conf_locally(sub_id, inbound_id=inbound_id)
 
-    async def _build_wg_conf_locally(self, sub_id: str) -> str | None:
+    async def _build_wg_conf_locally(self, sub_id: str, inbound_id: int | None = None) -> str | None:
         """Build WireGuard config locally from panel API data when sub endpoint is unavailable."""
         import base64 as _b64
         import json as _json
@@ -271,10 +292,13 @@ class PanelAPI:
             logger.error("cryptography library not installed, cannot build WG config locally")
             return None
 
-        inbounds = await self.get_inbounds()
-        wg_inbounds = [ib for ib in inbounds if ib.get("protocol") == "wireguard" and ib.get("enable")]
+        if inbound_id is not None:
+            candidates = [{"id": inbound_id}]
+        else:
+            inbounds = await self.get_inbounds()
+            candidates = [ib for ib in inbounds if ib.get("protocol") == "wireguard" and ib.get("enable")]
 
-        for inbound in wg_inbounds:
+        for inbound in candidates:
             iid = inbound.get("id")
             detail = await self.get_inbound(iid)
             if not detail:
@@ -310,10 +334,9 @@ class PanelAPI:
                 logger.error(f"Failed to derive server public key: {e}")
                 continue
 
-            import re as _re
             host_match = _re.search(r"https?://([^:/]+)", self.panel_url)
             host = host_match.group(1) if host_match else ""
-            port = inbound.get("port", 12825)
+            port = detail.get("port") or inbound.get("port", 12825)
             dns = settings.get("dns", "208.67.222.222,208.67.220.220")
             mtu = settings.get("mtu", 1300)
 
@@ -331,7 +354,7 @@ class PanelAPI:
                 "",
             ])
 
-        logger.error("Could not build WG config locally: no matching client found for sub_id %s", sub_id)
+        logger.error("Could not build WG config locally: no matching client found for sub_id %s (inbound %s)", sub_id, inbound_id)
         return None
 
     async def add_client(self, inbound_ids: list[int], email: str, total_gb: float = 0, days: int = 0, ip_limit: int = 0) -> dict | None:
