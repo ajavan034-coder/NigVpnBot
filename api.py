@@ -230,48 +230,108 @@ class PanelAPI:
         sub_url = self.get_sub_link("", sub_id)
         try:
             async with session.get(sub_url, ssl=False, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                if resp.status != 200:
-                    return None
-                text = (await resp.text()).strip()
+                if resp.status == 200:
+                    text = (await resp.text()).strip()
+                    if "[Interface]" in text:
+                        return text
+                    try:
+                        decoded = _b64.b64decode(text).decode("utf-8", errors="replace")
+                    except Exception:
+                        decoded = text
+                    if decoded.startswith("wireguard://"):
+                        parsed = _url.urlparse(decoded)
+                        pk_b64 = _url.unquote(parsed.username) if parsed.username else ""
+                        params = _url.parse_qs(parsed.query)
+                        address = params.get("address", [""])[0]
+                        dns = params.get("dns", [""])[0].replace("+", ", ")
+                        mtu = params.get("mtu", ["1300"])[0]
+                        pubkey = _url.unquote(params.get("publickey", [""])[0])
+                        host = parsed.hostname or ""
+                        port = parsed.port or 12825
+                        return "\n".join([
+                            "[Interface]", f"PrivateKey = {pk_b64}", f"Address = {address}",
+                            f"DNS = {dns}", f"MTU = {mtu}", "",
+                            "[Peer]", f"PublicKey = {pubkey}", f"Endpoint = {host}:{port}",
+                            "AllowedIPs = 0.0.0.0/0, ::/0", "",
+                        ])
+        except Exception:
+            pass
 
-                if "[Interface]" in text:
-                    return text
+        return await self._build_wg_conf_locally(sub_id)
 
-                try:
-                    decoded = _b64.b64decode(text).decode("utf-8", errors="replace")
-                except Exception:
-                    decoded = text
+    async def _build_wg_conf_locally(self, sub_id: str) -> str | None:
+        """Build WireGuard config locally from panel API data when sub endpoint is unavailable."""
+        import base64 as _b64
+        import json as _json
+        import re as _re
+        try:
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+            from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        except ImportError:
+            logger.error("cryptography library not installed, cannot build WG config locally")
+            return None
 
-                if not decoded.startswith("wireguard://"):
-                    logger.error("Sub response is not wireguard:// URI: %s", decoded[:100])
-                    return None
+        inbounds = await self.get_inbounds()
+        wg_inbounds = [ib for ib in inbounds if ib.get("protocol") == "wireguard" and ib.get("enable")]
 
-                parsed = _url.urlparse(decoded)
-                pk_b64 = _url.unquote(parsed.username) if parsed.username else ""
-                params = _url.parse_qs(parsed.query)
-                address = params.get("address", [""])[0]
-                dns = params.get("dns", [""])[0].replace("+", ", ")
-                mtu = params.get("mtu", ["1300"])[0]
-                pubkey = _url.unquote(params.get("publickey", [""])[0])
-                host = parsed.hostname or ""
-                port = parsed.port or 12825
+        for inbound in wg_inbounds:
+            iid = inbound.get("id")
+            detail = await self.get_inbound(iid)
+            if not detail:
+                continue
+            settings = detail.get("settings", {})
+            if isinstance(settings, str):
+                settings = _json.loads(settings)
 
-                conf_lines = [
-                    "[Interface]",
-                    f"PrivateKey = {pk_b64}",
-                    f"Address = {address}",
-                    f"DNS = {dns}",
-                    f"MTU = {mtu}",
-                    "",
-                    "[Peer]",
-                    f"PublicKey = {pubkey}",
-                    f"Endpoint = {host}:{port}",
-                    "AllowedIPs = 0.0.0.0/0, ::/0",
-                    "",
-                ]
-                return "\n".join(conf_lines)
-        except Exception as e:
-            logger.error(f"WireGuard conf download error: {e}")
+            clients = settings.get("clients", [])
+            target_client = None
+            for c in clients:
+                if c.get("subId") == sub_id or c.get("email", "").endswith(sub_id):
+                    target_client = c
+                    break
+
+            if not target_client:
+                continue
+
+            client_private_key = target_client.get("privateKey", "")
+            client_address = target_client.get("allowedIPs", [""])[0] if target_client.get("allowedIPs") else ""
+            if not client_private_key or not client_address:
+                continue
+
+            server_secret_key = settings.get("secretKey", "")
+            if not server_secret_key:
+                continue
+
+            try:
+                server_sk = X25519PrivateKey.from_private_bytes(_b64.b64decode(server_secret_key))
+                server_pk = server_sk.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+                server_pubkey = _b64.b64encode(server_pk).decode()
+            except Exception as e:
+                logger.error(f"Failed to derive server public key: {e}")
+                continue
+
+            import re as _re
+            host_match = _re.search(r"https?://([^:/]+)", self.panel_url)
+            host = host_match.group(1) if host_match else ""
+            port = inbound.get("port", 12825)
+            dns = settings.get("dns", "208.67.222.222,208.67.220.220")
+            mtu = settings.get("mtu", 1300)
+
+            return "\n".join([
+                "[Interface]",
+                f"PrivateKey = {client_private_key}",
+                f"Address = {client_address}",
+                f"DNS = {dns}",
+                f"MTU = {mtu}",
+                "",
+                "[Peer]",
+                f"PublicKey = {server_pubkey}",
+                f"Endpoint = {host}:{port}",
+                "AllowedIPs = 0.0.0.0/0, ::/0",
+                "",
+            ])
+
+        logger.error("Could not build WG config locally: no matching client found for sub_id %s", sub_id)
         return None
 
     async def add_client(self, inbound_ids: list[int], email: str, total_gb: float = 0, days: int = 0, ip_limit: int = 0) -> dict | None:
