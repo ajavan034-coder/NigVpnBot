@@ -1231,11 +1231,16 @@ async def cb_delete_panel(callback: CallbackQuery):
 
 
 # ─── Edit Panel ────────────────────────────────────────────────
-@panel_router.callback_query(F.data.startswith("adm_panel_edit_menu_"))
+@panel_router.callback_query(
+    F.data.startswith("adm_panel_edit_menu_"),
+    ~F.data.contains("_fld_"),
+    ~F.data.contains("_ib_"),
+)
 async def cb_edit_panel(callback: CallbackQuery):
     if not await is_admin(callback.from_user.id):
         return
-    # Only handle adm_panel_edit_menu_{panel_id} (not fld_ or ib_ variants)
+    # Filter above already excludes fld_/ib_ variants so those clicks reach
+    # cb_edit_panel_field / cb_edit_panel_inbounds; kept as defense-in-depth.
     data = callback.data
     if "_fld_" in data or "_ib_" in data:
         return  # Not our handler

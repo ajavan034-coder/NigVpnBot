@@ -1541,15 +1541,26 @@ def _sanitize_multiplier(value) -> float:
 
 
 async def get_inbound_multiplier(panel_id: int, inbound_id: int) -> float:
-    """Counted-GB factor for an inbound. 1.0 when unset/invalid."""
+    """Counted-GB factor for an inbound. Exact panel row first, then the
+    global row (panel_id=0), else 1.0. Invalid values sanitize to 1.0."""
     try:
         db = await get_db()
-        cur = await db.execute(
-            "SELECT multiplier FROM inbound_multipliers WHERE panel_id = ? AND inbound_id = ?",
-            (panel_id, inbound_id),
-        )
-        row = await cur.fetchone()
-        await db.close()
+        try:
+            row = None
+            if panel_id is not None:
+                cur = await db.execute(
+                    "SELECT multiplier FROM inbound_multipliers WHERE panel_id = ? AND inbound_id = ?",
+                    (panel_id, inbound_id),
+                )
+                row = await cur.fetchone()
+            if not row:
+                cur = await db.execute(
+                    "SELECT multiplier FROM inbound_multipliers WHERE panel_id = 0 AND inbound_id = ?",
+                    (inbound_id,),
+                )
+                row = await cur.fetchone()
+        finally:
+            await db.close()
         if row:
             return _sanitize_multiplier(row["multiplier"])
     except Exception:

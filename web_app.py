@@ -808,11 +808,23 @@ def panel_inbounds(panel_id):
         return redirect(url_for("panels"))
     inbounds, error = _fetch_panel_inbounds_live(panel)
     mults = web_db.get_panel_multipliers(panel_id)
+    global_mults = web_db.get_panel_multipliers(0)
     for ib in inbounds:
         try:
-            ib["multiplier"] = mults.get(int(ib["id"]), 1.0)
+            iid = int(ib["id"])
         except (TypeError, ValueError):
             ib["multiplier"] = 1.0
+            ib["is_global"] = False
+            continue
+        if iid in mults:
+            ib["multiplier"] = mults[iid]
+            ib["is_global"] = False
+        elif iid in global_mults:
+            ib["multiplier"] = global_mults[iid]
+            ib["is_global"] = True
+        else:
+            ib["multiplier"] = 1.0
+            ib["is_global"] = False
     return render_template("inbound_multipliers.html", panel=panel, inbounds=inbounds, error=error)
 
 

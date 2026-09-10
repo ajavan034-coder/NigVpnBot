@@ -358,11 +358,14 @@ class PanelAPI:
         return None
 
     def _inbound_multiplier(self, inbound_id) -> float:
-        """Counted-GB factor for one inbound (1 GB real × m = counted GB)."""
+        """Counted-GB factor for one inbound (1 GB real × m = counted GB).
+
+        Works even when this instance has no panel_id (e.g. plans without
+        panel_id go through the default API object): the lookup falls back
+        to the global row (panel_id=0) in that case.
+        """
         try:
             pid = getattr(self, "panel_id", None)
-            if pid is None:
-                return 1.0
             m = float(web_db.get_inbound_multiplier(pid, int(inbound_id)))
             return m if m > 0 else 1.0
         except Exception:
@@ -676,6 +679,7 @@ class PanelAPI:
         inbounds = await self.get_inbounds()
         target_inbound_id = None
         target_clients = []
+        matched_ids: list[int] = []
         for inbound in inbounds:
             settings = inbound.get("settings", {})
             if isinstance(settings, str):
@@ -683,9 +687,10 @@ class PanelAPI:
                 settings = json.loads(settings)
             clients = settings.get("clients", [])
             if any(c.get("email") == email for c in clients):
-                target_inbound_id = inbound.get("id")
-                target_clients = clients
-                break
+                matched_ids.append(inbound.get("id"))
+                if target_inbound_id is None:
+                    target_inbound_id = inbound.get("id")
+                    target_clients = clients
 
         if target_inbound_id is None:
             return None
@@ -717,7 +722,7 @@ class PanelAPI:
 
         used_bytes = up_bytes + down_bytes
         # Apply usage multiplier so displays count real usage × m against the purchased quota
-        mult = self._inbound_multiplier(target_inbound_id)
+        mult = self._inbounds_multiplier(matched_ids)
         total_counted = total_bytes * mult if (total_bytes > 0 and mult != 1.0) else total_bytes
         used_counted = used_bytes * mult if mult != 1.0 else used_bytes
         remaining_bytes = max(0, total_counted - used_counted) if total_counted > 0 else 0
@@ -753,12 +758,13 @@ class PanelAPI:
 
     async def update_client_total_gb(self, email: str, extra_gb: float) -> bool:
         inbounds = await self.get_inbounds()
+        matched_ids = [inbound.get("id") for inbound in inbounds if any(c.get("email") == email for c in inbound.get("settings", {}).get("clients", []))]
+        mult = self._inbounds_multiplier(matched_ids)
         for inbound in inbounds:
             clients = inbound.get("settings", {}).get("clients", [])
             for client in clients:
                 if client.get("email") == email:
                     current_total = client.get("totalGB", 0)
-                    mult = self._inbound_multiplier(inbound.get("id"))
                     extra_bytes = int(extra_gb / mult * 1024 * 1024 * 1024) if mult != 1.0 else int(extra_gb * 1024 * 1024 * 1024)
                     new_total = current_total + extra_bytes if current_total > 0 else extra_bytes
                     if await self._update_client(email, {"totalGB": new_total}):

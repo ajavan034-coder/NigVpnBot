@@ -524,14 +524,22 @@ def _sanitize_multiplier(value):
 
 
 def get_inbound_multiplier(panel_id, inbound_id):
-    """Counted-GB factor for an inbound. 1.0 when unset/invalid."""
+    """Counted-GB factor for an inbound. Exact panel row first, then the
+    global row (panel_id=0), else 1.0. Invalid values sanitize to 1.0."""
     try:
         conn = get_conn()
         try:
-            row = conn.execute(
-                "SELECT multiplier FROM inbound_multipliers WHERE panel_id = ? AND inbound_id = ?",
-                (panel_id, inbound_id),
-            ).fetchone()
+            row = None
+            if panel_id is not None:
+                row = conn.execute(
+                    "SELECT multiplier FROM inbound_multipliers WHERE panel_id = ? AND inbound_id = ?",
+                    (panel_id, inbound_id),
+                ).fetchone()
+            if not row:
+                row = conn.execute(
+                    "SELECT multiplier FROM inbound_multipliers WHERE panel_id = 0 AND inbound_id = ?",
+                    (inbound_id,),
+                ).fetchone()
         finally:
             conn.close()
         if row:

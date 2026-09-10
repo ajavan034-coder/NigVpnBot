@@ -68,6 +68,9 @@
                     <td>
                         {% if ib.multiplier != 1.0 %}
                         <span class="badge" style="background:rgba(251,191,36,.12);color:var(--amber);border:1px solid rgba(251,191,36,.25);" dir="ltr">×{{ ib.multiplier }}</span>
+                        {% if ib.is_global %}
+                        <div style="font-size:10px;color:var(--text-muted);margin-top:3px;">سراسری (همه پنل‌ها)</div>
+                        {% endif %}
                         {% else %}
                         <span class="badge badge-neutral" dir="ltr">×1.0</span>
                         {% endif %}
