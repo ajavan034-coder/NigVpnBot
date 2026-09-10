@@ -366,6 +366,56 @@ async def init_db():
         await db.execute("ALTER TABLE users ADD COLUMN phone_verified_at TIMESTAMP")
     except Exception:
         pass
+    try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS product_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                quantity REAL NOT NULL,
+                unit_price REAL NOT NULL,
+                wallet_address TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+    except Exception:
+        pass
+    # ── Per-inbound usage multipliers (1 GB real × multiplier = counted GB) ──
+    try:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS inbound_multipliers (
+                panel_id INTEGER NOT NULL,
+                inbound_id INTEGER NOT NULL,
+                multiplier REAL NOT NULL DEFAULT 1.0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (panel_id, inbound_id)
+            )
+        """)
+    except Exception:
+        pass
+    # ── Enforce non-negative balance via trigger (SQLite CHECK on ALTER is not supported) ──
+    try:
+        await db.execute("UPDATE users SET balance = 0 WHERE balance < 0")
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS prevent_negative_balance
+            BEFORE UPDATE OF balance ON users
+            FOR EACH ROW WHEN NEW.balance < 0
+            BEGIN
+                SELECT RAISE(ABORT, 'Balance cannot be negative');
+            END
+        """)
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS prevent_negative_balance_insert
+            BEFORE INSERT ON users
+            FOR EACH ROW WHEN NEW.balance < 0
+            BEGIN
+                SELECT RAISE(ABORT, 'Balance cannot be negative');
+            END
+        """)
+    except Exception:
+        pass
     await db.commit()
 
     for admin_id in ADMIN_IDS:
@@ -430,11 +480,27 @@ async def get_user(user_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-async def update_balance(user_id: int, amount: float):
+async def update_balance(user_id: int, amount: float) -> bool:
+    """Update balance atomically. For debits (amount<0) ensures balance never goes negative.
+    Returns True if applied, False if insufficient funds."""
     db = await get_db()
-    await db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (amount, user_id))
-    await db.commit()
-    await db.close()
+    if amount < 0:
+        need = -amount
+        cur = await db.execute("UPDATE users SET balance = balance + ? WHERE id = ? AND balance >= ?", (amount, user_id, need))
+        if cur.rowcount == 0:
+            # Check if user exists to distinguish not-found vs insufficient
+            cur2 = await db.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
+            row = await cur2.fetchone()
+            await db.close()
+            return False if row else False
+        await db.commit()
+        await db.close()
+        return True
+    else:
+        await db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (amount, user_id))
+        await db.commit()
+        await db.close()
+        return True
 
 
 async def get_balance(user_id: int) -> float:
@@ -1267,19 +1333,22 @@ async def wallet_credit(user_id: int, amount: float, tx_type: str, description: 
 
 
 async def wallet_debit(user_id: int, amount: float, tx_type: str, description: str = "", unique_key: str = None) -> bool:
-    """Debit wallet. Returns True if applied, False if insufficient balance or duplicate."""
+    """Atomic debit with balance >= amount guard. Returns True if applied."""
+    if amount < 0:
+        return False
+    if amount == 0:
+        return True
     db = await get_db()
     if unique_key:
         existing = await db.execute("SELECT 1 FROM wallet_transactions WHERE unique_key = ?", (unique_key,))
         if await existing.fetchone():
             await db.close()
             return False
-    cursor = await db.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
-    row = await cursor.fetchone()
-    if not row or row["balance"] < amount:
+    # Atomic UPDATE with balance guard
+    cur = await db.execute("UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?", (amount, user_id, amount))
+    if cur.rowcount == 0:
         await db.close()
         return False
-    await db.execute("UPDATE users SET balance = balance - ? WHERE id = ?", (amount, user_id))
     cursor = await db.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
     row = await cursor.fetchone()
     balance_after = row["balance"] if row else 0
@@ -1442,6 +1511,79 @@ async def get_all_gift_codes() -> list[dict]:
     rows = await cursor.fetchall()
     await db.close()
     return [dict(r) for r in rows]
+
+
+async def add_product_order(user_id: int, quantity: float, unit_price: float, amount: float, wallet_address: str, status: str = "pending") -> int:
+    db = await get_db()
+    cur = await db.execute("INSERT INTO product_orders (user_id, quantity, unit_price, amount, wallet_address, status) VALUES (?, ?, ?, ?, ?, ?)", (user_id, quantity, unit_price, amount, wallet_address, status))
+    oid = cur.lastrowid
+    await db.commit()
+    await db.close()
+    return oid
+
+
+async def get_product_orders(limit: int = 50) -> list[dict]:
+    db = await get_db()
+    cur = await db.execute("SELECT * FROM product_orders ORDER BY created_at DESC LIMIT ?", (limit,))
+    rows = await cur.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+# ==================== Inbound Usage Multipliers ====================
+
+def _sanitize_multiplier(value) -> float:
+    try:
+        m = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    return m if m > 0 else 1.0
+
+
+async def get_inbound_multiplier(panel_id: int, inbound_id: int) -> float:
+    """Counted-GB factor for an inbound. 1.0 when unset/invalid."""
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT multiplier FROM inbound_multipliers WHERE panel_id = ? AND inbound_id = ?",
+            (panel_id, inbound_id),
+        )
+        row = await cur.fetchone()
+        await db.close()
+        if row:
+            return _sanitize_multiplier(row["multiplier"])
+    except Exception:
+        pass
+    return 1.0
+
+
+async def set_inbound_multiplier(panel_id: int, inbound_id: int, multiplier: float):
+    m = float(multiplier)
+    if not (m > 0 and m <= 100):
+        raise ValueError("multiplier must be within (0, 100]")
+    db = await get_db()
+    await db.execute(
+        "INSERT INTO inbound_multipliers (panel_id, inbound_id, multiplier, updated_at) "
+        "VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+        "ON CONFLICT(panel_id, inbound_id) DO UPDATE SET multiplier = excluded.multiplier, updated_at = CURRENT_TIMESTAMP",
+        (panel_id, inbound_id, m),
+    )
+    await db.commit()
+    await db.close()
+
+
+async def get_panel_multipliers(panel_id: int) -> dict:
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT inbound_id, multiplier FROM inbound_multipliers WHERE panel_id = ?",
+            (panel_id,),
+        )
+        rows = await cur.fetchall()
+        await db.close()
+        return {r["inbound_id"]: _sanitize_multiplier(r["multiplier"]) for r in rows}
+    except Exception:
+        return {}
 
 
 async def delete_gift_code(code_id: int):

@@ -723,6 +723,119 @@ def api_panels_ping():
     return jsonify(payload)
 
 
+def _fetch_panel_inbounds_live(panel):
+    """Live inbound list for a panel.
+
+    Uses the panel API when credentials are stored, otherwise falls back to
+    reading the local x-ui database (for same-host panels without credentials).
+    Returns (items, error). Each item: id/remark/port/protocol/enable/clients.
+    """
+    # 1) panel API
+    if panel.get("username") and panel.get("password"):
+        try:
+            from api import PanelAPI
+            api = PanelAPI(
+                panel_url=panel.get("url", ""),
+                panel_user=panel.get("username", ""),
+                panel_pass=panel.get("password", ""),
+                panel_id=panel.get("id"),
+            )
+
+            async def _load():
+                try:
+                    return await api.get_inbounds()
+                finally:
+                    try:
+                        await api.close()
+                    except Exception:
+                        pass
+
+            loop = asyncio.new_event_loop()
+            try:
+                inbounds = loop.run_until_complete(_load())
+            finally:
+                loop.close()
+            items = []
+            for ib in inbounds or []:
+                settings = ib.get("settings", {})
+                if isinstance(settings, str):
+                    try:
+                        settings = json.loads(settings)
+                    except Exception:
+                        settings = {}
+                nclients = len(settings.get("clients", [])) if isinstance(settings, dict) else 0
+                items.append({
+                    "id": ib.get("id"),
+                    "remark": ib.get("remark") or "",
+                    "port": ib.get("port"),
+                    "protocol": ib.get("protocol", ""),
+                    "enable": bool(ib.get("enable")),
+                    "clients": nclients,
+                })
+            return items, None
+        except Exception as e:
+            err = f"Panel API error: {e}"
+    else:
+        err = None
+    # 2) local x-ui database
+    import sqlite3 as _sq
+    for _dbpath in ("/etc/x-ui/x-ui.db", "/usr/local/x-ui/x-ui.db"):
+        try:
+            if not os.path.exists(_dbpath):
+                continue
+            conn = _sq.connect(_dbpath, timeout=5)
+            conn.row_factory = _sq.Row
+            try:
+                rows = conn.execute(
+                    "SELECT id, remark, port, protocol, enable FROM inbounds ORDER BY id"
+                ).fetchall()
+            finally:
+                conn.close()
+            if rows:
+                return [dict(r) for r in rows], None
+        except Exception:
+            continue
+    return [], (err or "Cannot read this panel's inbounds (no credentials and no local x-ui database).")
+
+
+@app.route("/panels/<int:panel_id>/inbounds")
+@login_required
+def panel_inbounds(panel_id):
+    """Per-inbound usage multipliers (1 GB real x multiplier = counted GB)."""
+    panel = web_db.get_panel(panel_id)
+    if not panel:
+        flash("Panel not found", "danger")
+        return redirect(url_for("panels"))
+    inbounds, error = _fetch_panel_inbounds_live(panel)
+    mults = web_db.get_panel_multipliers(panel_id)
+    for ib in inbounds:
+        try:
+            ib["multiplier"] = mults.get(int(ib["id"]), 1.0)
+        except (TypeError, ValueError):
+            ib["multiplier"] = 1.0
+    return render_template("inbound_multipliers.html", panel=panel, inbounds=inbounds, error=error)
+
+
+@app.route("/panels/<int:panel_id>/inbounds/<int:inbound_id>/multiplier", methods=["POST"])
+@login_required
+def panel_inbound_multiplier(panel_id, inbound_id):
+    panel = web_db.get_panel(panel_id)
+    if not panel:
+        flash("Panel not found", "danger")
+        return redirect(url_for("panels"))
+    try:
+        value = float((request.form.get("multiplier") or "").strip().replace(",", "."))
+    except (ValueError, AttributeError):
+        flash("Invalid multiplier value", "danger")
+        return redirect(url_for("panel_inbounds", panel_id=panel_id))
+    try:
+        web_db.set_inbound_multiplier(panel_id, inbound_id, value)
+        flash(f"Inbound #{inbound_id} multiplier set to x{value:g}", "success")
+    except ValueError:
+        flash("Multiplier must be within (0, 100]", "danger")
+    return redirect(url_for("panel_inbounds", panel_id=panel_id))
+
+
 @app.route("/admins")
 @login_required
 def admins():
@@ -1088,6 +1201,23 @@ def api_premium_emojis():
     except Exception:
         mapping = {}
     return jsonify(mapping if isinstance(mapping, dict) else {})
+
+
+@app.route("/product", methods=["GET"])
+@login_required
+def product():
+    return render_template("product.html", settings=web_db.get_all_settings(), orders=web_db.get_product_orders(50))
+
+
+@app.route("/product/save", methods=["POST"])
+@login_required
+def product_save():
+    for key in ["product_name", "product_price_per_unit", "product_description"]:
+        if key in request.form:
+            web_db.set_setting(key, request.form[key].strip())
+    web_db.set_setting("product_enabled", "1" if request.form.get("product_enabled") == "1" else "0")
+    flash("تنظیمات محصول ذخیره شد", "success")
+    return redirect(url_for("product"))
 
 
 @app.route("/api/earnings-chart")

@@ -357,11 +357,34 @@ class PanelAPI:
         logger.error("Could not build WG config locally: no matching client found for sub_id %s (inbound %s)", sub_id, inbound_id)
         return None
 
+    def _inbound_multiplier(self, inbound_id) -> float:
+        """Counted-GB factor for one inbound (1 GB real × m = counted GB)."""
+        try:
+            pid = getattr(self, "panel_id", None)
+            if pid is None:
+                return 1.0
+            m = float(web_db.get_inbound_multiplier(pid, int(inbound_id)))
+            return m if m > 0 else 1.0
+        except Exception:
+            return 1.0
+
+    def _inbounds_multiplier(self, inbound_ids) -> float:
+        """Effective multiplier for a client spanning inbounds (max = seller-safe)."""
+        try:
+            mults = [self._inbound_multiplier(iid) for iid in (inbound_ids or [])]
+            return max(mults) if mults else 1.0
+        except Exception:
+            return 1.0
+
     async def add_client(self, inbound_ids: list[int], email: str, total_gb: float = 0, days: int = 0, ip_limit: int = 0) -> dict | None:
         user_uuid = str(uuid.uuid4())
         sub_id = uuid.uuid4().hex[:16]
 
-        total_bytes = int(total_gb * 1024 * 1024 * 1024) if total_gb > 0 else 0
+        mult = self._inbounds_multiplier(inbound_ids)
+        effective_gb = (total_gb / mult) if (total_gb and total_gb > 0 and mult != 1.0) else (total_gb or 0)
+        if mult != 1.0:
+            logger.info(f"Usage multiplier x{mult} on inbounds {inbound_ids}: quota {total_gb}GB -> cap {effective_gb:.2f}GB")
+        total_bytes = int(effective_gb * 1024 * 1024 * 1024) if effective_gb > 0 else 0
         expiry_time = 0
         if days > 0:
             expiry_time = int((datetime.utcnow() + timedelta(days=days)).timestamp() * 1000)
@@ -693,17 +716,22 @@ class PanelAPI:
             total_bytes = traffic["total"]
 
         used_bytes = up_bytes + down_bytes
-        remaining_bytes = max(0, total_bytes - used_bytes) if total_bytes > 0 else 0
+        # Apply usage multiplier so displays count real usage × m against the purchased quota
+        mult = self._inbound_multiplier(target_inbound_id)
+        total_counted = total_bytes * mult if (total_bytes > 0 and mult != 1.0) else total_bytes
+        used_counted = used_bytes * mult if mult != 1.0 else used_bytes
+        remaining_bytes = max(0, total_counted - used_counted) if total_counted > 0 else 0
         return {
-            "total_bytes": total_bytes,
-            "total_gb": round(total_bytes / (1024 * 1024 * 1024), 2) if total_bytes > 0 else 0,
+            "total_bytes": int(total_counted),
+            "total_gb": round(total_counted / (1024 * 1024 * 1024), 2) if total_counted > 0 else 0,
             "up_bytes": up_bytes,
             "down_bytes": down_bytes,
-            "used_bytes": used_bytes,
-            "used_gb": round(used_bytes / (1024 * 1024 * 1024), 2),
-            "remaining_bytes": remaining_bytes,
-            "remaining_gb": round(remaining_bytes / (1024 * 1024 * 1024), 2) if total_bytes > 0 else 0,
+            "used_bytes": int(used_counted),
+            "used_gb": round(used_counted / (1024 * 1024 * 1024), 2),
+            "remaining_bytes": int(remaining_bytes),
+            "remaining_gb": round(remaining_bytes / (1024 * 1024 * 1024), 2) if total_counted > 0 else 0,
             "expiry_time": expiry_time,
+            "multiplier": mult,
         }
 
     async def _update_client(self, email: str, updates: dict) -> bool:
@@ -730,7 +758,8 @@ class PanelAPI:
             for client in clients:
                 if client.get("email") == email:
                     current_total = client.get("totalGB", 0)
-                    extra_bytes = int(extra_gb * 1024 * 1024 * 1024)
+                    mult = self._inbound_multiplier(inbound.get("id"))
+                    extra_bytes = int(extra_gb / mult * 1024 * 1024 * 1024) if mult != 1.0 else int(extra_gb * 1024 * 1024 * 1024)
                     new_total = current_total + extra_bytes if current_total > 0 else extra_bytes
                     if await self._update_client(email, {"totalGB": new_total}):
                         logger.info(f"Updated totalGB for '{email}' from {current_total} to {new_total}")

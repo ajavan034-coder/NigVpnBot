@@ -137,6 +137,9 @@
                 <svg class="ic ic-sm" style="color:var(--text-muted);opacity:.7;"><use href="#i-layers"/></svg>
                 <span style="font-size:11.5px;color:var(--text-muted);">اینباندها:</span>
                 <code class="vio" style="font-size:10.5px;" dir="ltr">{{ p.inbound_ids or '—' }}</code>
+                <a href="{{ url_for('panel_inbounds', panel_id=p.id) }}" class="btn btn-sm btn-outline-purple ms-auto">
+                    <svg class="ic ic-sm"><use href="#i-pencil"/></svg> ضریب مصرف اینباندها
+                </a>
             </div>
         </div>
     </div>

@@ -110,10 +110,21 @@ def get_user(user_id):
 
 
 def update_balance(user_id, amount):
+    """Atomic balance update with guard against negative balance. Returns True if applied."""
     conn = get_conn()
+    if amount < 0:
+        need = -amount
+        cur = conn.execute("UPDATE users SET balance = balance + ? WHERE id = ? AND balance >= ?", (amount, user_id, need))
+        if cur.rowcount == 0:
+            conn.close()
+            return False
+        conn.commit()
+        conn.close()
+        return True
     conn.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (amount, user_id))
     conn.commit()
     conn.close()
+    return True
 
 
 def set_banned(user_id, banned):
@@ -466,81 +477,96 @@ def delete_plan_section(section_id):
     conn.close()
 
 
-# ── Earnings / Charts ──────────────────────────────────────────────
-
-
-def get_monthly_revenue(months=12):
+def get_product_orders(limit=50):
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT strftime('%Y-%m', created_at) as month, "
-        "COUNT(*) as count, COALESCE(SUM(amount), 0) as total "
-        "FROM receipts WHERE status = 'approved' "
-        "GROUP BY month ORDER BY month DESC LIMIT ?",
-        (months,),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in reversed(rows)]
-
-
-def get_daily_revenue(days=30):
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT date(created_at) as day, "
-        "COUNT(*) as count, COALESCE(SUM(amount), 0) as total "
-        "FROM receipts WHERE status = 'approved' "
-        "AND created_at >= date('now', ?) "
-        "GROUP BY day ORDER BY day",
-        (f"-{days} days",),
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM product_orders ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def get_weekly_revenue():
+def add_product_order(user_id, quantity, unit_price, amount, wallet_address, status="pending"):
     conn = get_conn()
-    this_week = conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count "
-        "FROM receipts WHERE status = 'approved' "
-        "AND created_at >= date('now', 'weekday 0', '-7 days')",
-    ).fetchone()
-    last_week = conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count "
-        "FROM receipts WHERE status = 'approved' "
-        "AND created_at >= date('now', 'weekday 0', '-14 days') "
-        "AND created_at < date('now', 'weekday 0', '-7 days')",
-    ).fetchone()
+    cur = conn.execute("INSERT INTO product_orders (user_id, quantity, unit_price, amount, wallet_address, status) VALUES (?, ?, ?, ?, ?, ?)", (user_id, quantity, unit_price, amount, wallet_address, status))
+    oid = cur.lastrowid
+    conn.commit()
     conn.close()
-    return {
-        "this_week": dict(this_week) if this_week else {"total": 0, "count": 0},
-        "last_week": dict(last_week) if last_week else {"total": 0, "count": 0},
-    }
+    return oid
 
 
-def get_revenue_by_status():
+def get_panel(panel_id):
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT status, COUNT(*) as count, COALESCE(SUM(amount), 0) as total "
-        "FROM receipts GROUP BY status"
-    ).fetchall()
+    row = conn.execute("SELECT * FROM panels WHERE id = ?", (panel_id,)).fetchone()
     conn.close()
-    return {r["status"]: {"count": r["count"], "total": r["total"]} for r in rows}
+    return dict(row) if row else None
 
 
-def get_today_revenue():
+# ── Per-inbound usage multipliers (sync mirrors for the web panel) ──
+
+def _ensure_multipliers_table():
     conn = get_conn()
-    row = conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count "
-        "FROM receipts WHERE status = 'approved' AND date(created_at) = date('now')"
-    ).fetchone()
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS inbound_multipliers ("
+        "panel_id INTEGER NOT NULL, inbound_id INTEGER NOT NULL, "
+        "multiplier REAL NOT NULL DEFAULT 1.0, "
+        "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+        "PRIMARY KEY (panel_id, inbound_id))"
+    )
+    conn.commit()
     conn.close()
-    return dict(row) if row else {"total": 0, "count": 0}
 
 
-def get_pending_amount():
+def _sanitize_multiplier(value):
+    try:
+        m = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    return m if m > 0 else 1.0
+
+
+def get_inbound_multiplier(panel_id, inbound_id):
+    """Counted-GB factor for an inbound. 1.0 when unset/invalid."""
+    try:
+        conn = get_conn()
+        try:
+            row = conn.execute(
+                "SELECT multiplier FROM inbound_multipliers WHERE panel_id = ? AND inbound_id = ?",
+                (panel_id, inbound_id),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row:
+            return _sanitize_multiplier(row["multiplier"])
+    except Exception:
+        pass
+    return 1.0
+
+
+def get_panel_multipliers(panel_id):
+    try:
+        conn = get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT inbound_id, multiplier FROM inbound_multipliers WHERE panel_id = ?",
+                (panel_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return {r["inbound_id"]: _sanitize_multiplier(r["multiplier"]) for r in rows}
+    except Exception:
+        return {}
+
+
+def set_inbound_multiplier(panel_id, inbound_id, multiplier):
+    m = float(multiplier)
+    if not (m > 0 and m <= 100):
+        raise ValueError("multiplier must be within (0, 100]")
+    _ensure_multipliers_table()
     conn = get_conn()
-    row = conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count "
-        "FROM receipts WHERE status = 'pending'"
-    ).fetchone()
+    conn.execute(
+        "INSERT INTO inbound_multipliers (panel_id, inbound_id, multiplier, updated_at) "
+        "VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+        "ON CONFLICT(panel_id, inbound_id) DO UPDATE SET multiplier = excluded.multiplier, updated_at = CURRENT_TIMESTAMP",
+        (panel_id, int(inbound_id), m),
+    )
+    conn.commit()
     conn.close()
-    return dict(row) if row else {"total": 0, "count": 0}
