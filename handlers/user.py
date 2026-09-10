@@ -45,6 +45,24 @@ async def rich_get(key: str):
     except Exception:
         return value
 
+
+def _resolve_plan_panel(plan):
+    """Return (PanelAPI instance, panel_id) for config-creation flows.
+
+    Plans without panel_id fall back to the default panel (tracked live by
+    panel_manager, so address/credential edits apply immediately) instead of
+    the legacy settings-based global API object (frozen old panel address).
+    """
+    pid = plan.get("panel_id") if isinstance(plan, dict) else None
+    if pid:
+        inst = panel_manager.get(pid)
+        if inst:
+            return inst, pid
+    default_inst = panel_manager.get_default()
+    if default_inst is None:
+        default_inst = panel_api
+    return default_inst, getattr(default_inst, "panel_id", None)
+
 from utils.stickers import send_sticker
 from utils.qr_generator import generate_qr
 from io import BytesIO
@@ -1122,6 +1140,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
     await callback.answer("در حال ساخت کانفیگ...", show_alert=False)
     
     service_type = plan.get("service_type", "v2ray")
+    _resolved_panel_id = plan.get("panel_id")
     
     # Auto-detect pasarguard from panel type if service_type is v2ray
     if service_type == "v2ray" and plan.get("panel_id"):
@@ -1199,9 +1218,9 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
         if plan.get("inbound_ids"):
             plan_inbound_ids = [int(x.strip()) for x in plan["inbound_ids"].split(",") if x.strip().isdigit()]
         ip_limit = plan.get("ip_limit", 0) or 0
-        plan_panel = panel_manager.get(plan.get("panel_id")) if plan.get("panel_id") else panel_api
+        plan_panel, _resolved_panel_id = _resolve_plan_panel(plan)
         if not plan_panel:
-            plan_panel = panel_api
+            plan_panel, _resolved_panel_id = panel_api, getattr(panel_api, "panel_id", None)
 
         _is_wg = False
         if plan_inbound_ids:
@@ -1256,7 +1275,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
     await add_config(
         user_id=user_id, plan_id=plan_id, sub_link=result["sub_link"],
         uuid=result["uuid"], email=email, expire_date=result["expire_date"],
-        panel_id=plan.get("panel_id"),
+        panel_id=_resolved_panel_id,
     )
 
     cashback_pct = float(await get_setting("cashback_percent") or "0")
@@ -1804,6 +1823,7 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
     await callback.answer("در حال ساخت کانفیگ...", show_alert=False)
     
     service_type = plan.get("service_type", "v2ray")
+    _resolved_panel_id = plan.get("panel_id")
     
     # Auto-detect pasarguard from panel type if service_type is v2ray
     if service_type == "v2ray" and plan.get("panel_id"):
@@ -1906,9 +1926,9 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
         if plan.get("inbound_ids"):
             plan_inbound_ids = [int(x.strip()) for x in plan["inbound_ids"].split(",") if x.strip().isdigit()]
         ip_limit = plan.get("ip_limit", 0) or 0
-        plan_panel = panel_manager.get(plan.get("panel_id")) if plan.get("panel_id") else panel_api
+        plan_panel, _resolved_panel_id = _resolve_plan_panel(plan)
         if not plan_panel:
-            plan_panel = panel_api
+            plan_panel, _resolved_panel_id = panel_api, getattr(panel_api, "panel_id", None)
 
         _is_wg_pw = False
         if plan_inbound_ids:
@@ -1976,7 +1996,7 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
     await add_config(
         user_id=user_id, plan_id=plan_id, sub_link=result["sub_link"],
         uuid=result["uuid"], email=email, expire_date=result["expire_date"],
-        panel_id=plan.get("panel_id"), config_name=cfg_name,
+        panel_id=_resolved_panel_id, config_name=cfg_name,
     )
 
     cashback_pct = float(await get_setting("cashback_percent") or "0")

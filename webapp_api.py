@@ -339,14 +339,26 @@ def api_buy():
                         panel_pass=panel['password'],
                     )
                 else:
-                    from api import panel_api
-                    panel_api.reload_config()
-                    api = panel_api
+                    # No panel on plan: use the default panel (live
+                    # address/creds) instead of the legacy settings-based
+                    # global API object (frozen old panel address).
+                    from api import panel_manager, PanelAPI
+                    default_inst = panel_manager.get_default()
+                    api = PanelAPI(
+                        panel_url=getattr(default_inst, 'panel_url', ''),
+                        panel_user=getattr(default_inst, 'panel_user', ''),
+                        panel_pass=getattr(default_inst, 'panel_pass', ''),
+                        sub_link_template=getattr(default_inst, 'sub_link_template', ''),
+                        panel_id=getattr(default_inst, 'panel_id', None),
+                    )
+                    panel_id = getattr(default_inst, 'panel_id', None)
                 try:
                     return await api.create_config(email, days=plan['days'], total_gb=plan['gb'], inbound_ids=plan_inbound_ids)
                 finally:
-                    if panel_id:
+                    try:
                         await api.close()
+                    except Exception:
+                        pass
 
             result = asyncio.run(_create_config())
 
