@@ -30,6 +30,24 @@ your own changes are never overwritten on updates.
 
 ---
 
+## Requirements / پیش‌نیازها
+
+| What | Version |
+|------|---------|
+| OS | Debian / Ubuntu (uses `apt-get`) |
+| Python | **3.10 or newer** |
+
+Python 3.10+ is required: the code uses PEP 604 annotations (`dict | None`), and
+`aiogram`/`aiohttp`/`Pillow` have no release for older interpreters. On Python 3.9
+pip fails with `No matching distribution found for aiogram>=3.29.0` before the
+bot can even start.
+
+If you are on Ubuntu 20.04 or older:
+
+```bash
+sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt-get update
+```
+
 ## Install / نصب
 
 ```bash

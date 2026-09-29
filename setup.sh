@@ -32,7 +32,38 @@ if ! apt-get install -y -qq git curl python3 python3-venv python3-pip lsof > /de
     echo -e "  ${RED}✘ apt-get install failed — run 'apt-get update' and try again${NC}"
     exit 1
 fi
-echo -e "  ${GREEN}✔${NC} System packages installed"
+
+# The bot needs Python 3.10+: it uses PEP 604 annotations (dict | None) and
+# pins aiogram/aiohttp/pillow versions that do not exist for older interpreters.
+# On 3.9 pip fails with "No matching distribution found" before the code even runs.
+find_python() {
+    local c
+    for c in python3.13 python3.12 python3.11 python3.10 python3; do
+        if command -v "$c" >/dev/null 2>&1 \
+           && "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+            echo "$c"
+            return 0
+        fi
+    done
+    return 1
+}
+
+PYTHON=$(find_python) || PYTHON=""
+if [ -z "$PYTHON" ]; then
+    echo -e "  ${YELLOW}➤${NC} No Python 3.10+ found — installing python3.10..."
+    apt-get install -y -qq python3.10 python3.10-venv > /dev/null 2>&1 || true
+    PYTHON=$(find_python) || PYTHON=""
+fi
+
+if [ -z "$PYTHON" ]; then
+    FOUND=$(python3 -V 2>&1 || echo "not installed")
+    echo -e "  ${RED}✘ Python 3.10 or newer is required. Found: ${FOUND}${NC}"
+    echo -e "     Ubuntu 22.04+: ${CYAN}apt-get install python3.10 python3.10-venv${NC}"
+    echo -e "     Debian 12+:    ${CYAN}apt-get install python3 python3-venv${NC}"
+    echo -e "     Ubuntu 20.04:  ${CYAN}add-apt-repository ppa:deadsnakes/ppa && apt-get install python3.10 python3.10-venv${NC}"
+    exit 1
+fi
+echo -e "  ${GREEN}✔${NC} System packages installed (${PYTHON} $($PYTHON -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])'))"
 
 # ── Step 2: Download Bot Files ──────────────────────────────
 echo -e "${BOLD}${BLUE}[2/7]${NC} Downloading bot files..."
@@ -75,13 +106,13 @@ fi
 # ── Step 3: Python Packages ─────────────────────────────────
 echo -e "${BOLD}${BLUE}[3/7]${NC} Installing Python packages..."
 if [ ! -d "venv" ]; then
-    python3 -m venv venv
+    $PYTHON -m venv venv
     echo -e "  ${GREEN}✔${NC} Virtual environment created"
 fi
 $INSTALL_DIR/venv/bin/pip install --upgrade pip -q
 if ! $INSTALL_DIR/venv/bin/pip install -r requirements.txt -q; then
-    echo -e "  ${RED}✘ pip install failed. Try manually:${NC}"
-    echo -e "      cd $INSTALL_DIR && ./venv/bin/pip install -r requirements.txt"
+    echo -e "  ${RED}✘ pip install failed. Installed: $($INSTALL_DIR/venv/bin/python -V 2>&1)${NC}"
+    echo -e "      Try manually: ${CYAN}cd $INSTALL_DIR && ./venv/bin/pip install -r requirements.txt${NC}"
     exit 1
 fi
 echo -e "  ${GREEN}✔${NC} Dependencies installed"
@@ -184,6 +215,7 @@ Restart=always
 RestartSec=5
 StandardOutput=append:$INSTALL_DIR/bot.log
 StandardError=append:$INSTALL_DIR/bot.log
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target

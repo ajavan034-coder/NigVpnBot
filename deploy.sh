@@ -93,6 +93,16 @@ rm -f .env.bak
 # ── Step 3: Check Requirements ──────────────────────────────
 echo -e "${BOLD}${BLUE}[3/5]${NC} Checking dependencies..."
 
+VENV_PY="$INSTALL_DIR/venv/bin/python"
+if [ -x "$VENV_PY" ]; then
+    if ! "$VENV_PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+        step_fail "venv is Python $("$VENV_PY" -V 2>&1), but 3.10+ is required"
+        step_info "Delete the venv and re-run setup.sh to rebuild it:"
+        step_info "  rm -rf $INSTALL_DIR/venv && sudo bash /tmp/setup.sh"
+        exit 1
+    fi
+fi
+
 REQ_HASH=$(md5sum requirements.txt 2>/dev/null | cut -d' ' -f1 || echo "new")
 CACHED_HASH=$(cat .req_hash 2>/dev/null || echo "none")
 
@@ -103,12 +113,14 @@ else
     INSTALL_OUTPUT=$($INSTALL_DIR/venv/bin/pip install -q -r requirements.txt 2>&1)
     INSTALL_EXIT=$?
     echo "$REQ_HASH" > .req_hash
-    
+
     if [ $INSTALL_EXIT -eq 0 ]; then
-        NEW_PACKAGES=$(echo "$INSTALL_OUTPUT" | grep -c "Successfully installed" || echo "0")
         step_done "Dependencies updated"
     else
-        step_fail "Package install had warnings (usually OK)"
+        step_fail "Package install FAILED"
+        echo ""
+        echo "$INSTALL_OUTPUT" | tail -20
+        exit 1
     fi
 fi
 
