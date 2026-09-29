@@ -28,7 +28,10 @@ fi
 # ── Step 1: System Dependencies ─────────────────────────────
 echo -e "${BOLD}${BLUE}[1/7]${NC} Installing system dependencies..."
 apt-get update -qq > /dev/null 2>&1
-apt-get install -y -qq git python3 python3-venv python3-pip > /dev/null 2>&1
+if ! apt-get install -y -qq git curl python3 python3-venv python3-pip lsof > /dev/null 2>&1; then
+    echo -e "  ${RED}✘ apt-get install failed — run 'apt-get update' and try again${NC}"
+    exit 1
+fi
 echo -e "  ${GREEN}✔${NC} System packages installed"
 
 # ── Step 2: Download Bot Files ──────────────────────────────
@@ -36,22 +39,37 @@ echo -e "${BOLD}${BLUE}[2/7]${NC} Downloading bot files..."
 if [ -d "$INSTALL_DIR/.git" ]; then
     cd "$INSTALL_DIR"
     git checkout $BRANCH -q 2>/dev/null
-    git pull -q 2>/dev/null
-    echo -e "  ${GREEN}✔${NC} Existing installation updated"
-else
+    if ! git pull -q 2>/dev/null; then
+        echo -e "  ${YELLOW}➤${NC} git pull failed, re-cloning..."
+        cd /
+        rm -rf "$INSTALL_DIR"
+    fi
+fi
+
+if [ ! -d "$INSTALL_DIR/.git" ]; then
     rm -rf "$INSTALL_DIR"
     if git clone -b $BRANCH "https://github.com/${REPO}.git" "$INSTALL_DIR" 2>/dev/null; then
         cd "$INSTALL_DIR"
         echo -e "  ${GREEN}✔${NC} Bot files cloned from GitHub"
     else
         echo -e "  ${YELLOW}➤${NC} Git clone failed, downloading tarball..."
-        curl -sL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" -o /tmp/bot.tar.gz
+        if ! curl -fsSL "https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz" -o /tmp/bot.tar.gz; then
+            echo -e "  ${RED}✘ Could not download files from GitHub — check network/URL${NC}"
+            exit 1
+        fi
         mkdir -p "$INSTALL_DIR"
         tar xzf /tmp/bot.tar.gz -C "$INSTALL_DIR" --strip-components=1
         rm -f /tmp/bot.tar.gz
         cd "$INSTALL_DIR"
         echo -e "  ${GREEN}✔${NC} Bot files downloaded"
     fi
+else
+    echo -e "  ${GREEN}✔${NC} Existing installation updated"
+fi
+
+if [ ! -f "requirements.txt" ]; then
+    echo -e "  ${RED}✘ Bot files are missing in $INSTALL_DIR (no requirements.txt)${NC}"
+    exit 1
 fi
 
 # ── Step 3: Python Packages ─────────────────────────────────
@@ -60,8 +78,12 @@ if [ ! -d "venv" ]; then
     python3 -m venv venv
     echo -e "  ${GREEN}✔${NC} Virtual environment created"
 fi
-$INSTALL_DIR/venv/bin/pip install --upgrade pip -q 2>/dev/null
-$INSTALL_DIR/venv/bin/pip install -r requirements.txt -q 2>/dev/null
+$INSTALL_DIR/venv/bin/pip install --upgrade pip -q
+if ! $INSTALL_DIR/venv/bin/pip install -r requirements.txt -q; then
+    echo -e "  ${RED}✘ pip install failed. Try manually:${NC}"
+    echo -e "      cd $INSTALL_DIR && ./venv/bin/pip install -r requirements.txt"
+    exit 1
+fi
 echo -e "  ${GREEN}✔${NC} Dependencies installed"
 
 # ── Step 4: Management Command ──────────────────────────────
@@ -99,10 +121,14 @@ ADMIN_IDS=${ADMIN_IDS:-$OLD_ADMIN}
 if [ -z "$ADMIN_IDS" ]; then echo -e "  ${RED}✘ Admin IDs are required!${NC}"; exit 1; fi
 
 read -p "  Web Panel Port [$OLD_PORT]: " WEB_PORT
-WEB_PORT=${WEB_PORT:-$OLD_PORT:-5000}
+WEB_PORT=${WEB_PORT:-${OLD_PORT:-5000}}
+if ! echo "$WEB_PORT" | grep -qE '^[0-9]+$' || [ "$WEB_PORT" -lt 1 ] || [ "$WEB_PORT" -gt 65535 ]; then
+    echo -e "  ${RED}✘ '${WEB_PORT}' is not a valid port (1-65535). Aborting.${NC}"
+    exit 1
+fi
 
 read -p "  Admin Panel Username [$OLD_WEB_USER]: " ADMIN_WEB_USER
-ADMIN_WEB_USER=${ADMIN_WEB_USER:-$OLD_WEB_USER:-admin}
+ADMIN_WEB_USER=${ADMIN_WEB_USER:-${OLD_WEB_USER:-admin}}
 
 read -p "  Admin Panel Password [$OLD_WEB_PASS]: " ADMIN_WEB_PASS
 ADMIN_WEB_PASS=${ADMIN_WEB_PASS:-$OLD_WEB_PASS}
@@ -190,10 +216,20 @@ if systemctl is-active --quiet ${SERVICE_NAME}; then
 else
     echo -e "${BOLD}${RED}╔══════════════════════════════════════════╗${NC}"
     echo -e "${BOLD}${RED}║  ✘ Installation Failed!                  ║${NC}"
-    echo -e "${BOLD}${RED}╠══════════════════════════════════════════╣${NC}"
-    echo -e "${BOLD}${RED}║${NC}  Check logs:                             ${BOLD}${RED}║${NC}"
-    echo -e "${BOLD}${RED}║${NC}  ${CYAN}tail -50 $INSTALL_DIR/bot.log${NC}          ${BOLD}${RED}║${NC}"
     echo -e "${BOLD}${RED}╚══════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${BOLD}systemctl status:${NC}"
+    systemctl status ${SERVICE_NAME} --no-pager -l 2>&1 | tail -20
+    echo ""
+    if [ -f "$INSTALL_DIR/bot.log" ] && [ -s "$INSTALL_DIR/bot.log" ]; then
+        echo -e "${BOLD}Last lines of bot.log:${NC}"
+        tail -30 "$INSTALL_DIR/bot.log"
+    else
+        echo -e "${YELLOW}bot.log is empty or missing.${NC} Try:"
+        echo -e "  ${CYAN}journalctl -u $SERVICE_NAME -n 50 --no-pager${NC}"
+    fi
+    echo ""
+    echo -e "  ${CYAN}Re-run: sudo bash <(curl -sL https://raw.githubusercontent.com/${REPO}/main/setup.sh)${NC}"
 fi
 
 echo ""

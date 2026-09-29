@@ -33,17 +33,20 @@ your own changes are never overwritten on updates.
 ## Install / نصب
 
 ```bash
-sudo bash <(curl -sL https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/setup.sh)
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/setup.sh)
 ```
 ## Update / آپدیت
 
 ```bash
-curl -sL https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/deploy.sh -o /tmp/deploy.sh && sudo bash /tmp/deploy.sh
+curl -fsSL https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/deploy.sh -o /tmp/deploy.sh && sudo bash /tmp/deploy.sh
 ```
 ## Open Consol Panel / باز کردن پنل
 ```bash
 nigvpn
 ```
+
+If the installer stops with an error, it now prints the real reason (and the last
+lines of `bot.log`) instead of only saying "check logs".
 
 You'll be asked for:
 - Bot Token (from @BotFather)
