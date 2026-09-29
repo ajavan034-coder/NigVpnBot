@@ -229,7 +229,8 @@ else
         echo -e "  ${CYAN}journalctl -u $SERVICE_NAME -n 50 --no-pager${NC}"
     fi
     echo ""
-    echo -e "  ${CYAN}Re-run: sudo bash <(curl -sL https://raw.githubusercontent.com/${REPO}/main/setup.sh)${NC}"
+    echo -e "  ${CYAN}Re-run:${NC}"
+    echo -e "  ${CYAN}curl -fsSL https://raw.githubusercontent.com/${REPO}/main/setup.sh -o /tmp/setup.sh && sudo bash /tmp/setup.sh${NC}"
 fi
 
 echo ""

@@ -33,8 +33,13 @@ your own changes are never overwritten on updates.
 ## Install / نصب
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/setup.sh)
+curl -fsSL https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/setup.sh -o /tmp/setup.sh && sudo bash /tmp/setup.sh
 ```
+
+> Download first, then run. The one-liner `sudo bash <(curl ...)` fails with
+> `bash: /dev/fd/63: No such file or directory` on servers without `/dev/fd`
+> (many VPS/container images), and the pipe form silently runs a truncated script.
+
 ## Update / آپدیت
 
 ```bash

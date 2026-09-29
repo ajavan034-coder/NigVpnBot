@@ -266,7 +266,13 @@ do_update() {
     # Check if git repo
     if [ ! -d ".git" ]; then
         echo -e "${RED}Not a git repository. Reinstalling...${NC}"
-        bash <(curl -s https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/setup.sh)
+        # Download then run: <(...) needs /dev/fd, which many servers lack.
+        if curl -fsSL "https://raw.githubusercontent.com/ajavan034-coder/NigVpnBot/main/setup.sh" -o /tmp/nigvpn-setup.sh; then
+            bash /tmp/nigvpn-setup.sh
+            rm -f /tmp/nigvpn-setup.sh
+        else
+            echo -e "${RED}✘ Could not download setup.sh${NC}"
+        fi
         return
     fi
 
