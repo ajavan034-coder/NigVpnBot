@@ -74,6 +74,7 @@
 
     /* ═══ State ═══ */
     var sections = [], configGroups = [], wallet = null, invite = null, selectedPlan = null;
+    var botUsername = '';
     var currentTab = 'services';
     var expandedSections = {};
     var expandedPanels = {};
@@ -485,7 +486,7 @@
         closeSheet('det');
         var planId = selectedPlan ? selectedPlan.id : '';
         var cfgName = document.getElementById('configNameInput') ? document.getElementById('configNameInput').value.trim() : '';
-        var botLink = 'https://t.me/NigVpnBot?start=c2c_' + planId + (cfgName ? '_' + encodeURIComponent(cfgName) : '');
+        var botLink = 'https://t.me/' + (botUsername || 'yourbot') + '?start=c2c_' + planId + (cfgName ? '_' + encodeURIComponent(cfgName) : '');
         try { tg.openTelegramLink(botLink); } catch(e) { tg.close(); }
     };
 
@@ -566,10 +567,11 @@
 
     /* ═══ Data Loading ═══ */
     async function loadAll() {
-        var results = await Promise.all([apiGet('/sections'), apiGet('/wallet'), apiGet('/invite')]);
+        var results = await Promise.all([apiGet('/sections'), apiGet('/wallet'), apiGet('/invite'), apiGet('/bot-username')]);
         sections = (results[0] && results[0].sections) || [];
         wallet = results[1];
         invite = results[2];
+        botUsername = (results[3] && results[3].username) || '';
         renderSections();
     }
 

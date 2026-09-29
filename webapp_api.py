@@ -53,6 +53,30 @@ def _verify_init_data(init_data: str, bot_token: str) -> dict | None:
     return json.loads(parsed.get('user', '{}'))
 
 
+_bot_username_cache = {'value': None, 'at': 0.0}
+
+
+def _get_bot_username() -> str:
+    """Resolve this bot's own username, cached for an hour to avoid an API call per request."""
+    if _bot_username_cache['value'] and time.time() - _bot_username_cache['at'] < 3600:
+        return _bot_username_cache['value']
+
+    username = 'yourbot'
+    token = current_app.config.get('BOT_TOKEN', '')
+    if token:
+        try:
+            import requests as _req
+            resp = _req.get(f'https://api.telegram.org/bot{token}/getMe', timeout=5)
+            if resp.status_code == 200:
+                username = resp.json().get('result', {}).get('username') or username
+        except Exception:
+            pass
+
+    _bot_username_cache['value'] = username
+    _bot_username_cache['at'] = time.time()
+    return username
+
+
 def _get_user_id() -> int | None:
     auth = request.headers.get('Authorization', '')
     if not auth.startswith('Bearer '):
@@ -97,6 +121,13 @@ def serve_webapp(filename='index.html'):
 
 
 # ── API Endpoints ───────────────────────────────────────────────
+# Separate from the panel's own /api/bot-info, which is @login_required and so
+# unreachable from the Mini App (it has no admin session).
+@webapp_bp.route('/api/bot-username')
+def api_bot_username():
+    return jsonify({'username': _get_bot_username()})
+
+
 @webapp_bp.route('/api/wallet')
 @require_auth
 def api_wallet():
@@ -230,16 +261,7 @@ def api_invite():
 
     reward = int(web_db.get_setting('invite_reward_amount') or '0')
 
-    # Get bot username from token
-    bot_token = current_app.config.get('BOT_TOKEN', '')
-    bot_username = 'yourbot'
-    try:
-        import requests as _req
-        resp = _req.get(f'https://api.telegram.org/bot{bot_token}/getMe', timeout=5)
-        if resp.status_code == 200:
-            bot_username = resp.json().get('result', {}).get('username', bot_username)
-    except Exception:
-        pass
+    bot_username = _get_bot_username()
 
     return jsonify({
         'enabled': True,

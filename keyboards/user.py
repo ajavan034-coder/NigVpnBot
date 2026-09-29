@@ -536,10 +536,10 @@ async def my_services_configs_menu(user_id: int, panel_id: int) -> InlineKeyboar
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-async def view_user_keyboard(user_id: int) -> InlineKeyboardMarkup:
+async def view_user_keyboard(user_id: int, bot_username: str) -> InlineKeyboardMarkup:
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👤 مشاهده پروفایل کاربر", url=f"https://t.me/NigVpnBot?start=view_user_{user_id}")],
+        [InlineKeyboardButton(text="👤 مشاهده پروفایل کاربر", url=f"https://t.me/{bot_username}?start=view_user_{user_id}")],
     ])
 
 

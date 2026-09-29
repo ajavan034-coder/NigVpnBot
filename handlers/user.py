@@ -136,7 +136,7 @@ async def _notify_new_user(bot, user):
             .replace("{month}", str(month)) \
             .replace("{lifetime}", str(lifetime))
 
-        await bot.send_message(chat_id=channel_id, text=text, parse_mode="HTML", reply_markup=await view_user_keyboard(user.id))
+        await bot.send_message(chat_id=channel_id, text=text, parse_mode="HTML", reply_markup=await view_user_keyboard(user.id, (await bot.get_me()).username))
     except Exception as e:
         _log.error("Failed to send new user notification: %s %s", type(e).__name__, e)
 
@@ -401,7 +401,7 @@ async def cmd_start(message: Message, state: FSMContext):
                             else:
                                 notif_text += f"  📊 نوع پاداش: <b>کمیسیون درصدی ( عندالشراء )</b>\n"
 
-                        await message.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(referrer["id"]))
+                        await message.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(referrer["id"], (await message.bot.get_me()).username))
                     except Exception as e:
                         import logging
                         logging.getLogger(__name__).error("Failed invite notification: %s %s", type(e).__name__, e)
@@ -1095,7 +1095,7 @@ async def cb_free_test_select(callback: CallbackQuery):
                 .replace("{user_id}", str(user_id)) \
                 .replace("{free_test_mb}", str(free_test_mb / 1024)) \
                 .replace("{sub_link}", result["sub_link"])
-            await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(user_id))
+            await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(user_id, (await callback.bot.get_me()).username))
         except Exception as e:
             import logging
             logging.getLogger(__name__).error("Failed free test channel notification: %s %s", type(e).__name__, e)
@@ -1409,7 +1409,7 @@ async def cb_make_config(callback: CallbackQuery, state: FSMContext):
                 .replace("{plan_days}", str(plan["days"])) \
                 .replace("{plan_price}", f"{plan['price']:,}") \
                 .replace("{sub_link}", result["sub_link"])
-            await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(user_id))
+            await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(user_id, (await callback.bot.get_me()).username))
         except Exception as e:
             import logging
             logging.getLogger(__name__).error("Failed config channel notification: %s %s", type(e).__name__, e)
@@ -2118,7 +2118,7 @@ async def cb_pay_wallet(callback: CallbackQuery, state: FSMContext):
                 .replace("{plan_days}", str(plan["days"])) \
                 .replace("{plan_price}", f"{plan['price']:,}") \
                 .replace("{sub_link}", result["sub_link"])
-            await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(user_id))
+            await callback.bot.send_message(chat_id=channel_id, text=notif_text, parse_mode="HTML", reply_markup=await view_user_keyboard(user_id, (await callback.bot.get_me()).username))
         except Exception as e:
             import logging
             logging.getLogger(__name__).error("Failed wallet config notification: %s %s", type(e).__name__, e)
